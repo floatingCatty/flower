@@ -1,4 +1,4 @@
-"""`forgeflow mcp`: stdio JSON-RPC (initialize, tools/list, tools/call); approval verbs must not exist."""
+"""`flower mcp`: stdio JSON-RPC (initialize, tools/list, tools/call); approval verbs must not exist."""
 from __future__ import annotations
 
 import json
@@ -7,16 +7,16 @@ import time
 
 import pytest
 
-from agentkit import FF_BIN, agent_node, events, ff, make_plan, write_plan
+from agentkit import FLOWER_BIN, agent_node, events, ff, make_plan, write_plan
 
 DECISION_WORDS = ("approve", "answer", "reject", "decide", "accept")
-MUTATING = {"forgeflow_start_run", "forgeflow_rerun", "forgeflow_cancel", "forgeflow_propose_amendment",
-            "forgeflow_signal", "forgeflow_report"}
+MUTATING = {"flower_start_run", "flower_rerun", "flower_cancel", "flower_propose_amendment",
+            "flower_signal", "flower_report"}
 
 
 def mcp(requests: list, read_only: bool = False, timeout: float = 120) -> tuple[dict, subprocess.CompletedProcess]:
     lines = [r if isinstance(r, str) else json.dumps(r) for r in requests]
-    argv = [str(FF_BIN), "mcp"] + (["--read-only"] if read_only else [])
+    argv = [str(FLOWER_BIN), "mcp"] + (["--read-only"] if read_only else [])
     p = subprocess.run(argv, input="\n".join(lines) + "\n", capture_output=True, text=True, timeout=timeout)
     out = {}
     for line in p.stdout.splitlines():
@@ -49,12 +49,12 @@ def test_initialize_and_tool_list_withholds_decision_verbs():
                   {"jsonrpc": "2.0", "id": 3, "method": "resources/list"}])
     assert p.returncode == 0
     init = out[0]["result"]
-    assert init["protocolVersion"] == "2024-11-05" and init["serverInfo"]["name"] == "forgeflow"
+    assert init["protocolVersion"] == "2024-11-05" and init["serverInfo"]["name"] == "flower"
     assert "tools" in init["capabilities"]
     assert "never through these tools" in init["instructions"]
     tools = out[1]["result"]["tools"]
     names = {t["name"] for t in tools}
-    assert {"forgeflow_status", "forgeflow_validate_plan", "forgeflow_start_run", "forgeflow_wait"} <= names
+    assert {"flower_status", "flower_validate_plan", "flower_start_run", "flower_wait"} <= names
     for n in names:
         assert not any(w in n for w in DECISION_WORDS), f"decision verb exposed over MCP: {n}"
     for t in tools:
@@ -66,11 +66,11 @@ def test_initialize_and_tool_list_withholds_decision_verbs():
     assert len(out) == 4  # the notification got no response
 
 
-def test_read_only_hides_mutating_tools_and_refuses_calls(tmp_path, ff_home):
+def test_read_only_hides_mutating_tools_and_refuses_calls(tmp_path, flower_home):
     plan = write_plan(tmp_path / "p.yaml", make_plan([{"id": "a", "kind": "shell", "run": "true"}], pid="mcp-ro"))
     out, _ = mcp([INIT, {"jsonrpc": "2.0", "id": 1, "method": "tools/list"},
-                  call(2, "forgeflow_start_run", plan_path=str(plan)),
-                  call(3, "forgeflow_validate_plan", path=str(plan))], read_only=True)
+                  call(2, "flower_start_run", plan_path=str(plan)),
+                  call(3, "flower_validate_plan", path=str(plan))], read_only=True)
     names = {t["name"] for t in out[1]["result"]["tools"]}
     assert not names & MUTATING
     assert all(t["annotations"]["readOnlyHint"] for t in out[1]["result"]["tools"])
@@ -78,31 +78,31 @@ def test_read_only_hides_mutating_tools_and_refuses_calls(tmp_path, ff_home):
     assert is_err and res["error"]["code"] == "unknown_tool"
     res, is_err = tool_result(out[3])
     assert not is_err and res["data"]["valid"] is True
-    from forgeflow.rundir import list_runs
-    assert list_runs(ff_home) == []
+    from flower.rundir import list_runs
+    assert list_runs(flower_home) == []
 
 
-@pytest.mark.parametrize("name", ["forgeflow_approve", "forgeflow_answer", "forgeflow_reject", "approve",
-                                  "forgeflow_answer_gate", "forgeflow_amend_approve"])
+@pytest.mark.parametrize("name", ["flower_approve", "flower_answer", "flower_reject", "approve",
+                                  "flower_answer_gate", "flower_amend_approve"])
 def test_decision_tools_cannot_be_called(name):
     out, _ = mcp([INIT, call(1, name, run="last", gate="plan", decision="approve")])
     res, is_err = tool_result(out[1])
     assert is_err and res["error"]["code"] == "unknown_tool"
 
 
-def test_validate_start_status_flow_never_approves(fake, tmp_path, ff_home):
+def test_validate_start_status_flow_never_approves(fake, tmp_path, flower_home):
     f = fake("script", [{"answer": {"summary": "s"}}])
     good = write_plan(tmp_path / "good.yaml", make_plan([agent_node("a", f.harness())], pid="mcp-flow"))
-    bad = write_plan(tmp_path / "bad.yaml", {"forgeflow": 1, "id": "x", "nodes": [{"id": "a", "kind": "agent"}]})
+    bad = write_plan(tmp_path / "bad.yaml", {"flower": 1, "id": "x", "nodes": [{"id": "a", "kind": "agent"}]})
     out, p = mcp([INIT,
-                  call(1, "forgeflow_validate_plan", path=str(good)),
-                  call(2, "forgeflow_validate_plan", path=str(bad)),
-                  call(3, "forgeflow_show_plan", path=str(good)),
-                  call(4, "forgeflow_start_run", plan_path=str(good), inputs={}),
-                  call(5, "forgeflow_status"),
-                  call(6, "forgeflow_list_runs"),
-                  call(7, "forgeflow_show_gate", gate="plan"),
-                  call(8, "forgeflow_wait", timeout=1)])
+                  call(1, "flower_validate_plan", path=str(good)),
+                  call(2, "flower_validate_plan", path=str(bad)),
+                  call(3, "flower_show_plan", path=str(good)),
+                  call(4, "flower_start_run", plan_path=str(good), inputs={}),
+                  call(5, "flower_status"),
+                  call(6, "flower_list_runs"),
+                  call(7, "flower_show_gate", gate="plan"),
+                  call(8, "flower_wait", timeout=1)])
     res, is_err = tool_result(out[1])
     assert not is_err and res["ok"] and res["data"]["valid"]
     res, is_err = tool_result(out[2])
@@ -122,23 +122,23 @@ def test_validate_start_status_flow_never_approves(fake, tmp_path, ff_home):
     assert res["data"]["status"] == "open"
     res, _ = tool_result(out[8])
     assert res["data"]["status"] == "awaiting_approval"
-    evs = (ff_home / ".forgeflow" / "runs" / rid / "events.jsonl").read_text()
+    evs = (flower_home / ".flower" / "runs" / rid / "events.jsonl").read_text()
     assert "plan.approved" not in evs and "gate.answered" not in evs
     assert f.calls() == []
 
 
-def test_start_run_inputs_cannot_smuggle_approval_flags(tmp_path, ff_home):
+def test_start_run_inputs_cannot_smuggle_approval_flags(tmp_path, flower_home):
     plan = write_plan(tmp_path / "p.yaml", make_plan([{"id": "a", "kind": "shell", "run": "true"}], pid="mcp-inj",
                                                       inputs={"x": {"type": "string", "default": "d"}}))
     out, _ = mcp([INIT,
-                  call(1, "forgeflow_start_run", plan_path="--yes"),
-                  call(2, "forgeflow_start_run", plan_path=str(plan), inputs={"-y": "1"}),
-                  call(3, "forgeflow_start_run", plan_path=str(plan), inputs={"x": "--yes"}),
-                  call(4, "forgeflow_start_run", plan_path="-y" + str(plan))])
-    from forgeflow.engine import Engine
-    from forgeflow.rundir import RunPaths, list_runs
-    for rid in list_runs(ff_home):
-        st = Engine(RunPaths(ff_home, rid)).state()
+                  call(1, "flower_start_run", plan_path="--yes"),
+                  call(2, "flower_start_run", plan_path=str(plan), inputs={"-y": "1"}),
+                  call(3, "flower_start_run", plan_path=str(plan), inputs={"x": "--yes"}),
+                  call(4, "flower_start_run", plan_path="-y" + str(plan))])
+    from flower.engine import Engine
+    from flower.rundir import RunPaths, list_runs
+    for rid in list_runs(flower_home):
+        st = Engine(RunPaths(flower_home, rid)).state()
         assert not st.approved, f"run {rid} got approved through MCP inputs"
     res, _ = tool_result(out[3])
     assert res["ok"] and res["data"]["status"] == "awaiting_approval"
@@ -150,10 +150,10 @@ def test_node_logs_and_report_tools(fake, tmp_path):
     code, d, _ = ff("run", plan, "--yes")
     assert code == 0, d
     rid = d["data"]["run_id"]
-    out, _ = mcp([INIT, call(1, "forgeflow_node_logs", run=rid, node="calc"),
-                  call(2, "forgeflow_show_node", run=rid, node="calc"),
-                  call(3, "forgeflow_log", run=rid),
-                  call(4, "forgeflow_report", run=rid)])
+    out, _ = mcp([INIT, call(1, "flower_node_logs", run=rid, node="calc"),
+                  call(2, "flower_show_node", run=rid, node="calc"),
+                  call(3, "flower_log", run=rid),
+                  call(4, "flower_report", run=rid)])
     res, is_err = tool_result(out[1])
     assert not is_err and "=== turn 0 (main) ===" in res["data"]["text"]
     res, _ = tool_result(out[2])
@@ -164,7 +164,7 @@ def test_node_logs_and_report_tools(fake, tmp_path):
     assert not is_err and res["data"]["md"].endswith("report.md")
 
 
-def test_propose_amendment_tool_opens_a_gate_but_cannot_approve(tmp_path, ff_home):
+def test_propose_amendment_tool_opens_a_gate_but_cannot_approve(tmp_path, flower_home):
     plan = write_plan(tmp_path / "p.yaml", make_plan([{"id": "a", "kind": "shell", "run": "true"},
                                                        {"id": "w", "kind": "wait", "signal": "go", "needs": ["a"]}],
                                                       pid="mcp-amend"))
@@ -172,12 +172,12 @@ def test_propose_amendment_tool_opens_a_gate_but_cannot_approve(tmp_path, ff_hom
     assert code == 3
     rid = d["data"]["run_id"]
     ops = [{"op": "add", "nodes": [{"id": "extra", "kind": "shell", "run": "true", "needs": ["a"]}]}]
-    out, _ = mcp([INIT, call(1, "forgeflow_propose_amendment", run=rid, rationale="more", ops=ops)])
+    out, _ = mcp([INIT, call(1, "flower_propose_amendment", run=rid, rationale="more", ops=ops)])
     res, is_err = tool_result(out[1])
     assert not is_err and res["data"]["gate"].startswith("amend-")
-    from forgeflow.engine import Engine
-    from forgeflow.rundir import RunPaths
-    st = Engine(RunPaths(ff_home, rid)).state()
+    from flower.engine import Engine
+    from flower.rundir import RunPaths
+    st = Engine(RunPaths(flower_home, rid)).state()
     assert st.generation == 0 and st.gates[res["data"]["gate"]].status == "open"
     assert "extra" not in st.graph().nodes
 
@@ -196,18 +196,18 @@ def test_garbage_lines_and_notifications_are_ignored():
     assert p.returncode == 0 and set(out) == {5}
 
 
-def test_read_only_status_does_not_advance_the_run(fake, ff_home):
-    from forgeflow.engine import create_run
+def test_read_only_status_does_not_advance_the_run(fake, flower_home):
+    from flower.engine import create_run
     fa = fake("script", [{"answer": {"summary": "a"}}], name="a")
     fb = fake("script", [{"answer": {"summary": "b"}}], name="b")
     eng = create_run(make_plan([agent_node("a", fa.harness()), agent_node("b", fb.harness(), needs=["a"])],
-                               pid="mcp-adv"), {}, root=ff_home, approve=True)
+                               pid="mcp-adv"), {}, root=flower_home, approve=True)
     eng.tick()  # starts a
     exit_file = eng.paths.attempt_dir("a", 1) / "proc" / "exit.json"
     deadline = time.time() + 20
     while not exit_file.exists() and time.time() < deadline:
         time.sleep(0.1)
     before = len(eng.journal.read())
-    out, _ = mcp([INIT, call(1, "forgeflow_status", run=eng.paths.run_id)], read_only=True)
+    out, _ = mcp([INIT, call(1, "flower_status", run=eng.paths.run_id)], read_only=True)
     assert not events(eng, "node.started", "b"), "read-only MCP status started node b"
     assert len(eng.journal.read()) == before

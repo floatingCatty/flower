@@ -1,6 +1,6 @@
 # Benchmark: Si DOS and Fermi level (ABACUS)
 
-A real-science test of forgeflow. ABACUS computes the DOS of bulk diamond Si, and the Fermi level is
+A real-science test of flower. ABACUS computes the DOS of bulk diamond Si, and the Fermi level is
 obtained by solving
 
     ∫ g(E) f_FD(E; E_F, T) dE = N_e
@@ -20,8 +20,8 @@ on that DOS.
 
 ```bash
 cd benchmark
-../.venv/bin/forgeflow run si-dos-fermi/plan.yaml            # review the plan, approve, watch it run
-../.venv/bin/forgeflow status                                # or: forgeflow ui
+../.venv/bin/flower run si-dos-fermi/plan.yaml            # review the plan, approve, watch it run
+../.venv/bin/flower status                                # or: flower ui
 ```
 
 Everything except `review` takes about 1 minute, running 8 MPI ranks per ABACUS step. The paths to the
@@ -40,7 +40,8 @@ ABACUS conda env and the `PP_ORB` directory are plan inputs.
   A cumulative-count tolerance is not enough here: at 24³, the weight of the Γ point (4×10⁻⁴) falls
   below such a tolerance.
 
-## Result (run `si-dos-fermi-20261003-123819-5a60`)
+## Result (run `si-dos-fermi-20261003-133355-ad9d`, `-i agent_review=false`, succeeded in 40 s; the first
+run, made before the rename, gave identical numbers)
 
 | k-mesh | E_F (FD, 300 K) | E_F (smeared DOS) | ABACUS E_F | VBM | CBM | gap | E_F − midgap |
 |---|---|---|---|---|---|---|---|
@@ -60,7 +61,7 @@ The ±5 meV scatter comes from the 0.01 eV DOS bins, which move the CBM edge by 
   plane-wave PBE. This is consistent with the SCF eigenvalues (VBM 6.398 eV at Γ, CBM 7.277 eV), and is
   typical of a small LCAO basis. The CBM bin edge depends on the k-mesh.
 
-## What this showed about forgeflow
+## What this showed about flower
 
 Worked:
 * function, shell and foreach nodes, including a foreach over a previous foreach's `outputs.items`;
@@ -82,5 +83,5 @@ Issues found:
    `resume` takes `--detach`, so the flags are inconsistent.
 4. **The `review` agent failed with `auth` (401).** The standalone `claude` CLI on this machine has an
    expired OAuth token, and a manual `claude -p` with the same scrubbed environment fails the same way.
-   This is an environment problem, not forgeflow, which classified it correctly as `auth`. To fix it,
-   run `claude` in a terminal, use `/login`, then `forgeflow rerun RUN review`.
+   This is an environment problem, not flower, which classified it correctly as `auth`. To fix it,
+   run `claude` in a terminal, use `/login`, then `flower rerun RUN review`.

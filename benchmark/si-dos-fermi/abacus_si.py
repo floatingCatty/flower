@@ -1,7 +1,7 @@
 r"""ABACUS helpers for the Si DOS / Fermi-level benchmark.
 
 Used two ways:
-  * as a module by forgeflow ``function`` nodes (``call: abacus_si:<fn>``);
+  * as a module by flower ``function`` nodes (``call: abacus_si:<fn>``);
   * as a CLI by ``shell`` nodes (``python abacus_si.py write-input|parse ...``).
 
 Runs under the ABACUS conda env Python (numpy, scipy, matplotlib).

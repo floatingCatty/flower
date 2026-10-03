@@ -9,7 +9,7 @@ import time
 import pytest
 
 from core_helpers import drive, events, out_json, tick_until
-from forgeflow.util import parse_iso
+from flower.util import parse_iso
 
 
 def sh(id_, run, **kw):
@@ -30,9 +30,9 @@ def counter(path) -> str:
 def test_diamond_dag_order_and_outputs(mkplan, start):
     plan = mkplan([
         sh("a", out_json({"x": 2})),
-        sh("b", 'echo "{\\"y\\": $(( ${a.outputs.x} * 10 ))}" > "$FF_OUTPUTS"'),
-        sh("c", 'echo "{\\"z\\": $(( ${a.outputs.x} + 1 ))}" > "$FF_OUTPUTS"'),
-        sh("d", 'echo "{\\"sum\\": $(( ${b.outputs.y} + ${c.outputs.z} ))}" > "$FF_OUTPUTS"'),
+        sh("b", 'echo "{\\"y\\": $(( ${a.outputs.x} * 10 ))}" > "$FLOWER_OUTPUTS"'),
+        sh("c", 'echo "{\\"z\\": $(( ${a.outputs.x} + 1 ))}" > "$FLOWER_OUTPUTS"'),
+        sh("d", 'echo "{\\"sum\\": $(( ${b.outputs.y} + ${c.outputs.z} ))}" > "$FLOWER_OUTPUTS"'),
     ])
     eng = start(plan)
     rep = drive(eng)
@@ -53,7 +53,7 @@ def test_diamond_dag_order_and_outputs(mkplan, start):
 
 
 def test_run_inputs_and_env(mkplan, start, tmp_path):
-    plan = mkplan([sh("a", 'echo "{\\"v\\": \\"$FF_IN_NAME-${inputs.n}-$FF_NODE_ID-$FF_ATTEMPT\\"}" > "$FF_OUTPUTS"',
+    plan = mkplan([sh("a", 'echo "{\\"v\\": \\"$FLOWER_IN_NAME-${inputs.n}-$FLOWER_NODE_ID-$FLOWER_ATTEMPT\\"}" > "$FLOWER_OUTPUTS"',
                       inputs={"name": "${inputs.name}"})],
                   inputs={"name": {"type": "string"}, "n": {"type": "integer", "default": 4}})
     eng = start(plan, {"name": "si"})
@@ -62,7 +62,7 @@ def test_run_inputs_and_env(mkplan, start, tmp_path):
 
 
 def test_missing_and_unknown_inputs_rejected(mkplan, start):
-    from forgeflow.plan import PlanInvalid
+    from flower.plan import PlanInvalid
     plan = mkplan([sh("a", "true")], inputs={"name": {"type": "string"}, "n": {"type": "integer"}})
     with pytest.raises(PlanInvalid) as ei:
         start(plan, {"n": "notanint", "zzz": 1})
@@ -89,7 +89,7 @@ def test_nonzero_exit_fails_run_and_skips_downstream(mkplan, start):
 
 
 def test_bad_outputs_json_is_contract_failure(mkplan, start):
-    eng = start(mkplan([sh("a", "echo 'not json' > \"$FF_OUTPUTS\"")]))
+    eng = start(mkplan([sh("a", "echo 'not json' > \"$FLOWER_OUTPUTS\"")]))
     drive(eng)
     assert eng.state().nodes["a"].last.error["error_class"] == "contract"
 
@@ -246,7 +246,7 @@ def test_concurrency_limit(mkplan, start, tmp_path):
 def test_foreach_expansion_and_collector(mkplan, start):
     eng = start(mkplan([
         sh("gen", out_json({"items": [1, 2, 3]})),
-        sh("sq", 'echo "{\\"v\\": $(( ${item} * ${item} )), \\"i\\": ${index}}" > "$FF_OUTPUTS"',
+        sh("sq", 'echo "{\\"v\\": $(( ${item} * ${item} )), \\"i\\": ${index}}" > "$FLOWER_OUTPUTS"',
            foreach="${gen.outputs.items}"),
         sh("total", 'echo "${sq.outputs.items}" > all.txt; echo "${sq.outputs.count}"'),
     ]))
@@ -265,9 +265,9 @@ def test_foreach_expansion_and_collector(mkplan, start):
 
 def test_foreach_literal_list_and_dict(mkplan, start):
     eng = start(mkplan([
-        sh("lit", 'echo "{\\"x\\": \\"${item.name}\\"}" > "$FF_OUTPUTS"', foreach=[{"name": "a"}, {"name": "b"}]),
+        sh("lit", 'echo "{\\"x\\": \\"${item.name}\\"}" > "$FLOWER_OUTPUTS"', foreach=[{"name": "a"}, {"name": "b"}]),
         {"id": "src", "kind": "shell", "run": out_json({"m": {"k1": 1, "k2": 2}})},
-        sh("kv", 'echo "{\\"k\\": \\"${item.key}\\", \\"v\\": ${item.value}}" > "$FF_OUTPUTS"',
+        sh("kv", 'echo "{\\"k\\": \\"${item.key}\\", \\"v\\": ${item.value}}" > "$FLOWER_OUTPUTS"',
            foreach="${src.outputs.m}"),
     ]))
     drive(eng)
@@ -291,7 +291,7 @@ def test_foreach_non_list_fails(mkplan, start):
 
 
 def test_foreach_with_failing_child(mkplan, start):
-    run = 'if [ "${item}" = "2" ]; then exit 4; fi; echo "{\\"v\\": ${item}}" > "$FF_OUTPUTS"'
+    run = 'if [ "${item}" = "2" ]; then exit 4; fi; echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"'
     eng = start(mkplan([
         sh("strict", run, foreach=[1, 2, 3]),
         sh("lenient", run, foreach=[1, 2, 3], on_failure="continue"),
@@ -315,8 +315,8 @@ def test_foreach_with_failing_child(mkplan, start):
 
 def _two_foreach(mkplan, start):
     eng = start(mkplan([
-        sh("f1", 'echo "{\\"v\\": ${item}}" > "$FF_OUTPUTS"', foreach=[1, 2]),
-        sh("f2", 'echo "{\\"v\\": ${item}}" > "$FF_OUTPUTS"', foreach=[10, 20, 30]),
+        sh("f1", 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', foreach=[1, 2]),
+        sh("f2", 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', foreach=[10, 20, 30]),
     ]))
     rep = drive(eng)
     return eng, rep
@@ -366,17 +366,17 @@ def test_gate_approve(mkplan, start):
 
 
 def test_gate_answer_validation(mkplan, start):
-    from forgeflow.util import ForgeflowError
+    from flower.util import FlowerError
     eng = start(mkplan([{"id": "g", "kind": "gate"}]))
     drive(eng)
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.answer("g", "maybe")
     assert ei.value.code == "bad_decision"
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.answer("nosuch", "approve")
     assert ei.value.code == "gate_not_found"
     eng.answer("g", "approve")
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.answer("g#a1", "approve")
     assert ei.value.code == "gate_closed"
 
@@ -410,7 +410,7 @@ def test_gate_reject_without_on_reject_fails(mkplan, start):
 
 def _loop_plan(mkplan, tmp_path, max_attempts=2, deterministic=False):
     cnt = tmp_path / "draft.cnt"
-    body = "echo draft" if deterministic else counter(cnt) + '\necho "{\\"version\\": $C}" > "$FF_OUTPUTS"'
+    body = "echo draft" if deterministic else counter(cnt) + '\necho "{\\"version\\": $C}" > "$FLOWER_OUTPUTS"'
     return mkplan([
         sh("draft", body),
         {"id": "review", "kind": "gate", "message": "review draft", "needs": ["draft"],
@@ -471,7 +471,7 @@ def test_gate_feedback_reaches_rerun_target(mkplan, start, tmp_path):
     """The rework loop: the re-run node sees the reviewer's text as ${feedback} (empty on the first pass)."""
     log = tmp_path / "feedback.log"
     eng = start(mkplan([
-        sh("draft", f'echo "fb=[${{feedback}}]" >> "{log}"; echo "{{\\"n\\": $(wc -l < "{log}")}}" > "$FF_OUTPUTS"'),
+        sh("draft", f'echo "fb=[${{feedback}}]" >> "{log}"; echo "{{\\"n\\": $(wc -l < "{log}")}}" > "$FLOWER_OUTPUTS"'),
         {"id": "review", "kind": "gate", "needs": ["draft"], "on_reject": {"rerun": ["draft"], "max_attempts": 3}},
     ]))
     drive(eng)
@@ -483,7 +483,7 @@ def test_gate_feedback_reaches_rerun_target(mkplan, start, tmp_path):
     assert drive(eng).status == "succeeded"
     assert log.read_text().splitlines() == ["fb=[]", "fb=[add error bars]", "fb=[units!]"]
     # ${feedback} creates no dependency edge (otherwise draft -> review -> draft would be a cycle)
-    from forgeflow import plan as planmod
+    from flower import plan as planmod
     assert planmod.Graph(eng.state().plan).needs["draft"] == []
 
 
@@ -504,7 +504,7 @@ def test_custom_gate_decisions(mkplan, start):
 def test_retry_with_exponential_backoff(mkplan, start, tmp_path):
     cnt = tmp_path / "retry.cnt"
     eng = start(mkplan([sh("flaky", counter(cnt) + '\nif [ "$C" -lt 3 ]; then echo "fail $C" >&2; exit 1; fi\n'
-                                    + 'echo "{\\"tries\\": $C}" > "$FF_OUTPUTS"',
+                                    + 'echo "{\\"tries\\": $C}" > "$FLOWER_OUTPUTS"',
                            retry={"max_attempts": 3, "on": ["exit_nonzero"], "backoff": "0.5s"})]))
     t0 = time.time()
     rep = drive(eng)
@@ -640,7 +640,7 @@ def test_concurrent_tick_reports_busy(mkplan, start):
     eng = start(mkplan([sh("a", "true")]))
     with eng.lock() as got:
         assert got
-        from forgeflow.engine import Engine
+        from flower.engine import Engine
         rep = Engine(eng.paths).tick()
         assert rep.busy
     assert not eng.tick().busy

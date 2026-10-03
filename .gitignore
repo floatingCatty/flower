@@ -15,5 +15,5 @@ node_modules/
 # Local scratch runs (fake Slurm, demo working dir); docs/demo/ is the published record and is kept
 /demo/
 
-# forgeflow run directories (journals, node work dirs, ABACUS outputs)
-.forgeflow/
+# flower run directories (journals, node work dirs, ABACUS outputs)
+.flower/

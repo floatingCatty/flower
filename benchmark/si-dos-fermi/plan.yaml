@@ -1,4 +1,4 @@
-forgeflow: 1
+flower: 1
 id: si-dos-fermi
 title: Silicon DOS and Fermi level from occupation-function integration (ABACUS)
 description: |
@@ -53,7 +53,7 @@ nodes:
       cp ${prepare.outputs.stru} STRU
       $PY ${plan.dir}/abacus_si.py write-input scf ${inputs.scf_kmesh} ${prepare.outputs.pp_dir}
       ${inputs.abacus_env}/bin/mpirun -np ${inputs.np} ${inputs.abacus_env}/bin/abacus > abacus.out 2>&1
-      $PY ${plan.dir}/abacus_si.py parse OUT.si scf > "$FF_OUTPUTS"
+      $PY ${plan.dir}/abacus_si.py parse OUT.si scf > "$FLOWER_OUTPUTS"
     outputs: {out_dir: string, ef_abacus_eV: number, etot_eV: number, converged: boolean, nelec_abacus: number}
     files: {log: OUT.si/running_scf.log}
 
@@ -69,7 +69,7 @@ nodes:
       $PY ${plan.dir}/abacus_si.py write-input nscf ${item} ${prepare.outputs.pp_dir} ${scf.outputs.out_dir}
       ${inputs.abacus_env}/bin/mpirun -np ${inputs.np} ${inputs.abacus_env}/bin/abacus > abacus.out 2>&1
       $PY ${plan.dir}/abacus_si.py parse OUT.si nscf > out.json
-      $PY -c "import json,sys; d=json.load(open('out.json')); d['kmesh']=${item}; json.dump(d, open(sys.argv[1],'w'))" "$FF_OUTPUTS"
+      $PY -c "import json,sys; d=json.load(open('out.json')); d['kmesh']=${item}; json.dump(d, open(sys.argv[1],'w'))" "$FLOWER_OUTPUTS"
     outputs: {kmesh: integer, out_dir: string, ef_abacus_eV: number, nk_ibz: integer}
     files: {dos: OUT.si/DOS1_smearing.dat, dos_raw: OUT.si/DOS1}
 

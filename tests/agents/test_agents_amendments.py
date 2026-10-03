@@ -6,7 +6,7 @@ import pytest
 from agentkit import agent_node, events, last_attempt, make_plan
 
 
-def shell(nid, needs=None, run="echo ran-$FF_NODE_ID"):
+def shell(nid, needs=None, run="echo ran-$FLOWER_NODE_ID"):
     n = {"id": nid, "kind": "shell", "run": run}
     if needs:
         n["needs"] = needs
@@ -152,7 +152,7 @@ def test_invalid_amendment_is_rejected_but_node_succeeds(fake, run_plan, ops):
     assert st.nodes["scout"].status == "succeeded"
     assert st.status == "succeeded", st.status_reason
     (am,) = amendments(st)
-    assert am.status == "rejected" and am.decided_by == "forgeflow"
+    assert am.status == "rejected" and am.decided_by == "flower"
     rej = events(eng, "plan.amendment.rejected")[-1]["payload"]
     assert rej["issues"], "rejection must carry the validation issues"
     assert st.generation == 0 and not st.open_gates()

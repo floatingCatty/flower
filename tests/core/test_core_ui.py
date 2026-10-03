@@ -1,4 +1,4 @@
-"""forgeflow ui: auth, read API, actions through the engine, file-serving guard."""
+"""flower ui: auth, read API, actions through the engine, file-serving guard."""
 from __future__ import annotations
 
 import json
@@ -8,16 +8,16 @@ import urllib.request
 
 import pytest
 
-from forgeflow.engine import create_run
-from forgeflow.ui import serve
+from flower.engine import create_run
+from flower.ui import serve
 
 from core_helpers import drive
 
 
 @pytest.fixture
 def ui_server(home):
-    plan = {"forgeflow": 1, "id": "ui", "title": "UI test",
-            "nodes": [{"id": "a", "kind": "shell", "run": 'echo hi > out.txt; echo "{\\"v\\": 1}" > "$FF_OUTPUTS"',
+    plan = {"flower": 1, "id": "ui", "title": "UI test",
+            "nodes": [{"id": "a", "kind": "shell", "run": 'echo hi > out.txt; echo "{\\"v\\": 1}" > "$FLOWER_OUTPUTS"',
                        "files": {"out": "out.txt"}, "outputs": {"v": "integer"}},
                       {"id": "g", "kind": "gate", "needs": ["a"], "message": "v is ${a.outputs.v}. ok?"},
                       {"id": "w", "kind": "wait", "signal": "go"}]}
@@ -39,14 +39,14 @@ def ui_server(home):
 
 
 def get(url, token="tok"):
-    req = urllib.request.Request(url, headers={"X-Forgeflow-Token": token} if token else {})
+    req = urllib.request.Request(url, headers={"X-Flower-Token": token} if token else {})
     with urllib.request.urlopen(req, timeout=10) as r:
         return r.status, r.read()
 
 
 def post(url, body, token="tok"):
     req = urllib.request.Request(url, data=json.dumps(body).encode(), method="POST",
-                                 headers={"Content-Type": "application/json", **({"X-Forgeflow-Token": token} if token else {})})
+                                 headers={"Content-Type": "application/json", **({"X-Flower-Token": token} if token else {})})
     with urllib.request.urlopen(req, timeout=20) as r:
         return json.loads(r.read())
 
@@ -58,7 +58,7 @@ def test_token_required_for_page_and_api(ui_server):
             get(base + path, token=None)
         assert e.value.code == 403
     status, body = get(base + "/?token=tok", token=None)
-    assert status == 200 and b"forgeflow" in body and b"tok" in body
+    assert status == 200 and b"flower" in body and b"tok" in body
     with pytest.raises(urllib.error.HTTPError) as e:
         post(f"{base}/api/runs/{eng.paths.run_id}/note", {"text": "x"}, token="wrong")
     assert e.value.code == 403

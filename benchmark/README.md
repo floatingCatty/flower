@@ -1,6 +1,6 @@
-# forgeflow benchmarks
+# flower benchmarks
 
-Real-science workflows used to test forgeflow end to end on this machine. The `.forgeflow/` project
+Real-science workflows used to test flower end to end on this machine. The `.flower/` project
 in this folder holds the runs and is gitignored.
 
 | benchmark | what | status |

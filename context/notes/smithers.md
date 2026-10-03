@@ -1,4 +1,4 @@
-# Smithers deep-read (source level) — design input for forgeflow
+# Smithers deep-read (source level) — design input for flower
 
 Status: COMPLETE. §1 (data model) was read from source; §§2–7 below are superseded by Appendices A–D at the end of this file, which are source-level deep dives. §8 recommendation stands: borrow designs + small data-shape ports, do not build on Smithers.
 
@@ -11,7 +11,7 @@ Clones: `context/repos/smithers-0.x` (v0.35.0, commit 584f479) and `context/repo
 ### Storage engine
 - Persistence uses SQLite through `bun:sqlite` and Drizzle, with PGlite/Postgres as alternatives. `packages/db/src/dialect.js` is the only SQLite↔PG seam (`packages/db/src/README.md`).
 - Pragmas are set in `packages/db/src/openDurableSqliteDatabase.js:19-23`: `busy_timeout=30000`, `journal_mode=WAL`, `synchronous=NORMAL`, `foreign_keys=ON`. Writes are retried on `SQLITE_BUSY|PROTOCOL|IOERR` (`isRetryableSqliteWriteError.js`, `withSqliteWriteRetryEffect.js`).
-  - **forgeflow caveat:** WAL on NFS/Lustre home directories is unsafe. HPC is exactly where forgeflow runs, which supports the file-first JSONL choice.
+  - **flower caveat:** WAL on NFS/Lustre home directories is unsafe. HPC is exactly where flower runs, which supports the file-first JSONL choice.
 - Default store files:
   - the run DB is `smithers.db` in the project, which `init` adds to `.gitignore` (`apps/cli/src/initCeremony.js:110`)
   - the event log is `.smithers/executions/<runId>/logs/stream.ndjson` (`docs/llms-events.txt`).
@@ -38,7 +38,7 @@ Clones: `context/repos/smithers-0.x` (v0.35.0, commit 584f479) and `context/repo
 | `_smithers_time_travel_audit` | autoinc | from/to_frame_no, caller, result, duration_ms |
 | others | | sandboxes (heartbeat), node_diffs (per-node VCS diff cache), cron, docs, memory_*, scorers, workspace_checkpoints/states, ralph (loops), alerts, integration_* |
 
-`_smithers_steers.js` has a useful comment: the steers table is only the *pre-consumption inbox*. The consumed text is copied into the attempt's persisted `agentConversation`, so "replay reproduces the injected turn from the attempt metadata, not from this (mutable) table." forgeflow should follow the same rule: anything an agent saw must be in the immutable attempt record.
+`_smithers_steers.js` has a useful comment: the steers table is only the *pre-consumption inbox*. The consumed text is copied into the attempt's persisted `agentConversation`, so "replay reproduces the injected turn from the attempt metadata, not from this (mutable) table." flower should follow the same rule: anything an agent saw must be in the immutable attempt record.
 
 ### User output tables
 - Each task's Zod output schema becomes a real SQL table, `CREATE TABLE IF NOT EXISTS` with fixed prefix columns `run_id, node_id, iteration` plus one column per field (`packages/db/src/zodToCreateTableSQL.js`).
@@ -58,7 +58,7 @@ A single SQLite transaction does all of the following (`packages/engine/src/engi
 
 Only after commit is `NodeFinished` emitted with persist. The invariant is stated at `engine.js:9846-9856`: "an output row and its node's 'finished' state commit in one transaction … so a persisted snapshot could never record a finished node whose in-schema output row is absent". Before committing, a late success is refused if the watchdog or abort has already fired (`engine.js:8459-8463`: "Never let a late successful value cross that durable terminal boundary").
 
-→ **forgeflow equivalent:** for each node, append one `node.finished` JSONL record that embeds or points to the output artifact digest, after an fsync of the artifact. The owner/attempt token goes in the record, and replay ignores a `finished` record whose attempt was already terminal.
+→ **flower equivalent:** for each node, append one `node.finished` JSONL record that embeds or points to the output artifact digest, after an fsync of the artifact. The owner/attempt token goes in the record, and replay ignores a `finished` record whose attempt was already terminal.
 
 ### Step cache key (opt-in, `engine.js:5747-5818`)
 `sha256(JSON.stringify(cacheBase))`, where `cacheBase` is one of:
@@ -73,7 +73,7 @@ Only after commit is `NodeFinished` emitted with persist. The invariant is state
   - A `running` run with a heartbeat older than 30 s (`RUN_STATE_HEARTBEAT_STALE_MS`) is `stale`.
   - It is `orphaned` only if the owner is provably dead. Owner ids look like `pid:<pid>@<host>:<session>` (`packages/db/src/runtime-owner.js`), and only same-host PIDs are probed. An unknown owner shape stays `stale` "because its death cannot be proven" (`runState/README.md`).
   - A `waiting-timer` run is flagged `timer-overdue` only after a 30 s grace period (`RUN_STATE_TIMER_OVERDUE_GRACE_MS.js`).
-  - **For forgeflow:** a host-scoped owner id matters on HPC, where login nodes rotate.
+  - **For flower:** a host-scoped owner id matters on HPC, where login nodes rotate.
 - **Task/node state** (`packages/scheduler/src/TaskState.ts`): `pending | waiting-approval | waiting-event | waiting-timer | waiting-quota | waiting-bound | bound-stale | in-progress | finished | failed | stalled | cancelled | skipped`. Attempt rows use the same vocabulary. Non-terminal attempt states are `in-progress` and the `waiting-*` states (`packages/engine/src/cancel-subtree.js:389`).
 - **Frames:** each re-render of the JSX tree commits a frame, stored as a keyframe every 50 frames (`FRAME_KEYFRAME_INTERVAL`) plus JSON-path deltas with ops `set|insert|remove` (`packages/db/src/frame-codec/encodeFrameDelta.js:136-170`). `FrameCommitted{frameNo, xmlHash, trigger{reason,nodeId,iteration}}` gives time travel its addressable points.
 
@@ -83,7 +83,7 @@ Only after commit is `NodeFinished` emitted with persist. The invariant is state
   - `emitEventWithPersist` writes a DB row and appends to NDJSON
   - `emitEventQueued` serializes persistence behind `persistTail`.
 - `seq` is monotonic per run (`insertEventWithNextSeq`). Each NDJSON line is `JSON.stringify(event)` with `correlation{runId,nodeId,iteration,attempt}` attached (`events.js:218-245`), written with plain `appendFile` and no fsync.
-- **Important: in 0.x the event log is NOT the source of truth.** State lives in the mutable `_nodes/_attempts/_outputs` tables, and events/NDJSON are observability. forgeflow inverts this (log = truth), so it cannot copy Smithers' recovery logic wholesale.
+- **Important: in 0.x the event log is NOT the source of truth.** State lives in the mutable `_nodes/_attempts/_outputs` tables, and events/NDJSON are observability. flower inverts this (log = truth), so it cannot copy Smithers' recovery logic wholesale.
 - Common fields (`docs/llms-events.txt`): `{type, runId, timestampMs}`. Node-scoped events add `nodeId, iteration`; attempt-scoped events add `attempt`. The full union is in `apps/observability/src/SmithersEvent.ts` (843 lines). Categories:
   - run: `RunStarted, RunStatusChanged{status}, RunAutoResumed{lastHeartbeatAtMs, staleDurationMs}, RunAutoResumeSkipped{reason: pid-alive|missing-workflow|rate-limited}, RunFinished{failedChildren?}, RunFailed, RunCancelled, RunContinuedAsNew, RunHijackRequested, RunHijacked{engine, mode: native-cli|conversation, resume, cwd}, RetryTaskStarted{resetDependents, resetNodes[]}, RetryTaskFinished, RunForked{parentRunId, parentFrameNo, branchLabel}, ReplayStarted{parentRunId, parentFrameNo, restoreVcs}`
   - frame: `FrameCommitted`
@@ -96,7 +96,7 @@ Only after commit is `NodeFinished` emitted with persist. The invariant is state
   - workflow (hot reload): `WorkflowReloadDetected/Reloaded{generation, changedFiles}/ReloadFailed/ReloadUnsafe`
   - revert / time-travel: `EffectRevert*, SideEffectBoundaryCrossed{report{blocking, revertible, warnings}}`
   - others: tool-call, sandbox, scorer, memory, supervisor (`SupervisorStarted, SupervisorPollCompleted`)
-- **Harness-neutral agent event** (`packages/agents/src/BaseCliAgent/AgentCliEvent.ts`). This is worth copying verbatim as forgeflow's normalized harness stream:
+- **Harness-neutral agent event** (`packages/agents/src/BaseCliAgent/AgentCliEvent.ts`). This is worth copying verbatim as flower's normalized harness stream:
   - `{type:"started", engine, title, resume?}`
   - `{type:"action", engine, phase: started|updated|completed, entryType?: thought|message, action{id, kind: turn|command|tool|file_change|web_search|todo_list|reasoning|warning|note, title, detail}, message?, ok?, level?}`
   - `{type:"completed", engine, ok, answer?, error?, resume?(session id), usage?}`
@@ -161,7 +161,7 @@ Established so far:
   - It has a single maintainer and is pivoting to a hosted product.
   - 0.x is end-of-line, and 1.0 is unreleased and incompatible.
   - It uses SQLite WAL, which is unsafe on shared HPC filesystems.
-  - Its truth is in mutable tables, whereas forgeflow wants log-as-truth.
+  - Its truth is in mutable tables, whereas flower wants log-as-truth.
 - **What to borrow:**
   - the state-enum vocabulary
   - (node, iteration, attempt) keying
@@ -183,7 +183,7 @@ Established so far:
 
 ### Smithers v0.35.0: how it runs headless CLI agents (Claude Code, Codex, Pi)
 
-Repo root: `/homes/nessa/zhanghao/dev/Eleforge/forgeflow/context/repos/smithers-0.x/packages/`. Paths below are relative to `packages/`. I modified no files.
+Repo root: `/homes/nessa/zhanghao/dev/Eleforge/flower/context/repos/smithers-0.x/packages/`. Paths below are relative to `packages/`. I modified no files.
 
 ---
 
@@ -537,7 +537,7 @@ These are correction calls, NOT task retries. One shared budget covers both kind
 
 ### Smithers v0.35.0: durability, control verbs and the dynamic graph (findings for a Python HPC workflow CLI)
 
-Root: `forgeflow/context/repos/smithers-0.x/`. All paths below are relative to it. I did not modify any files.
+Root: `flower/context/repos/smithers-0.x/`. All paths below are relative to it. I did not modify any files.
 
 **Five findings that matter most for your design:**
 1. **Nothing sleeps while it waits.** On any external wait, the engine writes `waiting-*`, clears the owner and heartbeat, and the process exits with code 3. A separate poller (`supervise` or the gateway sweep) reads the deadlines stored in the DB and relaunches `up --resume`.
@@ -835,7 +835,7 @@ Root: `forgeflow/context/repos/smithers-0.x/`. All paths below are relative to i
 
 ### Smithers 1.0.0-rc: control, plan, journal, time-travel and durable external work
 
-All paths are relative to `forgeflow/context/repos/smithers-main/`. `P=packages/smithers`, `F=packages/smithers/flows`. Everything here was read directly. Two status points first:
+All paths are relative to `flower/context/repos/smithers-main/`. `P=packages/smithers`, `F=packages/smithers/flows`. Everything here was read directly. Two status points first:
 
 - **Most of `docs/design/durable-external-work.md` is already implemented in this checkout.** I found `F/flow/src/ExternalJob.ts`, `F/sandbox/src/Sandbox/job.ts`, `Consensus.reconfirm`, the `lease-reconfirmed` decision, and the `keyed` attempt meta used in `canRetryReleased`. Section 7 compares the code with the doc's API sketch.
 - **Growing a plan mid-run does not need re-approval.** Approval binds to the generation-0 `baseDigest`. Appends move only `digest` and are journaled; nothing re-asks. Details in section 2.
@@ -1371,8 +1371,8 @@ The doc has no formal open-questions section. Its open items are:
 ### Smithers research report: 0.x (v0.35.0) vs main (1.0.0-rc.1)
 
 Path roots used below:
-- `0x/` = `/homes/nessa/zhanghao/dev/Eleforge/forgeflow/context/repos/smithers-0.x`
-- `main/` = `/homes/nessa/zhanghao/dev/Eleforge/forgeflow/context/repos/smithers-main`
+- `0x/` = `/homes/nessa/zhanghao/dev/Eleforge/flower/context/repos/smithers-0.x`
+- `main/` = `/homes/nessa/zhanghao/dev/Eleforge/flower/context/repos/smithers-main`
 
 Clone heads: 0.x is at `584f479` (2026-08-17). main is at `96aed3b0` (2026-10-02).
 

@@ -10,13 +10,13 @@ from pathlib import Path
 
 import pytest
 
-import forgeflow.executors.job as jobmod
-from forgeflow.engine import Engine
-from forgeflow.executors.job import JobExecutor
-from forgeflow.hpc import slurm
-from forgeflow.hpc.transport import CmdResult
+import flower.executors.job as jobmod
+from flower.engine import Engine
+from flower.executors.job import JobExecutor
+from flower.hpc import slurm
+from flower.hpc.transport import CmdResult
 
-OUT = 'printf \'{"x": 1}\' > "$FF_OUTPUTS"'
+OUT = 'printf \'{"x": 1}\' > "$FLOWER_OUTPUTS"'
 SSH_DOWN = 'echo "ssh: connect to host hpc port 22: Connection timed out" >&2; exit 255'
 SLURMCTLD_DOWN = 'echo "slurm_load_jobs error: Unable to contact slurm controller (connect failure)" >&2; exit 1'
 
@@ -36,8 +36,8 @@ def _crash_after_sbatch(ff, monkeypatch, eng, *, leave_jobid=True):
                                         jobmod._cmds(cluster)))
         assert slurm.parse_submit(r.out) and slurm.parse_submit(r.out)[1] == "submitted", (r.out, r.err)
         if not leave_jobid:  # crash between `sbatch > jobid.tmp` and `mv jobid.tmp jobid`
-            ff_dir = Path(ctx.job["job_dir"]) / ".forgeflow"
-            (ff_dir / "jobid").rename(ff_dir / "jobid.tmp")
+            flower_dir = Path(ctx.job["job_dir"]) / ".flower"
+            (flower_dir / "jobid").rename(flower_dir / "jobid.tmp")
         raise KeyboardInterrupt("simulated crash between sbatch and job.submitted")
 
     monkeypatch.setattr(JobExecutor, "_submit", crashing)
@@ -98,7 +98,7 @@ def test_crash_before_jobid_written_with_squeue_down_does_not_duplicate(ff, monk
     ff.restore_cmd("squeue")
     monkeypatch.setenv("FAKESLURM_SACCT_LAG", "0")
     assert len(ff.jobs()) == 1, f"duplicate submission: {[(j['id'], j['name']) for j in ff.jobs()]}"
-    # (today the duplicate exits 97, forgeflow tracks it and fails the node as exit_nonzero while the
+    # (today the duplicate exits 97, flower tracks it and fails the node as exit_nonzero while the
     #  original job is still RUNNING, orphaned)
     st = ff.drive(eng, timeout=30)
     assert st.status == "succeeded", ff.why(eng)
@@ -175,7 +175,7 @@ def test_duplicate_copy_of_attempt_exits_97(ff):
     assert (jd / f"slurm-{dup}.err").read_text().strip().endswith("another job already owns this attempt; exiting")
     assert [j for j in ff.jobs() if j["id"] == dup][0]["exit_code"] == 97
     assert (jd / "runs.log").read_text().count("run") == 1   # payload ran exactly once
-    assert (jd / ".forgeflow" / "owner" / "id").read_text().strip() == st.nodes["a"].result.outputs["job_id"]
+    assert (jd / ".flower" / "owner" / "id").read_text().strip() == st.nodes["a"].result.outputs["job_id"]
 
 
 def test_rerun_makes_a_new_attempt_and_key(ff):
@@ -211,7 +211,7 @@ def test_lost_after_grace_and_five_misses_then_retried(ff, monkeypatch):
     monkeypatch.setenv("FAKESLURM_MINJOBAGE", "0")
     monkeypatch.setenv("FAKESLURM_SACCT_LAG", "1000")
     ff.faults([{"match": "-a1$", "state": "NODE_FAIL", "after_s": 0.2, "times": 1}])  # dies without writing ec
-    script = 'if [ "$FF_ATTEMPT" = 1 ]; then sleep 5; fi\n' + OUT
+    script = 'if [ "$FLOWER_ATTEMPT" = 1 ]; then sleep 5; fi\n' + OUT
     eng = ff.run(ff.plan([ff.job("a", script, retry={"max_attempts": 2, "backoff": "0s"})],
                          clusters={"c": ff.cluster(lost_after="3s")}))
     st = ff.drive(eng, timeout=40)
@@ -385,7 +385,7 @@ def test_relative_stage_in_resolves_against_plan_dir(ff, monkeypatch, tmp_path):
     (plan_dir / "POSCAR").write_text("STRUCT")
     monkeypatch.chdir(plan_dir)
     eng = ff.run(ff.plan([ff.job("a", "cat POSCAR\n" + OUT, stage_in=["POSCAR"])]))
-    monkeypatch.chdir(tmp_path)  # e.g. `forgeflow tick --all` from cron
+    monkeypatch.chdir(tmp_path)  # e.g. `flower tick --all` from cron
     st = ff.drive(eng, timeout=30)
     assert st.status == "succeeded", ff.why(eng)
 

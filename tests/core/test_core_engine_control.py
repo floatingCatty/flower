@@ -7,8 +7,8 @@ import time
 import pytest
 
 from core_helpers import drive, events, out_json, pid_alive, tick_until, wait_for
-from forgeflow.plan import PlanInvalid
-from forgeflow.util import ForgeflowError
+from flower.plan import PlanInvalid
+from flower.util import FlowerError
 
 
 def sh(id_, run, **kw):
@@ -60,13 +60,13 @@ def test_cancel_pending_node(mkplan, start):
 def test_cancel_errors(mkplan, start):
     eng = start(mkplan([sh("a", "true")]))
     drive(eng)
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.cancel(node="a")
     assert ei.value.code == "node_finished"
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.cancel(node="zz")
     assert ei.value.code == "node_not_found"
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.cancel()
     assert ei.value.code == "run_finished"
 
@@ -116,7 +116,7 @@ def test_rerun_after_run_cancel_does_not_hang(mkplan, start):
     assert eng.state().status == "cancelled"
     try:
         eng.rerun("a")
-    except ForgeflowError:
+    except FlowerError:
         return  # refusing to reopen a cancelled run would also be acceptable
     # either way the run must not be stuck in "running" with nothing running: a is really re-executing
     rep = drive(eng, timeout=2.5)
@@ -132,8 +132,8 @@ def test_rerun_after_run_cancel_does_not_hang(mkplan, start):
 def _chain(mkplan, a_run):
     return mkplan([
         sh("a", a_run),
-        sh("b", 'echo "{\\"b\\": ${a.outputs.v}}" > "$FF_OUTPUTS"'),
-        sh("c", 'echo "{\\"c\\": ${b.outputs.b}}" > "$FF_OUTPUTS"'),
+        sh("b", 'echo "{\\"b\\": ${a.outputs.v}}" > "$FLOWER_OUTPUTS"'),
+        sh("c", 'echo "{\\"c\\": ${b.outputs.b}}" > "$FLOWER_OUTPUTS"'),
         sh("x", out_json({"x": 1})),
     ])
 
@@ -163,7 +163,7 @@ def test_rerun_downstream_reuses_unchanged(mkplan, start):
 
 def test_rerun_downstream_reexecutes_changed(mkplan, start, tmp_path):
     cnt = tmp_path / "a.cnt"
-    eng = start(_chain(mkplan, counter(cnt) + '\necho "{\\"v\\": $C}" > "$FF_OUTPUTS"'))
+    eng = start(_chain(mkplan, counter(cnt) + '\necho "{\\"v\\": $C}" > "$FLOWER_OUTPUTS"'))
     drive(eng)
     eng.rerun("a")
     assert drive(eng).status == "succeeded"
@@ -190,7 +190,7 @@ def test_rerun_only_and_cached(mkplan, start):
 def test_rerun_failed_node_recovers_downstream(mkplan, start, tmp_path):
     cnt = tmp_path / "f.cnt"
     eng = start(mkplan([sh("a", counter(cnt) + '\n[ "$C" -ge 2 ] || exit 1\n' + out_json({"v": 3})),
-                        sh("b", 'echo "{\\"b\\": ${a.outputs.v}}" > "$FF_OUTPUTS"')]))
+                        sh("b", 'echo "{\\"b\\": ${a.outputs.v}}" > "$FLOWER_OUTPUTS"')]))
     assert drive(eng).status == "failed"
     assert eng.state().nodes["b"].status == "skipped"
     eng.rerun("a")
@@ -205,10 +205,10 @@ def test_rerun_failed_node_recovers_downstream(mkplan, start, tmp_path):
 def test_rerun_errors(mkplan, start):
     eng = start(mkplan([sh("a", "sleep 30"), sh("b", "true", needs=["a"])]))
     wait_running(eng, "a")
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.rerun("a")
     assert ei.value.code == "node_running"
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.rerun("nope")
     assert ei.value.code == "node_not_found"
 
@@ -216,7 +216,7 @@ def test_rerun_errors(mkplan, start):
 def test_rerun_refuses_when_downstream_active(mkplan, start):
     eng = start(mkplan([sh("a", "true"), sh("b", "sleep 30", needs=["a"])]))
     wait_running(eng, "b")
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.rerun("a")
     assert "b" in ei.value.message
 
@@ -291,7 +291,7 @@ def test_amend_illegal_edit_of_finished_node_rejected(mkplan, start):
 
 
 def test_amend_supersede_finished_node_reopens_and_reuses(mkplan, start):
-    eng = start(mkplan([sh("a", out_json({"v": 1})), sh("b", 'echo "{\\"b\\": ${a.outputs.v}}" > "$FF_OUTPUTS"'),
+    eng = start(mkplan([sh("a", out_json({"v": 1})), sh("b", 'echo "{\\"b\\": ${a.outputs.v}}" > "$FLOWER_OUTPUTS"'),
                         sh("c", out_json({"c": 0}))]))
     assert drive(eng).status == "succeeded"
     eng.propose_amendment([{"op": "replace", "node": "a", "supersede": True,
@@ -310,7 +310,7 @@ def test_amend_supersede_finished_node_reopens_and_reuses(mkplan, start):
 
 def test_amend_before_approval_refused(mkplan, start):
     eng = start(mkplan([sh("a", "true")]), approve=False)
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.propose_amendment([{"op": "add", "nodes": [sh("x", "true")]}], "early")
     assert ei.value.code == "run_not_started"
 
@@ -441,8 +441,8 @@ def test_rerun_upstream_of_foreach_reexpands(mkplan, start, tmp_path):
     cnt = tmp_path / "items.cnt"
     eng = start(mkplan([
         sh("gen", counter(cnt) + '\nif [ "$C" = 1 ]; then echo "{\\"items\\": [1]}"; else echo "{\\"items\\": [1, 2, 3]}"; '
-                                 'fi > "$FF_OUTPUTS"'),
-        sh("each", 'echo "{\\"v\\": ${item}}" > "$FF_OUTPUTS"', foreach="${gen.outputs.items}"),
+                                 'fi > "$FLOWER_OUTPUTS"'),
+        sh("each", 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', foreach="${gen.outputs.items}"),
     ]))
     drive(eng)
     assert eng.state().nodes["each"].result.outputs["count"] == 1
@@ -457,7 +457,7 @@ def _counted_foreach(mkplan, tmp_path):
     # one counter file per item: the children run concurrently
     return mkplan([
         sh("gen", out_json({"items": [1, 2]})),
-        sh("each", counter(tmp_path / "each${item}.cnt") + '\necho "{\\"v\\": ${item}, \\"c\\": $C}" > "$FF_OUTPUTS"',
+        sh("each", counter(tmp_path / "each${item}.cnt") + '\necho "{\\"v\\": ${item}, \\"c\\": $C}" > "$FLOWER_OUTPUTS"',
            foreach="${gen.outputs.items}"),
         sh("total", 'echo "${each.outputs.items}"'),
     ])
@@ -496,7 +496,7 @@ def test_rerun_foreach_parent_only_skips_downstream(mkplan, start, tmp_path):
 def test_rerun_foreach_parent_refuses_while_a_child_runs(mkplan, start):
     eng = start(mkplan([sh("each", "sleep 30", foreach=[1])]))
     tick_until(eng, lambda s: "each[0]" in s.nodes and s.nodes["each[0]"].status == "running")
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         eng.rerun("each")
     assert ei.value.code == "node_running"
     eng.cancel(by="human:x")

@@ -12,11 +12,11 @@ from pathlib import Path
 import pytest
 import yaml
 
-from forgeflow.engine import Engine
-from forgeflow.hpc import slurm
-from forgeflow.rundir import RunPaths
+from flower.engine import Engine
+from flower.hpc import slurm
+from flower.rundir import RunPaths
 
-OUT_X = """printf '{"x": 41, "summary": "made x"}' > "$FF_OUTPUTS"
+OUT_X = """printf '{"x": 41, "summary": "made x"}' > "$FLOWER_OUTPUTS"
 echo payload-done"""
 
 
@@ -24,14 +24,14 @@ echo payload-done"""
 
 def test_happy_path_outputs_files_env(ff):
     script = r"""
-echo "hello from $FF_NODE_ID"
+echo "hello from $FLOWER_NODE_ID"
 mkdir -p res
-printf 'data-%s' "$FF_IN_N" > res/data.txt
+printf 'data-%s' "$FLOWER_IN_N" > res/data.txt
 python3 - <<'PY'
 import json, os
-json.dump({"x": int(os.environ["FF_IN_N"]) + 1, "run": os.environ["FF_RUN_ID"], "node": os.environ["FF_NODE_ID"],
-           "att": os.environ["FF_ATTEMPT"], "extra": os.environ["EXTRA"], "inside": os.environ["FORGEFLOW_INSIDE_RUN"],
-           "jid": os.environ["SLURM_JOB_ID"], "jobdir": os.environ["FF_JOB_DIR"]}, open(os.environ["FF_OUTPUTS"], "w"))
+json.dump({"x": int(os.environ["FLOWER_IN_N"]) + 1, "run": os.environ["FLOWER_RUN_ID"], "node": os.environ["FLOWER_NODE_ID"],
+           "att": os.environ["FLOWER_ATTEMPT"], "extra": os.environ["EXTRA"], "inside": os.environ["FLOWER_INSIDE_RUN"],
+           "jid": os.environ["SLURM_JOB_ID"], "jobdir": os.environ["FLOWER_JOB_DIR"]}, open(os.environ["FLOWER_OUTPUTS"], "w"))
 PY
 """
     plan = ff.plan([ff.job("a", script, outputs={"x": "integer", "run": "string"}, files={"data": "res/data.txt"},
@@ -66,8 +66,8 @@ PY
     assert obs[-1] == "EXITED"
     # remote evidence files
     jd = Path(out["job_dir"])
-    assert (jd / ".forgeflow" / "jobid").read_text().strip() == jobs[0]["id"]
-    sub = json.loads((jd / ".forgeflow" / "submit.json").read_text())
+    assert (jd / ".flower" / "jobid").read_text().strip() == jobs[0]["id"]
+    sub = json.loads((jd / ".flower" / "submit.json").read_text())
     assert sub["submit_key"] == jobs[0]["name"] and sub["attempt"] == 1
     assert (jd / f"slurm-{jobs[0]['id']}.out").read_text().startswith("hello from a")
 
@@ -91,7 +91,7 @@ def test_job_without_outputs_json_succeeds_with_ids(ff):
 def test_resources_reach_sbatch_and_cluster_defaults_merge(ff):
     clusters = {"c": ff.cluster(resources={"partition": "batch", "time": 10, "account": "acct"},
                                 prelude=["export FROM_CLUSTER=1"], env={"CLUSTER_ENV": "ce"})}
-    script = 'printf \'{"p": "%s", "c": "%s"}\' "$FROM_CLUSTER" "$CLUSTER_ENV" > "$FF_OUTPUTS"'
+    script = 'printf \'{"p": "%s", "c": "%s"}\' "$FROM_CLUSTER" "$CLUSTER_ENV" > "$FLOWER_OUTPUTS"'
     eng = ff.run(ff.plan([ff.job("a", script, resources={"time": "0:01:00", "nodes": 1},
                                  prelude="export FROM_NODE=1")], clusters=clusters))
     st = ff.drive(eng)
@@ -119,7 +119,7 @@ def test_stage_in_local_copy_dir_and_link(ff, tmp_path):
     script = r"""
 test -f POSCAR && test -f pp/Si.upf && test -L big.bin
 cat POSCAR pp/Si.upf big.bin > all.txt
-printf '{"ok": true}' > "$FF_OUTPUTS"
+printf '{"ok": true}' > "$FLOWER_OUTPUTS"
 """
     stage = [str(src / "POSCAR"), {"from": str(src / "pseudo"), "to": "pp"},
              {"from": str(src / "big.bin"), "mode": "link"}]
@@ -145,7 +145,7 @@ def test_remote_handoff_between_jobs(ff, mode):
     first = ff.job("first", "mkdir -p data && echo CHARGE-DENSITY > data/rho.dat\n" + OUT_X)
     second = ff.job("second", r"""
 test -f indata/rho.dat
-printf '{"rho": "%s"}' "$(cat indata/rho.dat)" > "$FF_OUTPUTS"
+printf '{"rho": "%s"}' "$(cat indata/rho.dat)" > "$FLOWER_OUTPUTS"
 """, stage_in=[{"from": "remote:${first.outputs.job_dir}/data", "to": "indata", "mode": mode}])
     eng = ff.run(ff.plan([first, second]))
     st = ff.drive(eng, timeout=40)
@@ -160,7 +160,7 @@ printf '{"rho": "%s"}' "$(cat indata/rho.dat)" > "$FF_OUTPUTS"
     else:
         assert staged.is_dir() and not staged.is_symlink()
         assert (staged / "rho.dat").read_text().strip() == "CHARGE-DENSITY"
-    # the hand-off never round-tripped through the forgeflow host: second depends on first implicitly
+    # the hand-off never round-tripped through the flower host: second depends on first implicitly
     starts = {e["nodeId"]: e["seq"] for e in ff.events(eng, "node.started")}
     done = {e["nodeId"]: e["seq"] for e in ff.events(eng, "node.succeeded")}
     assert done["first"] < starts["second"]
@@ -173,7 +173,7 @@ def test_remote_dir_layout_with_remote_root_and_odd_chars(ff, tmp_path):
     assert st.status == "succeeded", ff.why(eng)
     jd = st.nodes["a"].result.outputs["job_dir"]
     assert jd == f"{root}/{st.run_id}/a/a1"
-    assert (Path(jd) / ".forgeflow" / "ec").read_text().strip() == "0"
+    assert (Path(jd) / ".flower" / "ec").read_text().strip() == "0"
 
 
 # ====================================================================== contract
@@ -195,7 +195,7 @@ def test_declared_file_missing_is_contract(ff):
 
 @pytest.mark.parametrize("content", ["{not json", "[1, 2]"])
 def test_invalid_outputs_json_is_contract(ff, content):
-    eng = ff.run(ff.plan([ff.job("a", f"printf '%s' '{content}' > \"$FF_OUTPUTS\"")]))
+    eng = ff.run(ff.plan([ff.job("a", f"printf '%s' '{content}' > \"$FLOWER_OUTPUTS\"")]))
     st = ff.drive(eng)
     assert st.status == "failed"
     assert ff.error_class(st, "a") == "contract"
@@ -294,7 +294,7 @@ def test_cancel_queued_job_node(ff, monkeypatch):
     j = ff.jobs()[0]
     assert j["id"] == st_jid and j["state"] == "CANCELLED" and j["start"] is None  # never ran
     jd = Path(st.nodes["a"].last.job["job_dir"])
-    assert (jd / ".forgeflow" / "cancelled").exists()
+    assert (jd / ".flower" / "cancelled").exists()
     assert not (jd / "outputs.json").exists()
 
 
@@ -383,7 +383,7 @@ def test_poll_is_batched_per_cluster(ff):
 
 
 def test_two_clusters_polled_independently(ff, tmp_path):
-    from forgeflow.testing.fakeslurm import install
+    from flower.testing.fakeslurm import install
     bin2 = install(tmp_path / "fs2")
     clusters = {"c": ff.cluster(), "d": ff.cluster(bin_dir=str(bin2))}
     eng = ff.run(ff.plan([ff.job("a", OUT_X), {**ff.job("b", OUT_X), "cluster": "d"}], clusters=clusters))
@@ -394,7 +394,7 @@ def test_two_clusters_polled_independently(ff, tmp_path):
 
 
 def test_foreach_job_children_have_valid_distinct_keys(ff):
-    node = ff.job("sweep", 'printf \'{"v": %s}\' "$V" > "$FF_OUTPUTS"', foreach=[1, 2, 3], env={"V": "${item}"})
+    node = ff.job("sweep", 'printf \'{"v": %s}\' "$V" > "$FLOWER_OUTPUTS"', foreach=[1, 2, 3], env={"V": "${item}"})
     eng = ff.run(ff.plan([node]))
     st = ff.drive(eng, timeout=60)
     assert st.status == "succeeded", ff.why(eng)
@@ -407,7 +407,7 @@ def test_foreach_job_children_have_valid_distinct_keys(ff):
 
 def _cli(ff, *args, timeout=90, cwd=None):
     env = {**os.environ}
-    r = subprocess.run([sys.executable, "-m", "forgeflow", *args], capture_output=True, text=True, env=env,
+    r = subprocess.run([sys.executable, "-m", "flower", *args], capture_output=True, text=True, env=env,
                        timeout=timeout, cwd=cwd or ff.tmp)
     return r
 
@@ -418,14 +418,14 @@ def test_cli_fake_slurm_run_tick_status(ff, tmp_path):
     bindir = json.loads(r.stdout)
     bindir = bindir.get("bin_dir") or bindir.get("data", {}).get("bin_dir")
     assert bindir and Path(bindir, "sbatch").exists()
-    plan = {"forgeflow": 1, "id": "cli-job",
+    plan = {"flower": 1, "id": "cli-job",
             "clusters": {"c": {"transport": "local", "bin_dir": bindir, "min_poll": "0.5s"}},
             "nodes": [{"id": "a", "kind": "job", "cluster": "c", "script": OUT_X, "outputs": {"x": "integer"}}]}
     pf = tmp_path / "plan.yaml"
     pf.write_text(yaml.safe_dump(plan))
     r = _cli(ff, "run", str(pf), "-y", "--no-prompt", "--detach", "--json")
     assert r.returncode == 0, r.stdout + r.stderr
-    rid = next(e for e in Path(ff.home, ".forgeflow", "runs").iterdir()).name
+    rid = next(e for e in Path(ff.home, ".flower", "runs").iterdir()).name
     eng = Engine(RunPaths(ff.home, rid))
     r = _cli(ff, "wait", rid, "--timeout", "40", "--json")
     st = eng.state()

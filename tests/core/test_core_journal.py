@@ -6,8 +6,8 @@ import multiprocessing as mp
 
 import pytest
 
-from forgeflow.journal import Journal
-from forgeflow.util import ForgeflowError
+from flower.journal import Journal
+from flower.util import FlowerError
 
 
 def _first(j: Journal):
@@ -29,7 +29,7 @@ def test_seq_contiguous_and_envelope(tmp_path):
 
 def test_first_event_requires_run_id(tmp_path):
     j = Journal(tmp_path / "events.jsonl")
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         j.emit("run.note", {"text": "x"})
     assert ei.value.code == "bad_event"
 
@@ -37,7 +37,7 @@ def test_first_event_requires_run_id(tmp_path):
 def test_unknown_event_type_rejected_and_nothing_written(tmp_path):
     j = Journal(tmp_path / "events.jsonl")
     _first(j)
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         j.append([{"eventType": "run.note", "payload": {}}, {"eventType": "node.exploded", "payload": {}}])
     assert ei.value.code == "bad_event_type"
     # the batch is atomic: the valid first draft must not have been written either
@@ -106,10 +106,10 @@ def test_corrupt_middle_line_is_fatal(tmp_path):
     lines = p.read_text().splitlines(keepends=True)
     lines[1] = "{this is not json\n"
     p.write_text("".join(lines))
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         Journal(p).read()
     assert ei.value.code == "journal_corrupt"
-    with pytest.raises(ForgeflowError) as ei2:
+    with pytest.raises(FlowerError) as ei2:
         Journal(p).emit("run.note", {"text": "c"})
     assert ei2.value.code == "journal_corrupt"
     # nothing was "repaired" away
@@ -125,7 +125,7 @@ def test_seq_gap_is_fatal(tmp_path):
     lines = p.read_text().splitlines(keepends=True)
     del lines[1]
     p.write_text("".join(lines))
-    with pytest.raises(ForgeflowError) as ei:
+    with pytest.raises(FlowerError) as ei:
         Journal(p).read()
     assert ei.value.code == "journal_gap"
 

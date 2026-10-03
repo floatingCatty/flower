@@ -1,6 +1,6 @@
 """Equation-of-state fit for an fcc metal with ASE's EMT potential.
 
-Usage: python eos.py METAL  -> writes outputs.json ($FF_OUTPUTS) with the fitted lattice constant.
+Usage: python eos.py METAL  -> writes outputs.json ($FLOWER_OUTPUTS) with the fitted lattice constant.
 """
 import json
 import os
@@ -35,6 +35,6 @@ def main(metal: str) -> dict:
 
 if __name__ == "__main__":
     result = main(sys.argv[1])
-    with open(os.environ.get("FF_OUTPUTS", "outputs.json"), "w") as fh:
+    with open(os.environ.get("FLOWER_OUTPUTS", "outputs.json"), "w") as fh:
         json.dump(result, fh, indent=2)
     print(result["summary"])

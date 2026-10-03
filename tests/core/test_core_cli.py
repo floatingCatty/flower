@@ -11,13 +11,13 @@ import time
 import pytest
 import yaml
 
-from core_helpers import FORGEFLOW_EXE, out_json, pid_alive, wait_for
-from forgeflow.engine import Engine
-from forgeflow.rundir import RunPaths, list_runs
+from core_helpers import FLOWER_EXE, out_json, pid_alive, wait_for
+from flower.engine import Engine
+from flower.rundir import RunPaths, list_runs
 
 
 def write_plan(tmp_path, nodes, name="plan.yaml", **top):
-    plan = {"forgeflow": 1, "id": top.pop("id", "cli-test"), "nodes": nodes, **top}
+    plan = {"flower": 1, "id": top.pop("id", "cli-test"), "nodes": nodes, **top}
     p = tmp_path / name
     p.write_text(yaml.safe_dump(plan, sort_keys=False))
     return p
@@ -290,7 +290,7 @@ def test_usage_error_exit_2(cli):
     with pytest.raises(SystemExit) as ei:
         cli("answer")
     assert ei.value.code == 2
-    from forgeflow.cli import main
+    from flower.cli import main
     assert main([]) == 2
 
 
@@ -308,7 +308,7 @@ def test_corrupt_journal_exit_1(cli, tmp_path, home):
 # ------------------------------------------------------------------ real executable
 
 def _exe(args, env, cwd, timeout=60):
-    return subprocess.run([str(FORGEFLOW_EXE), *args], env=env, cwd=cwd, capture_output=True, text=True,
+    return subprocess.run([str(FLOWER_EXE), *args], env=env, cwd=cwd, capture_output=True, text=True,
                           timeout=timeout)
 
 

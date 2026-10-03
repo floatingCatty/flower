@@ -1,4 +1,4 @@
-# forgeflow core: bugs found by `tests/core`
+# flower core: bugs found by `tests/core`
 
 > **Status (2026-10-03): all bugs below are FIXED.** Their tests were converted from strict xfail into
 > ordinary regression tests; a few tests that encoded the old behaviour were updated to the corrected design
@@ -6,7 +6,7 @@
 
 Each bug has a test marked `xfail(strict=True)`. When the bug is fixed, the test XPASSes, which fails
 the suite under `strict=True`. Delete the marker at that point.
-Line numbers refer to `src/forgeflow/` at the time of testing. The source was being edited while the
+Line numbers refer to `src/flower/` at the time of testing. The source was being edited while the
 suite was written.
 
 Run with: `.venv/bin/pytest -q tests/core` (about 110 s). Add `--runxfail` to see the real failures.
@@ -69,7 +69,7 @@ Run with: `.venv/bin/pytest -q tests/core` (about 110 s). Add `--runxfail` to se
   stays `running` with nothing running, and `drive` never returns.
 - **Root cause:** `state.py:279-280`. `cancel_requested` is set and never cleared, not even by
   `run.reopened`. `engine.py:1002` uses a constant idempotency key.
-- **Fix:** either refuse `rerun` and amendments on a `cancelled` run (`ForgeflowError("run_cancelled")`),
+- **Fix:** either refuse `rerun` and amendments on a `cancelled` run (`FlowerError("run_cancelled")`),
   or clear `cancel_requested` on `run.reopened` in the fold. In either case, key `run.completed` on the
   seq (as the other completions do).
 
@@ -154,25 +154,25 @@ Run with: `.venv/bin/pytest -q tests/core` (about 110 s). Add `--runxfail` to se
 
 ## CLI
 
-### 13. `forgeflow output RUN NODE KEY` crashes on a missing key
+### 13. `flower output RUN NODE KEY` crashes on a missing key
 - **Test:** `test_core_cli.py::test_output_unknown_key_is_a_clean_error`
 - **Observed:** an uncaught `KeyError` / `ValueError` / `IndexError` prints a traceback and exits 1, with
   no JSON envelope.
 - **Root cause:** `cli.py:473`.
 - **Fix:** wrap the walk in `try/except (KeyError, IndexError, ValueError, TypeError)` and raise
-  `ForgeflowError("no_key", …, "keys: …")`.
+  `FlowerError("no_key", …, "keys: …")`.
 
-### 14. `forgeflow logs RUN NODE --attempt N` crashes on an unknown attempt
+### 14. `flower logs RUN NODE --attempt N` crashes on an unknown attempt
 - **Test:** `test_core_cli.py::test_logs_unknown_attempt_is_a_clean_error`
 - **Observed:** an uncaught `StopIteration`.
 - **Root cause:** `cli.py:434`. `next(...)` is called without a default.
-- **Fix:** use `next(..., None)` and raise `ForgeflowError("no_attempt", …)`.
+- **Fix:** use `next(..., None)` and raise `FlowerError("no_attempt", …)`.
 
-### 15. `forgeflow reject RUN <unknown gate>` crashes
+### 15. `flower reject RUN <unknown gate>` crashes
 - **Test:** `test_core_cli.py::test_reject_unknown_gate_is_a_clean_error`
 - **Observed:** `AttributeError: 'NoneType' object has no attribute 'decisions'`.
 - **Root cause:** `cli.py:501`. When `g is None`, the `--reject` branch evaluates `g.decisions[-1]`.
-- **Fix:** if `g is None`, raise `ForgeflowError("gate_not_found", …)` before choosing a decision. In
+- **Fix:** if `g is None`, raise `FlowerError("gate_not_found", …)` before choosing a decision. In
   the non-reject branch, `eng.answer` already reports this.
 
 ## Found by the ABACUS benchmark (`benchmark/si-dos-fermi`, 2026-10-03)
@@ -182,7 +182,7 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 ### 16. `rerun` of a foreach node does not re-execute its items
 - **Tests:** `test_core_engine_control.py::test_rerun_foreach_parent_reexecutes_its_children`,
   `::test_rerun_foreach_parent_only_skips_downstream`, `::test_rerun_foreach_parent_refuses_while_a_child_runs`
-- **Observed:** `forgeflow rerun RUN fermi` (a foreach over k-meshes) re-ran only the collector. The
+- **Observed:** `flower rerun RUN fermi` (a foreach over k-meshes) re-ran only the collector. The
   collector gathered the old `fermi[i]` results again, and downstream `converge` was reused from cache.
   The fix to the analysis code was silently not applied.
 - **Root cause:** `Engine.rerun` marked `[node] + descendants(node)` stale. Foreach children are
@@ -224,10 +224,10 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   this machine `BASH_ENV=~/.bashrc` made every shell node source the user's bashrc (about 0.5 s each,
   and not reproducible). The suite unsets it. Consider adding `BASH_ENV`/`ENV` to `unset_env` for shell
   nodes, or recording the environment in the attempt for provenance.
-- **`forgeflow status` always exits 0**, even for failed or parked runs (`cli.py:311-312`). `wait` and
+- **`flower status` always exits 0**, even for failed or parked runs (`cli.py:311-312`). `wait` and
   `run` carry the verdict. This is documented by `test_status_exit_code_is_informational`. If `status`
   is meant to follow the exit-code vocabulary, it should use `run_status_code(st.status)`.
-- **A missing `forgeflow:` key is silently accepted.** `normalize` defaults it to 1, so the `version`
+- **A missing `flower:` key is silently accepted.** `normalize` defaults it to 1, so the `version`
   issue only fires for an explicit wrong value.
 - **A signal sent before its `wait` node is armed is ignored** (`since_seq`). This is by design, but it
   is easy to trip over. It is documented by

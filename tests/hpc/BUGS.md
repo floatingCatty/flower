@@ -39,7 +39,7 @@ Severity:
 - **Observed:** the remote shell dies in the middle of the poll. This is simulated with `kill -9 $PPID` from sacct,
   which is the same as an ssh drop with partial stdout. The output stops after `@@SACCT`, with no `@@EV` sections.
   The job is no longer in squeue, so it is UNKNOWN on every poll and is declared LOST, even though
-  `.forgeflow/ec` = 0 exists.
+  `.flower/ec` = 0 exists.
 - **Expected:** a poll that did not complete is a poll error.
 - **Root cause:** `executors/job.py:199`: `if r.rc != 0 and not r.out:`. Only a failure with *empty* output is
   treated as a poll error.
@@ -52,40 +52,40 @@ Severity:
 
 - **Test:** `test_job_robustness.py::test_crash_before_jobid_written_with_squeue_down_does_not_duplicate`
 - **Observed:**
-  1. sbatch succeeded and its id is in `.forgeflow/jobid.tmp`, but the process died before
+  1. sbatch succeeded and its id is in `.flower/jobid.tmp`, but the process died before
      `mv jobid.tmp jobid`.
   2. On re-submit, `squeue` fails transiently and sacct has not seen the job yet (slurmdbd lag).
   3. `submit_command` reads the empty lookup as "nothing exists" and runs sbatch again. There are now 2 Slurm jobs
      with the same submit key.
-  4. The duplicate correctly exits 97, but forgeflow tracks the duplicate's id. The node fails as
+  4. The duplicate correctly exits 97, but flower tracks the duplicate's id. The node fails as
      `exit_nonzero` ("Slurm reports FAILED (exit 97:0)") while job #1 keeps RUNNING, untracked.
 - **Expected:** exactly one Slurm job per attempt. Re-attach to job #1.
 - **Root cause:** `hpc/slurm.py:110-113`:
   - The lookup is `squeue … 2>/dev/null | … || true`, so a squeue *failure* is the same as "not found".
-  - `.forgeflow/jobid.tmp` (written by `sbatch --parsable`) and `.forgeflow/owner/id` are never consulted.
+  - `.flower/jobid.tmp` (written by `sbatch --parsable`) and `.flower/owner/id` are never consulted.
 - **Fix:** in `submit_command`, before calling sbatch:
-  1. If `.forgeflow/jobid.tmp` is non-empty and parses as an id, `mv` it to `jobid` and print `EXISTING`.
-  2. If `.forgeflow/owner/id` exists, print `EXISTING $(cat owner/id)`.
+  1. If `.flower/jobid.tmp` is non-empty and parses as an id, `mv` it to `jobid` and print `EXISTING`.
+  2. If `.flower/owner/id` exists, print `EXISTING $(cat owner/id)`.
   3. Run squeue without `|| true` and capture its status. If squeue fails, `exit 75` (transient) instead of
      falling through to sbatch, and do the same when sacct fails.
-  4. In `verdict`/`_advance`, if the tracked job ended with sacct ExitCode 97 and `.forgeflow/owner/id` names
+  4. In `verdict`/`_advance`, if the tracked job ended with sacct ExitCode 97 and `.flower/owner/id` names
      another id, switch `job_id` to the owner and emit `job.orphan_detected`. Do not fail the node.
 
 ## P1-4. Cancelling inside the crash window reports "cancelled before submission" and leaks a running Slurm job
 
 - **Test:** `test_job_robustness.py::test_cancel_in_crash_window_does_not_leak_job`
-- **Observed:** sbatch ran but `job.submitted` never reached the journal (crash). `forgeflow cancel --node a`
+- **Observed:** sbatch ran but `job.submitted` never reached the journal (crash). `flower cancel --node a`
   marks the node `cancelled` ("cancelled before submission"). The Slurm job keeps running to COMPLETED, using
   allocation, and nothing tracks it.
 - **Expected:** the job is found (jobid file or name lookup) and `scancel`'d, or it never starts its payload.
 - **Root cause:**
   - `executors/job.py:296-308` `cancel()` only scancels when `ctx.job["job_id"]` is known.
   - `poll_many` (`job.py:177`) short-circuits on `stage/cancel` without re-attaching.
-  - The batch script (`slurm.py:69` `render_job_script`) never checks `.forgeflow/cancelled`.
+  - The batch script (`slurm.py:69` `render_job_script`) never checks `.flower/cancelled`.
 - **Fix:**
   - In `cancel()`, when `job_id` is unknown but `job_dir` is known, run one remote command: read
-    `.forgeflow/jobid` (or `jobid.tmp`), or `squeue`/`sacct --name=<submit_key>`, and `scancel` what it finds.
-  - Add `[ -e .forgeflow/cancelled ] && { echo cancelled > .forgeflow/ec.tmp; …; exit 0; }` to `job.sh`, right
+    `.flower/jobid` (or `jobid.tmp`), or `squeue`/`sacct --name=<submit_key>`, and `scancel` what it finds.
+  - Add `[ -e .flower/cancelled ] && { echo cancelled > .flower/ec.tmp; …; exit 0; }` to `job.sh`, right
     after the owner guard, so a queued orphan exits immediately.
 
 ## P1-5. Crash between `node.started` and `job.submit_intent` wedges the run (KeyError on every tick)
@@ -107,17 +107,17 @@ Severity:
 
 - **Test:** `test_job_robustness.py::test_exception_during_resubmit_does_not_crash_tick`
 - **Observed:** the first sbatch hits a transient error. Before the backoff retry, a `stage_in` source disappears.
-  The retry raises `ForgeflowError("stage_in")` out of `poll_many` and out of `Engine.tick()`. The same happens on
+  The retry raises `FlowerError("stage_in")` out of `poll_many` and out of `Engine.tick()`. The same happens on
   every following tick, so the run is wedged.
   - Other exceptions reach the same path: an `OSError` from `LocalTransport.put` (`shutil` errors are not
     wrapped), outputs.json permission errors in `_collect`, and P1-5.
 - **Root cause:**
   - `engine.py:413` calls `outcomes = ex.poll_many(ctxs)` with no try/except. Only the per-ctx `poll()` path has
     the "never crash the tick" guard.
-  - `job.py:146` catches only `_Remote`, so `ForgeflowError`/`OSError` raised by `_stage` escape.
+  - `job.py:146` catches only `_Remote`, so `FlowerError`/`OSError` raised by `_stage` escape.
 - **Fix:**
   - In `JobExecutor.poll_many`, wrap the per-ctx resubmit and `_advance` in try/except.
-  - Turn `ForgeflowError` into `Outcome.fail(exc.code, exc.message, retryable=exc.code in RETRYABLE_DEFAULT)`,
+  - Turn `FlowerError` into `Outcome.fail(exc.code, exc.message, retryable=exc.code in RETRYABLE_DEFAULT)`,
     and anything else into `Outcome.fail("internal", …)`.
   - Defensively, wrap the `poll_many` call in `engine.py:413` too.
 
@@ -152,14 +152,14 @@ Severity:
   error."
 - **Root cause:** `executors/job.py:146-157`. `res.transient` is computed and journalled but never consulted.
 - **Fix:** in `_submit`, if `not res.transient`, raise/return `Outcome.fail("submit", msg, retryable=False)`. A
-  ForgeflowError from `start()` works, and so does an outcome stored for `poll_many` to return. Back off only for
+  FlowerError from `start()` works, and so does an outcome stored for `poll_many` to return. Back off only for
   transient errors.
 
 ## P2-2. Cluster unreachable when a job node starts: the node fails
 
 - **Test:** `test_ssh.py::test_ssh_unreachable_at_start_is_retried`
 - **Observed:** `start()` probes `$HOME` over ssh. On failure (rc 255, "Connection timed out") it raises
-  `ForgeflowError("remote")`. The engine records an attempt failure, so with the default policy the node fails
+  `FlowerError("remote")`. The engine records an attempt failure, so with the default policy the node fails
   and the run fails.
 - **Expected:** a REMOTE_ERROR with backoff, like a failed submit. It never consumes an attempt.
 - **Root cause:** `executors/job.py:66-71`.
@@ -172,7 +172,7 @@ Severity:
 ## P2-3. Poll errors have no backoff: an outage floods the journal
 
 - **Test:** `test_job_robustness.py::test_poll_errors_back_off`
-- **Observed:** during an ssh outage, forgeflow retries the poll at every `min_poll` and appends one
+- **Observed:** during an ssh outage, flower retries the poll at every `min_poll` and appends one
   `job.remote_error` event per live job per poll. The test sees 20 failed polls in 20 s for 3 jobs, which is 60 events.
   - With `min_poll: 30s` and 50 jobs, an 8 h outage writes about 48k events.
   - `Journal.append` re-parses the whole file on every append, so ticks slow down quadratically.
@@ -190,7 +190,7 @@ Severity:
   - `test_slurm_unit.py::test_verdict_duplicate_guard_seen_via_sacct_exitcode`
   - `test_slurm_unit.py::test_verdict_payload_exit_97_is_exit_nonzero`
 - **Observed:**
-  - The in-job guard exits 97 *before* `.forgeflow/ec` is written, so `verdict()` never sees `ec == 97` for a real
+  - The in-job guard exits 97 *before* `.flower/ec` is written, so `verdict()` never sees `ec == 97` for a real
     duplicate. A real duplicate is reported as `exit_nonzero` ("Slurm reports FAILED (exit 97:0)"); see P1-3 for
     the end-to-end effect.
   - Conversely, a user payload that legitimately `exit 97`s writes `ec=97` and is misclassified as `duplicate`.
@@ -198,7 +198,7 @@ Severity:
   - `hpc/slurm.py:235`: `if ec == 97:` keys on the payload's ec.
   - sacct `ExitCode` (`obs["exit"]`) is never parsed.
 - **Fix:**
-  - Have the guard write `.forgeflow/duplicate.$SLURM_JOB_ID` and report it as evidence.
+  - Have the guard write `.flower/duplicate.$SLURM_JOB_ID` and report it as evidence.
   - Alternatively, parse the sacct `ExitCode` `"97:0"` into `obs["exit_code"]` and test
     `exit_code == 97 and ec is None` (the owner's ec belongs to another id).
   - Drop the `ec == 97` rule.
@@ -207,7 +207,7 @@ Severity:
 
 - **Test:** `test_job_robustness.py::test_relative_stage_in_resolves_against_plan_dir`
 - **Observed:** a run created in `project/` with `stage_in: [POSCAR]`, then ticked from another directory (for
-  example `forgeflow tick --all` from cron, or a detached driver), fails with
+  example `flower tick --all` from cron, or a detached driver), fails with
   `stage_in: stage_in source POSCAR does not exist`.
 - **Root cause:**
   - `executors/job.py:111-127` uses `Path(src)` / `os.path.abspath(src)` as given.
@@ -249,10 +249,10 @@ Severity:
 - `job.remote_error` events for **poll** errors also increment `job["remote_errors"]` in the fold
   (`state.py`, `job.*` branch). This is harmless today, because `MAX_REMOTE_ERRORS` is only checked before
   submission, but the counter is misleading in `status`.
-- §8.3 says that when the name lookup finds more than one id, forgeflow should keep the earliest and cancel the
+- §8.3 says that when the name lookup finds more than one id, flower should keep the earliest and cancel the
   rest (`job.orphan_detected`). `submit_command` takes `head -1` silently, and `job.orphan_detected` is never
   emitted.
-- On `lost`, forgeflow does not `scancel` the old job id before retrying. If the lost verdict was wrong
+- On `lost`, flower does not `scancel` the old job id before retrying. If the lost verdict was wrong
   (P1-1/P1-2), two attempts then run concurrently in different directories.
 - Environment note for running this suite: on this host `BASH_ENV=~/.bashrc` makes every `bash -c` cost ~0.5 s;
   the conftest unsets it. `/etc/profile` here resets PATH to an ancient `/bin/bash` 2.05b (no `pipefail`), so the

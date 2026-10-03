@@ -15,8 +15,8 @@ from collections import Counter
 import pytest
 
 from core_helpers import drive, events, out_json, pid_alive, tick_until, wait_for
-from forgeflow.engine import Engine
-from forgeflow.state import apply, fold
+from flower.engine import Engine
+from flower.state import apply, fold
 
 
 def sh(id_, run, **kw):
@@ -32,7 +32,7 @@ def runner_json(eng, node, attempt=1):
 DRIVER = textwrap.dedent("""
     import json, sys
     from pathlib import Path
-    from forgeflow.engine import create_run
+    from flower.engine import create_run
     plan = json.loads(Path(sys.argv[1]).read_text())
     eng = create_run(plan, {}, root=Path(sys.argv[2]), approve=True)
     Path(sys.argv[3]).write_text(eng.paths.run_id)
@@ -43,7 +43,7 @@ DRIVER = textwrap.dedent("""
 def test_driver_sigkill_node_survives_and_is_collected(mkplan, home, tmp_path):
     marker = tmp_path / "side_effect.log"
     plan = mkplan([sh("a", f'echo run >> "{marker}"; sleep 1.5; ' + out_json({"v": 1})),
-                   sh("b", 'echo "{\\"b\\": ${a.outputs.v}}" > "$FF_OUTPUTS"')])
+                   sh("b", 'echo "{\\"b\\": ${a.outputs.v}}" > "$FLOWER_OUTPUTS"')])
     (tmp_path / "plan.json").write_text(json.dumps(plan))
     (tmp_path / "driver.py").write_text(DRIVER)
     rid_file = tmp_path / "rid"
@@ -80,7 +80,7 @@ def _kill_runner_and_child(info):
 
 
 def test_runner_and_child_killed_is_lost_and_retried(mkplan, start):
-    eng = start(mkplan([sh("a", 'if [ "$FF_ATTEMPT" = 1 ]; then sleep 30; fi; ' + out_json({"ok": True}),
+    eng = start(mkplan([sh("a", 'if [ "$FLOWER_ATTEMPT" = 1 ]; then sleep 30; fi; ' + out_json({"ok": True}),
                            retry={"max_attempts": 2, "backoff": "0.1s"})]))
     tick_until(eng, lambda s: s.nodes["a"].status == "running")
     _kill_runner_and_child(runner_json(eng, "a"))
@@ -118,7 +118,7 @@ def test_runner_killed_child_survives_keeps_running_then_lost(mkplan, start):
 
 
 def test_crash_after_write_ahead_before_launch(mkplan, start, monkeypatch, tmp_path):
-    from forgeflow.executors import local
+    from flower.executors import local
     marker = tmp_path / "ran.log"
     eng = start(mkplan([sh("a", f'echo x >> "{marker}"; ' + out_json({"v": 1}),
                            retry={"max_attempts": 2, "backoff": "0.1s"})]))
@@ -171,7 +171,7 @@ def test_torn_journal_tail_mid_run_is_repaired(mkplan, start):
 
 
 def _ticker(home: str, rid: str, secs: float) -> None:
-    os.environ["FORGEFLOW_HOME"] = home
+    os.environ["FLOWER_HOME"] = home
     eng = Engine.open(__import__("pathlib").Path(home), rid)
     end = time.time() + secs
     while time.time() < end:
@@ -204,7 +204,7 @@ def _rich_run(mkplan, start, tmp_path):
     eng = start(mkplan([
         sh("a", f'C=$(cat {cnt} 2>/dev/null || echo 0); C=$((C+1)); echo $C > {cnt}; [ $C -ge 2 ]; '
                 + out_json({"items": [1, 2]}), retry={"max_attempts": 2, "on": ["exit_nonzero"], "backoff": "0.1s"}),
-        sh("each", 'echo "{\\"v\\": ${item}}" > "$FF_OUTPUTS"', foreach="${a.outputs.items}"),
+        sh("each", 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', foreach="${a.outputs.items}"),
         {"id": "g", "kind": "gate", "needs": ["each"]},
         sh("z", "true", needs=["g"]),
     ]))

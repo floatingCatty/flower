@@ -1,4 +1,4 @@
-# Eleforge → forgeflow: reuse inventory
+# Eleforge → flower: reuse inventory
 
 Date: 2026-10-02. Read-only survey of `/homes/nessa/zhanghao/dev/Eleforge` at commit `e420e00c`.
 Paths below are relative to the Eleforge root. Abbreviations: **WF** = `apps/backend/compute/workflows/`, **LF** = `packages/labflow/python/src/labflow/`, **LFTS** = `apps/LabFlow/src/` (the TypeScript reference runtime).
@@ -13,7 +13,7 @@ Paths below are relative to the Eleforge root. Abbreviations: **WF** = `apps/bac
 
 ## 0. TL;DR
 
-1. **LabFlow already has forgeflow's storage model: `plan.json` plus `events.jsonl` plus a pure fold.**
+1. **LabFlow already has flower's storage model: `plan.json` plus `events.jsonl` plus a pure fold.**
    - **ADAPT** `LF/events.py` (259 lines), `LF/repository.py` (180), `LF/plan.py` (260), `LF/template_cas.py` (110), and `fixtures/golden/*`. The fold, the atomic plan write and the fsync'd append are exactly the right shape.
    - **Change five things:**
      - Make the log the only source of truth. Eleforge never got past "SQL first, files are a mirror" (S3c is blocked).
@@ -21,7 +21,7 @@ Paths below are relative to the Eleforge root. Abbreviations: **WF** = `apps/bac
      - Add a per-event `seq`.
      - Add first-class attempt, amendment and decision events.
      - Drop the `nanoforge_runtime` dependency.
-2. **The node state machine is reusable**: 9 states, pure transition tables at `WF/workflow_state_machine.py:5-34`. **Rerun semantics are not.** Eleforge has single-node rerun only: no downstream invalidation, `skipped` descendants are never revived, and the attempt table is dead. Interaction state (configure/confirm/checkpoint) lives in in-process dicts, not the log. forgeflow must design rerun+downstream, attempts and gates fresh, as events.
+2. **The node state machine is reusable**: 9 states, pure transition tables at `WF/workflow_state_machine.py:5-34`. **Rerun semantics are not.** Eleforge has single-node rerun only: no downstream invalidation, `skipped` descendants are never revived, and the attempt table is dead. Interaction state (configure/confirm/checkpoint) lives in in-process dicts, not the log. flower must design rerun+downstream, attempts and gates fresh, as events.
 3. **There is no mid-run DAG amendment anywhere.** Subgraph expansion happens only at submit time (`WF/subgraph_expander.py`). Its ID scheme (`parent.inner`) and barrier-edge algorithm are worth taking. The sweep's "write the manifest before fan-out, backfill on recovery" pattern (`WF/workflow_manager_sweep.py:170-287`) is the best existing template for durable dynamic growth.
 4. **Slurm/SSH**
    - **LIFT** the stdlib OpenSSH command layer (`apps/backend/compute/remote/{shell,command,errors}.py` and `remote/ssh/openssh.py`). It encodes hard-won ControlMaster lessons.
@@ -33,7 +33,7 @@ Paths below are relative to the Eleforge root. Abbreviations: **WF** = `apps/bac
    - **LIFT** the `claude -p` argv discipline (array argv, `--strict-mcp-config`, allow/deny tool lists, `--append-system-prompt`, an isolated cwd).
    - **LIFT** the pi MCP bridge (`tools/pi-brain/eleforge-mcp-bridge.ts`).
    - **REFERENCE** the pi SDK daemon for: `stopReason=error` detection, timeout races, token clamps, and candidate fallback.
-   - forgeflow's `agent`-node result capture (stream-json, session-id, result file) is **new work**. The best reference is the vendored Claude Code source under `context/claude-code/src/bridge/sessionRunner.ts:287-303`.
+   - flower's `agent`-node result capture (stream-json, session-id, result file) is **new work**. The best reference is the vendored Claude Code source under `context/claude-code/src/bridge/sessionRunner.ts:287-303`.
 6. **LEAVE:**
    - the SQL stores (`job_state_store.py` 2941 lines, `workflow_state_store.py` 1684);
    - the dispatch queue and status outbox tables;
@@ -52,10 +52,10 @@ Paths below are relative to the Eleforge root. Abbreviations: **WF** = `apps/bac
 |---|---|---|---|---|---|
 | 1 | `LF/events.py` | `WorkflowEvent` dataclass (camelCase JSON) and the pure fold `apply_workflow_event` / `project_events` into `WorkflowProjection` | Golden fixtures (4 streams); backend tests `test_labflow_events.py` (22), `test_labflow_golden_fixtures.py` (7), `test_projection_parity.py` (20) | none (stdlib) | **ADAPT** (§2) |
 | 2 | `LF/repository.py` | `WorkflowRuntimeRepository` ABC plus `FilesystemWorkflowRepository`: `{base}/{urlenc(run_id)}/plan.json` (tmp+`os.replace`) and `events.jsonl` (append + fsync per batch) | Used by the backend mirror; CLI tests (15) | none | **ADAPT**: add `fcntl.flock` (L67-69 admits it is not multi-process safe); do not silently skip corrupt lines (L164-167) — fail loudly or quarantine; tolerate only a torn last line |
-| 3 | `LF/plan.py` + `LF/plan_schema.py` | `plan.json` envelope `{$schema, kind, apiVersion, planVersion, metadata, spec}`; deterministic dump (sorted keys, 2-space indent, LF); `PlanLoadError{code,message,path,suggestion}` built for LLM repair; JSON-Schema generation with a `--check` drift guard | `test_labflow_plan.py` (18); schema drift test | `nanoforge_runtime.workflows.workflow_models` import (plan.py:36, plan_schema.py:305) | **ADAPT**: keep the envelope, the determinism and the error shape; define forgeflow's own spec model |
+| 3 | `LF/plan.py` + `LF/plan_schema.py` | `plan.json` envelope `{$schema, kind, apiVersion, planVersion, metadata, spec}`; deterministic dump (sorted keys, 2-space indent, LF); `PlanLoadError{code,message,path,suggestion}` built for LLM repair; JSON-Schema generation with a `--check` drift guard | `test_labflow_plan.py` (18); schema drift test | `nanoforge_runtime.workflows.workflow_models` import (plan.py:36, plan_schema.py:305) | **ADAPT**: keep the envelope, the determinism and the error shape; define flower's own spec model |
 | 4 | `LF/template_cas.py` | sha256 content-addressed store (`sha256:<hex>`, sharded by a 2-character prefix dir, canonical `sort_keys` + compact separators) | small | `LABFLOW_EVENTS_DIR` env | **LIFT** the canonical hash for plan versions, amendment ids and cache keys; pass the path explicitly |
 | 5 | `LF/models.py` (573) | Pydantic protocol: `WorkflowTemplate`, `WorkflowNodeDefinition`, `WorkflowEdgeDefinition`, `WorkflowInputSource`, `WorkflowRetryPolicy`, `WorkflowExecutionPolicy`, `WorkflowResourceRequest`, output envelopes | drift tests | Also holds Eleforge route/SQL shapes (`WorkflowRunDetailResponse`, `*Snapshot`) — `labflow_refactor.md:108-110` | **ADAPT**: take the port/binding/resource/policy shapes and drop the route/SQL models |
-| 6 | `LF/cli.py` (241) | `labflow <run> [--events --type=…]`, `--list`, `--stats`; reads the log offline | `test_labflow_cli.py` (15) | env var only | **REFERENCE** for the shape of `forgeflow status/log` |
+| 6 | `LF/cli.py` (241) | `labflow <run> [--events --type=…]`, `--list`, `--stats`; reads the log offline | `test_labflow_cli.py` (15) | env var only | **REFERENCE** for the shape of `flower status/log` |
 | 7 | `LF/detail_builder.py` (283) | Projection → a UI detail DTO | parity tests | Eleforge DTO | **LEAVE** (pattern: a read model is derived only from plan + events) |
 | 8 | `packages/labflow/fixtures/golden/*.events.jsonl` + `.expected.json` | Event streams for happy path, failed run, retry-succeeds and canceled-midway, with their expected projections | Python ↔ TypeScript parity harness (`tests/test_python_ts_parity.py`) | none | **ADAPT**: the golden-fixture replay-test pattern is a must-have |
 | 9 | `apps/backend/labflow/event_sharding.py` | Splits events into per-shard files by node index (`shards/events-shard-NNNN.jsonl`); workflow-level events stay in `events.jsonl` | scaffolding only, never hooked up | env | **REFERENCE** (only if fan-out exceeds about 10^4 nodes) |
@@ -66,15 +66,15 @@ Paths below are relative to the Eleforge root. Abbreviations: **WF** = `apps/bac
 | 14 | `compute/remote/shell.py`, `command.py`, `errors.py`, `remote/ssh/openssh.py` | `RemoteCommandSession` protocol, `CommandResult`, an OpenSSH session with a bounded timeout, auth detection, and `put_text`/`get_text` over stdin/cat | `test_openssh_control_master_policy.py` (3) and others; the timeout/killpg path is **untested** | stdlib plus one metrics counter; `remote/ssh/__init__.py` eagerly imports paramiko | **LIFT** (import `openssh` directly) |
 | 15 | `compute/runners/slurm/runner.py` + `launch_script.py` | sbatch generation (pure `emit_sbatch_directives`, L140-167), idempotent submit, batched squeue/sacct poll, workdir fallback, scancel plus a marker, result harvest | `test_slurm_runner.py` (15) | medium: `schemas`, `deployment_profile`, stream token, DB template store, log watcher | **ADAPT** (about 200 extractable lines) and fix the state map |
 | 16 | `compute/runners/ssh_machine/runner.py` | No-scheduler remote run (`nohup setsid`, pid, `exit_code`, `canceled` marker), LOST watchdog, artifact tar-over-base64 harvest | `test_ssh_machine_runner.py` (5) | medium | **ADAPT** for the `shell`-on-remote / `job` without Slurm cases |
-| 17 | `compute/jobs/manager_reconcile.py` | Watcher tick: batched status per (runner, connection), parallel per connection, reattach for `submit_unknown`, deferred harvest, LOST confirmation | `test_job_manager_remote_status_refresh.py` (14) | JobManager / store singletons | **REFERENCE**: rewrite as `forgeflow tick` over files |
+| 17 | `compute/jobs/manager_reconcile.py` | Watcher tick: batched status per (runner, connection), parallel per connection, reattach for `submit_unknown`, deferred harvest, LOST confirmation | `test_job_manager_remote_status_refresh.py` (14) | JobManager / store singletons | **REFERENCE**: rewrite as `flower tick` over files |
 | 18 | `compute/jobs/state_machine.py`, `compute/models.py:9-26` | Job states plus a `SubmitState` axis (`accepted/submitting/submitted/submit_unknown`) | `test_job_state_store.py` (23) | none (tables) | **ADAPT**: the separate submit axis is essential for crash-safe submits |
 | 19 | `compute/jobs/state_dispatch.py`, `state_outbox.py`, `coordination/*` | SQL dispatch queue (claim TTL, deadletter), status outbox with consumer cursors, Redis leader/claim leases | well tested | DB / Redis | **LEAVE** (the event log plus a file lock replaces them; keep the "cursor + lease + idempotent consumer" idea) |
 | 20 | `packages/runtime-core` (`nanoforge_runtime`) | Science worker: `job_worker --payload-path --result-path` (JSON in, JSON out); `FunctionResult{status: success\|error\|queued\|checkpoint}`; contextvar progress/cancel hooks; `PackedWorkflowEventSink` protocol | about 20 science-handler tests | standalone (pydantic) | **REFERENCE** for the `function`-node worker contract and the `__NF_PROGRESS__<json>` progress lines; **LEAVE** the science code |
 | 21 | `tools/claude-brain/claude-brain-loop.sh` (101), `fetch-playbook.mjs` | Headless `claude -p` loop with an MCP config and a pinned playbook | manual | MCP URL only | **LIFT** the argv flags (§6.1) |
 | 22 | `tools/pi-brain/eleforge-mcp-bridge.ts` (199) | pi extension: MCP `tools/list` → `pi.registerTool`, playbook pin via `before_agent_start`, close on `session_shutdown` | manual | none | **LIFT** |
 | 23 | `tools/pi-brain/pi-brain-service.mjs` (624), `pi-brain-loop.sh` (123), `import-subscription.mjs` (144) | Resident pi SDK daemon (fresh session per wake, timeout race, error detection, model fallback, token clamp, steering); shell loop with duration-keyed backoff; CLI-login → pi `auth.json` import | `test-tiering.mjs` (about 22 asserts) | medium (Eleforge tool names, runtime URL) | **ADAPT** the pi runner; **REFERENCE** the rest |
-| 24 | `apps/backend/mcp_server/tool_groups.py` (182) | Core tools plus named groups plus an `expand_toolset` meta-tool, with an invariant test (each tool in exactly one group) | `test_tool_groups.py` (7) | none | **LIFT** the pattern for forgeflow's optional MCP |
-| 25 | `apps/backend/mcp_server/agent_playbook.py` (785) | Versioned (`PLAYBOOK_VERSION="32"`) playbook served by a tool and pinned in the system prompt | `test_agent_external_brain.py` (116) | domain content | **REFERENCE** (it becomes forgeflow's skill file) |
+| 24 | `apps/backend/mcp_server/tool_groups.py` (182) | Core tools plus named groups plus an `expand_toolset` meta-tool, with an invariant test (each tool in exactly one group) | `test_tool_groups.py` (7) | none | **LIFT** the pattern for flower's optional MCP |
+| 25 | `apps/backend/mcp_server/agent_playbook.py` (785) | Versioned (`PLAYBOOK_VERSION="32"`) playbook served by a tool and pinned in the system prompt | `test_agent_external_brain.py` (116) | domain content | **REFERENCE** (it becomes flower's skill file) |
 | 26 | `mcp_server/platform_tools.py` gates (L2487-2921) | Server-side permission gate, check-then-increment budget, advisory lease, dead-letter after 8 redeliveries, long-poll | tested | high | **REFERENCE**: reimplement file-first |
 | 27 | `apps/backend/functional/workflow_templates/` (58 files, 60 templates) + `doc/workspace/2026-06-28-dag-template-audit.md` | Real DFT DAG shapes and a 53-template adversarial audit | the audit itself | domain | **REFERENCE** (§7) |
 | 28 | `packages/eleforge-agent` | Compute-node enrollment daemon (`/edge/*`) | no tests | Eleforge control plane | **LEAVE** |
@@ -110,7 +110,7 @@ class WorkflowEvent:
 ### 2.3 Gaps in the vocabulary
 
 - **No `node.succeeded`, `node.canceled` or `node.skipped` literal.** The backend emits them anyway through `event_type=f'node.{to_state}'` and `f'workflow.{to_state}'` in `WF/workflow_state_progression.py`. Skipped descendants get **no event at all**.
-- forgeflow needs one closed, explicit vocabulary that includes success, skip and invalidate.
+- flower needs one closed, explicit vocabulary that includes success, skip and invalidate.
 
 ### 2.4 Projection fold rules (`LF/events.py:175-251`)
 
@@ -122,8 +122,8 @@ class WorkflowEvent:
   - `accepted`, `planning`, `running` and `suspended` come from a fixed map (L62-68).
   - `workflow.completed` is coerced from `payload.state`, defaulting to `succeeded`.
   - `message` is updated only when the key is present.
-- **forgeflow should keep** the pure, deterministic, no-I/O fold and snapshot-carrying payloads.
-- **forgeflow should add:**
+- **flower should keep** the pure, deterministic, no-I/O fold and snapshot-carrying payloads.
+- **flower should add:**
   - a monotonic `seq` per run (Eleforge hit same-microsecond ordering ambiguity: commit `2bd03af1`);
   - `schemaVersion`;
   - a hash or reference for agent outputs, so replay reuses recorded results;
@@ -133,7 +133,7 @@ class WorkflowEvent:
 
 `node.started(at-1)` → `node.failed{errorClass:"transient"}` → `retry.scheduled{nextAttemptAtIso}` → `node.started(at-2, attemptNo 2)` → `outputs.committed` → `workflow.completed{state:succeeded}`.
 
-This is the attempt model forgeflow wants. The production backend never used it (§3.2).
+This is the attempt model flower wants. The production backend never used it (§3.2).
 
 ### 2.6 Attempt record and error classes (`LFTS/types.ts:392-413`; worth adopting)
 
@@ -168,7 +168,7 @@ The envelope is defined in `LF/plan.py:84-126` and `plan_schema.py:440-468`; the
 
 The Python backend uses a different interactionMode set (§3.3), so the two sides have drifted.
 
-**forgeflow should:**
+**flower should:**
 - keep the self-identifying envelope, deterministic serialization, and `PlanLoadError` codes (`INVALID_JSON, MISSING_KIND, WRONG_KIND, WRONG_API_VERSION, UNSUPPORTED_PLAN_VERSION, MISSING_SPEC, SPEC_VALIDATION`, plus `path` and `suggestion`);
 - replace `shape/dispatchMode/handler` with `kind: agent|shell|function|job|gate`;
 - make `plan.json` **mutable only through recorded amendments**. In LabFlow it is immutable after `save_plan`, and the `.tmp` + `os.replace` write is atomic.
@@ -197,7 +197,7 @@ NODE: pending  ->{ready,leased,running,skipped,failed,canceled}
 - `LFTS/runState.ts:3-11` makes terminal run states immutable.
 - `LFTS/nodeRuns.ts:66-76` allows `running→ready`, used for a re-queue.
 
-**forgeflow recommendation:**
+**flower recommendation:**
 - Keep the 9 node states.
 - Make terminal states final **per attempt**. A node's current state is the state of its latest attempt.
 - Add an explicit `superseded`/`invalidated` marker, recorded as an event, for rerun+downstream.
@@ -219,7 +219,7 @@ NODE: pending  ->{ready,leased,running,skipped,failed,canceled}
 - The execution shape is inherited from the oldest prior attempt. Remote nodes are re-dispatched asynchronously on the inherited queue (`13f6c842`).
 - Idempotency key: `workflow:{run}:rerun:{node_run_id}`.
 
-**Gaps forgeflow must close:**
+**Gaps flower must close:**
 - No downstream invalidation: stale downstream outputs survive, and `skipped` descendants are never revived.
 - No rerun-with-downstream API.
 - `workflow_attempts` (`WF/workflow_state_store.py:225-240`) is never written.
@@ -257,7 +257,7 @@ The backend supports `{"automatic","configure_on_input","confirm_on_output"}` (`
 | function `checkpoint` (`FunctionResult.status=="checkpoint"`) | Same path as confirm (L263-330) | `node.checkpoint{inputType,question,options,fields,actions,context}` | same | same; with an agent session, `preview` checkpoints are auto-accepted |
 | TypeScript `approval` | The node is `suspended` (`LFTS/runtime.ts:500-530`) | `node.suspended` + `approval.requested` → `approval.resolved{approved}` (actor `human`) | `resolveApproval()`: approved → `succeeded`, else `canceled` | in the log |
 
-**forgeflow's `gate` kind should be the TypeScript approval model**: everything in the log, and the request and resolution are events carrying actor and rationale. Also:
+**flower's `gate` kind should be the TypeScript approval model**: everything in the log, and the request and resolution are events carrying actor and rationale. Also:
 - Configure and confirm become *properties of any node*, both recorded as events.
 - **Lesson `3646e095`:** every pause type needs a programmatic CLI or tool to respond, not just an HTTP/UI path. Otherwise agent-driven runs deadlock.
 - **Lesson `bbf97142`:** never truncate or elide open interaction events. Status views must always surface still-open gates.
@@ -272,7 +272,7 @@ The backend supports `{"automatic","configure_on_input","confirm_on_output"}` (`
 - Depth is capped at 4.
 - No event records the expansion; the flattened template simply *is* the plan.
 
-**ADAPT this as the splice primitive for forgeflow amendments.** An approved amendment would:
+**ADAPT this as the splice primitive for flower amendments.** An approved amendment would:
 1. emit `plan.amendment.proposed`;
 2. emit `plan.amendment.approved{diff, contentHash}`;
 3. write `plan.json` atomically (tmp+rename) as version n+1;
@@ -303,7 +303,7 @@ SubmitState = Literal['accepted','submitting','submitted','submit_unknown']
 # queued->{running,completed,failed,canceled}; running->{queued(requeue),running,completed,failed,canceled}; terminal->{}
 ```
 
-`JobSnapshot` (L50-85) carries the fields worth mirroring in forgeflow's `job` attempt record:
+`JobSnapshot` (L50-85) carries the fields worth mirroring in flower's `job` attempt record:
 - `job_version` (for compare-and-swap);
 - `idempotency_key`;
 - `connection_ref`;
@@ -333,7 +333,7 @@ Directives and body:
 **Remaining steps:**
 - Write the marker `{wd}/.nanoforge-submit.json`.
 - Upload the script to `/tmp/nf_submit_{id}.sh`, then run `sbatch`.
-- Job id parsing takes the first all-digit word of stdout (L615-622). **forgeflow should use `sbatch --parsable`.**
+- Job id parsing takes the first all-digit word of stdout (L615-622). **flower should use `sbatch --parsable`.**
 
 ### 4.3 Polling, the state map and its bugs
 
@@ -354,7 +354,7 @@ PENDING -> queued | RUNNING, COMPLETING, CF, CG -> running | CANCELLED, TIMEOUT,
 FAILED, NODE_FAIL, OUT_OF_MEMORY, DEADLINE -> failed | COMPLETED -> completed | <else> -> running
 ```
 
-**Bugs that forgeflow must not copy:**
+**Bugs that flower must not copy:**
 1. `sacct` reports `CANCELLED by 1234`, which falls through to `running`, and the workdir fallback is skipped. **Match on the first token.**
 2. `TIMEOUT` maps to `canceled`. It should be `failed` with `errorClass=timeout`.
 3. Unmapped states (`PREEMPTED`, `BOOT_FAIL`, `OOM`, `SUSPENDED`, `REQUEUED`, `RESIZING`, the short codes `PD`/`R`/`CA`/`F`/`TO`/`NF`) all fall to `running`.
@@ -402,27 +402,27 @@ They deliberately use **no ControlMaster** (comment at L84-91; commits `e372517d
 - capped at 50 MB;
 - extracted with a path-traversal guard.
 
-forgeflow should add rsync for large outputs, but keep the "outputs stay remote, by reference" default.
+flower should add rsync for large outputs, but keep the "outputs stay remote, by reference" default.
 
 **Retry:** `remote_retry(3, ×2)` for transport errors only. Each submit retry builds a fresh session, and each attempt is idempotent through the marker plus find-existing (`c62bb9f0`).
 
 **Doc vs code:** the redesign doc (L323-342) still prescribes `ControlMaster=auto` and `ConnectTimeout=15` for background commands. **The code is right and the doc is stale.**
 
-### 4.5 Watcher and harvest semantics to replicate in `forgeflow tick`
+### 4.5 Watcher and harvest semantics to replicate in `flower tick`
 
 **Batching and claims:**
 - Batch status by (runner, connection), running connections in parallel with `ThreadPoolExecutor(min(4, n))` (`c8a5ba36`). One hung connection otherwise stalls the whole tick.
-- Take a per-job claim before acting (Redis `SET NX EX 10`; in forgeflow, a file lock).
+- Take a per-job claim before acting (Redis `SET NX EX 10`; in flower, a file lock).
 
 **Harvest order on terminal:** `fetch_result` → `fetch_artifacts` (best effort) → effective status (completed + `result.status=="error"` becomes failed) → transition. The harvest is idempotent: it returns early if the stored status is already terminal or the remote status is unchanged.
 
 **No fake success:** if `result.json` is unreadable, defer, and after `_RESULT_FETCH_MISS_LIMIT=5` misses fail explicitly.
 
-**LOST:** declared after `_LOST_CONFIRM_LIMIT=3` consecutive LOST observations. Any non-LOST observation resets the count. Eleforge keeps both counters in memory; **forgeflow should record observations as `external.state_observed` events** so they survive restarts.
+**LOST:** declared after `_LOST_CONFIRM_LIMIT=3` consecutive LOST observations. Any non-LOST observation resets the count. Eleforge keeps both counters in memory; **flower should record observations as `external.state_observed` events** so they survive restarts.
 
 **Detached runners:** shutdown never cancels remote jobs.
 
-**Watcher liveness:** it must exist and be observable (`9a592618`: "jobs done for days, never terminal" because no watcher thread ran). forgeflow therefore needs `forgeflow tick`, plus a `status` view that shows the last tick time.
+**Watcher liveness:** it must exist and be observable (`9a592618`: "jobs done for days, never terminal" because no watcher thread ran). flower therefore needs `flower tick`, plus a `status` view that shows the last tick time.
 
 **Progress:** short-lived `tail -c +<offset> job.log` polls with the offset tracked locally. `__NF_PROGRESS__<json>` lines emitted by the worker are authoritative (`af9cd6d7`).
 
@@ -434,12 +434,12 @@ These come from `doc/workspace/2026-04-24-s3-projection-authoritative.md`, `doc/
 
 - **Dual-write never converged.** S3a needed 11 parity sub-fixes, and S3c ("remove the SQL writes") is still blocked.
   - Examples: transition events bypassed the mirror (S3a.2); `save_plan_to_labflow` was never called (S3a.11); empty envelopes caused divergence (S3a.9).
-  - **forgeflow should have exactly one writer and one store: the log.** Any index must be rebuildable from it.
-- **The mirror soft-fails** (a broken mirror cannot stop execution). That is acceptable for a mirror and fatal for a source of truth. forgeflow must fail closed on a failed append.
+  - **flower should have exactly one writer and one store: the log.** Any index must be rebuildable from it.
+- **The mirror soft-fails** (a broken mirror cannot stop execution). That is acceptable for a mirror and fatal for a source of truth. flower must fail closed on a failed append.
 - **`labflow_refactor.md:274-279`:** "LabFlow records policy + events; host owns retry/pause/resume/rerun; replay must show every attempt, every produced output, and why the final state was accepted." This is a good principle statement to adopt verbatim.
-- **Provenance spec** (`labflow_refactor.md:251-279`): node *creates* versus workflow *returns*; exit record (0 or nonzero with code and message); `value` versus `artifact` ports (URI + hash + size + media type). Agent steps record prompt, tools, schemas, evidence, exit status, and the verification or human-gate result (L324-326). This was never implemented, so forgeflow can own it.
-- **Event-type parity guard** (`apps/backend/tests/test_labflow_event_type_parity.py`): it greps the emitters for `event_type="…"` and asserts each one is in the vocabulary. It misses f-strings, which is how `node.succeeded` escaped. forgeflow should use an enum or a constructor function per event type.
-- **Read-time healing** (`refresh_active_workflow_status`) worked well in practice. The equivalent for forgeflow: `status` folds the log, optionally runs one reconcile tick, and appends any observations.
+- **Provenance spec** (`labflow_refactor.md:251-279`): node *creates* versus workflow *returns*; exit record (0 or nonzero with code and message); `value` versus `artifact` ports (URI + hash + size + media type). Agent steps record prompt, tools, schemas, evidence, exit status, and the verification or human-gate result (L324-326). This was never implemented, so flower can own it.
+- **Event-type parity guard** (`apps/backend/tests/test_labflow_event_type_parity.py`): it greps the emitters for `event_type="…"` and asserts each one is in the vocabulary. It misses f-strings, which is how `node.succeeded` escaped. flower should use an enum or a constructor function per event type.
+- **Read-time healing** (`refresh_active_workflow_status`) worked well in practice. The equivalent for flower: `status` folds the log, optionally runs one reconcile tick, and appends any observations.
 
 ---
 
@@ -458,10 +458,10 @@ claude -p --mcp-config $CFG --strict-mcp-config --allowedTools "mcp__eleforge__*
 - The process runs in a subshell after `cd "$BRAIN_HOME" || exit 1`. The isolated cwd prevents `CLAUDE.md` ancestor discovery.
 - stdout and stderr are appended to a log file. **The result is never parsed**: the brain reports through MCP tool calls.
 
-**For forgeflow `agent` nodes:**
+**For flower `agent` nodes:**
 - Add `--output-format stream-json --verbose` (the `--verbose` flag is required with `-p`; see `context/claude-code/src/cli/print.ts:787`).
 - Add `--session-id <uuid>` for resume and replay (see `context/claude-code/src/bridge/sessionRunner.ts:287-303`).
-- Have the agent write a declared result file, or call a `forgeflow` CLI/MCP tool, to commit outputs.
+- Have the agent write a declared result file, or call a `flower` CLI/MCP tool, to commit outputs.
 
 ### 6.2 pi
 
@@ -481,7 +481,7 @@ claude -p --mcp-config $CFG --strict-mcp-config --allowedTools "mcp__eleforge__*
 
 ### 6.4 "Pluggable harness"
 
-This exists only as design: `doc/design/pluggable-agent-harness.md:58-69` sketches `AgentRuntime` with `PiRuntime`, `CodexRuntime` and `ClaudeCodeRuntime`, plus credential paths A-D. Nothing was implemented. forgeflow's per-harness adapter (argv builder, result capture, session/resume, cost) is new work.
+This exists only as design: `doc/design/pluggable-agent-harness.md:58-69` sketches `AgentRuntime` with `PiRuntime`, `CodexRuntime` and `ClaudeCodeRuntime`, plus credential paths A-D. Nothing was implemented. flower's per-harness adapter (argv builder, result capture, session/resume, cost) is new work.
 
 ### 6.5 Contract patterns worth keeping
 
@@ -508,7 +508,7 @@ There are 60 registered templates (`apps/backend/functional/workflow_templates/`
 
 **Band hand-off gap** (audit L61). `spectrum_bands_abacus` maps to ABACUS `calculation nscf` plus `init_chg file` (`abacus.py:101,257-259`), which needs the SCF charge density in its own `OUT.<suffix>/`. The DAG has **no scf→bands edge and no cross-node charge hand-off**, because each node is a separate job with a separate workdir. As a result the nscf finds no charge file.
 
-**Implications for forgeflow:**
+**Implications for flower:**
 1. **Artifact hand-off between `job` nodes must be first-class.** An upstream output port can be a *remote directory or file reference* (path, hash, host) that the downstream job stages, by copy or symlink, into its workdir. Alternatively, an explicit "same-workdir chain" option.
 2. Domain-heavy outputs are excluded from harvest on purpose (`*CHARGE-DENSITY*`, `*WAVEFUNC*`), which is right. But that means hand-off must happen **remote-to-remote by reference**, not by pulling files back.
 3. **Other systemic audit classes:**
@@ -562,9 +562,9 @@ There are 60 registered templates (`apps/backend/functional/workflow_templates/`
 
 ---
 
-## 9. Concrete forgeflow plan derived from this inventory
+## 9. Concrete flower plan derived from this inventory
 
-1. **`forgeflow/store`**
+1. **`flower/store`**
    - Start from `LF/repository.py` + `LF/events.py`.
    - Add a `flock` on `events.jsonl` and a monotonic `seq`.
    - Fail closed on append errors.
@@ -584,7 +584,7 @@ There are 60 registered templates (`apps/backend/functional/workflow_templates/`
    - `ExitCode` from sacct;
    - a LOST watchdog for Slurm;
    - observation counters stored as events.
-5. **Tick**: a stateless `forgeflow tick` (cron, systemd, or an outer agent loop) that folds the log, polls jobs batched per connection in parallel, harvests with defer/N-miss, and dispatches ready nodes. No resident daemon is required.
+5. **Tick**: a stateless `flower tick` (cron, systemd, or an outer agent loop) that folds the log, polls jobs batched per connection in parallel, harvests with defer/N-miss, and dispatches ready nodes. No resident daemon is required.
 6. **Agent nodes**
    - argv array, isolated cwd, `--strict-mcp-config`, allow/deny lists, a system-prompt-pinned contract, `stream-json` capture, session ids, and a declared result file.
    - Detect error stop reasons, clamp tokens, back off keyed on duration, and fail fast on auth/4xx.

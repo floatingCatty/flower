@@ -28,7 +28,7 @@ def agent_plan(fake, tmp_path):
     f = fake("claude", [{"answer": GOOD}], name="cli-claude")
     plan = make_plan([agent_node("calc", f.harness(), outputs={"energy": "number"}),
                       {"id": "post", "kind": "shell", "needs": ["calc"],
-                       "run": 'echo "{\\"double\\": 2, \\"summary\\": \\"post done\\"}" > "$FF_OUTPUTS"'}],
+                       "run": 'echo "{\\"double\\": 2, \\"summary\\": \\"post done\\"}" > "$FLOWER_OUTPUTS"'}],
                      pid="cli-agent", results=["calc"])
     return write_plan(tmp_path / "plan.yaml", plan), f
 
@@ -43,11 +43,11 @@ def test_plan_new_validate_show_reference(tmp_path):
     code, d, _ = ff("plan", "validate", p)
     assert code == 0 and d["data"]["valid"] is True and d["data"]["id"] == "starter"
     assert d["data"]["digest"].startswith("sha256:")
-    assert any("forgeflow run" in n for n in d["next"])
+    assert any("flower run" in n for n in d["next"])
     code, d, _ = ff("plan", "show", p)
     assert code == 0 and "overview" in d["data"] and d["data"]["plan"]["id"] == "starter"
     code, d, _ = ff("plan", "reference")
-    assert code == 0 and "forgeflow plan reference" in d["data"]["reference"]
+    assert code == 0 and "flower plan reference" in d["data"]["reference"]
     code, d, _ = ff("plan", "new", p)
     assert code == 2
     assert_envelope(d, ok=False)
@@ -57,7 +57,7 @@ def test_plan_new_validate_show_reference(tmp_path):
 
 
 def test_plan_validate_reports_every_issue(tmp_path):
-    bad = {"forgeflow": 1, "id": "bad plan!", "nodes": [
+    bad = {"flower": 1, "id": "bad plan!", "nodes": [
         {"id": "a", "kind": "agent", "harness": {"name": "gemini"}},
         {"id": "b", "kind": "shell", "run": "true", "needs": ["ghost"], "typo_field": 1}]}
     p = write_plan(tmp_path / "bad.yaml", bad)
@@ -80,7 +80,7 @@ def test_plan_validate_missing_file_and_bad_yaml(tmp_path):
 
 # ====================================================================== the run lifecycle
 
-def test_full_agent_run_lifecycle(agent_plan, tmp_path, ff_home):
+def test_full_agent_run_lifecycle(agent_plan, tmp_path, flower_home):
     plan_path, f = agent_plan
     # run -> awaiting approval (exit 3), never auto-approved in --json mode
     code, d, _ = ff("run", plan_path)
@@ -89,10 +89,10 @@ def test_full_agent_run_lifecycle(agent_plan, tmp_path, ff_home):
     rid = d["data"]["run_id"]
     assert d["data"]["status"] == "awaiting_approval"
     assert [g["id"] for g in d["data"]["open_gates"]] == ["plan"]
-    assert any(n.startswith(f"forgeflow approve {rid}") for n in d["next"])
+    assert any(n.startswith(f"flower approve {rid}") for n in d["next"])
     assert "overview" in d["data"]
     assert f.calls() == []
-    events = (ff_home / ".forgeflow" / "runs" / rid / "events.jsonl").read_text()
+    events = (flower_home / ".flower" / "runs" / rid / "events.jsonl").read_text()
     assert "plan.approved" not in events
 
     code, d, _ = ff("status", rid)
@@ -108,7 +108,7 @@ def test_full_agent_run_lifecycle(agent_plan, tmp_path, ff_home):
     code, d, _ = ff("approve", rid, "--note", "looks right", "--wait")
     assert code == 0, d
     assert d["data"]["status"] == "succeeded"
-    assert any(n == f"forgeflow report {rid}" for n in d["next"])
+    assert any(n == f"flower report {rid}" for n in d["next"])
     code, d, _ = ff("wait", rid)
     assert code == 0 and d["data"]["status"] == "succeeded"
     code, d, _ = ff("status", rid)
@@ -134,7 +134,7 @@ def test_full_agent_run_lifecycle(agent_plan, tmp_path, ff_home):
     code, d, _ = ff("logs", rid, "calc", "--raw")
     assert code == 0 and '"type": "result"' in d["data"]["text"]
     code, d, _ = ff("logs", rid, "post")
-    assert code == 0 and d["data"]["text"] == "(no output)"  # the shell node wrote only $FF_OUTPUTS
+    assert code == 0 and d["data"]["text"] == "(no output)"  # the shell node wrote only $FLOWER_OUTPUTS
 
     # output
     code, d, _ = ff("output", rid, "calc")
@@ -166,14 +166,14 @@ def test_full_agent_run_lifecycle(agent_plan, tmp_path, ff_home):
     code, d, _ = ff("audit", rid)
     assert code == 0
     a = d["data"]
-    assert a["schema"] == "forgeflow.audit/1"
+    assert a["schema"] == "flower.audit/1"
     assert a["run"]["id"] == rid and a["run"]["status"] == "succeeded"
     assert a["plan"]["approved_by"] == "test:pytest" and a["plan"]["generation"] == 0
     assert a["nodes"]["calc"]["attempts"][0]["usage"]["cost_usd"] == pytest.approx(0.25)
     assert a["nodes"]["post"]["needs"] == ["calc"]
     assert a["gates"]["plan"]["decision"] == "approve"
     code, _, p = ff("audit", rid, json_out=False)
-    assert code == 0 and json.loads(p.stdout)["schema"] == "forgeflow.audit/1"
+    assert code == 0 and json.loads(p.stdout)["schema"] == "flower.audit/1"
 
 
 def test_approve_without_wait_continues_in_background_driver(agent_plan):
@@ -193,7 +193,7 @@ def test_run_yes_failed_agent_exits_1_with_next_hints(fake, tmp_path):
     assert code == 1
     assert d["ok"] is False and d["data"]["status"] == "failed"
     rid = d["data"]["run_id"]
-    assert f"forgeflow show {rid} calc" in d["next"] and f"forgeflow rerun {rid} calc" in d["next"]
+    assert f"flower show {rid} calc" in d["next"] and f"flower rerun {rid} calc" in d["next"]
     (node,) = d["data"]["nodes"]
     assert node["error"]["error_class"] == "auth"
     code, d, _ = ff("wait", rid)
@@ -230,7 +230,7 @@ def test_amendment_gate_via_cli(fake, tmp_path):
     rid = d["data"]["run_id"]
     (gate,) = d["data"]["open_gates"]
     assert gate["subject"] == "amendment" and gate["id"].startswith("amend-")
-    assert any(n.startswith(f"forgeflow answer {rid} {gate['id']}") for n in d["next"])
+    assert any(n.startswith(f"flower answer {rid} {gate['id']}") for n in d["next"])
     code, d, _ = ff("show", rid, "--gate", gate["id"])
     assert code == 0 and "PLAN CHANGE proposed by agent:scout" in d["data"]["message"]
     assert d["data"]["amendment_id"]
@@ -295,24 +295,24 @@ def test_logs_unknown_attempt_is_a_clean_error(agent_plan):
 
 # ====================================================================== skill + doctor
 
-def test_skill_install_targets(tmp_path, ff_home):
+def test_skill_install_targets(tmp_path, flower_home):
     home = tmp_path / "home"
     home.mkdir()
     env = {"HOME": str(home)}
     code, d, _ = ff("skill", "claude", env=env)
-    assert code == 0 and d["data"] == [str(home / ".claude" / "skills" / "forgeflow" / "SKILL.md")]
-    skill = (home / ".claude" / "skills" / "forgeflow" / "SKILL.md").read_text()
-    assert skill.startswith("---\nname: forgeflow") and "FORGEFLOW_INSIDE_RUN" in skill
+    assert code == 0 and d["data"] == [str(home / ".claude" / "skills" / "flower" / "SKILL.md")]
+    skill = (home / ".claude" / "skills" / "flower" / "SKILL.md").read_text()
+    assert skill.startswith("---\nname: flower") and "FLOWER_INSIDE_RUN" in skill
     assert "Never approve on your own judgement" in skill
-    assert (home / ".claude" / "skills" / "forgeflow" / "PLAN_REFERENCE.md").exists()
+    assert (home / ".claude" / "skills" / "flower" / "PLAN_REFERENCE.md").exists()
     code, d, _ = ff("skill", "all", env=env)
     assert code == 0 and len(d["data"]) == 3
     for sub in (".claude", ".codex", ".agents"):
-        assert (home / sub / "skills" / "forgeflow" / "SKILL.md").exists()
+        assert (home / sub / "skills" / "flower" / "SKILL.md").exists()
     code, d, _ = ff("skill", "project", env=env)
     assert code == 0
-    assert (ff_home / ".claude" / "skills" / "forgeflow" / "SKILL.md").exists()
-    assert (ff_home / ".agents" / "skills" / "forgeflow" / "SKILL.md").exists()
+    assert (flower_home / ".claude" / "skills" / "flower" / "SKILL.md").exists()
+    assert (flower_home / ".agents" / "skills" / "flower" / "SKILL.md").exists()
     code, d, _ = ff("init", tmp_path / "proj", "--skill", "project", env=env)
     assert code == 0
 
@@ -334,13 +334,13 @@ def test_doctor_with_fake_harnesses_on_path(tmp_path):
     assert checks["python"]["ok"] is True and checks["project"]["ok"] is True
 
 
-def test_agent_inside_a_node_cannot_answer_the_users_gate(tmp_path, ff_home):
+def test_agent_inside_a_node_cannot_answer_the_users_gate(tmp_path, flower_home):
     import sys
-    from agentkit import FF_BIN
-    from forgeflow.engine import Engine
-    from forgeflow.rundir import RunPaths
+    from agentkit import FLOWER_BIN
+    from flower.engine import Engine
+    from flower.rundir import RunPaths
     code = ("import os, subprocess\n"
-            f"subprocess.run([{str(FF_BIN)!r}, 'answer', os.environ['FF_RUN_ID'], 'review#a1', 'approve',"
+            f"subprocess.run([{str(FLOWER_BIN)!r}, 'answer', os.environ['FLOWER_RUN_ID'], 'review#a1', 'approve',"
             " '--text', 'lgtm', '--no-continue'], capture_output=True)\n"
             "print('{\"summary\": \"did my task\"}')\n")
     plan = make_plan([{"id": "review", "kind": "gate", "message": "Human: is the structure right?"},
@@ -349,6 +349,6 @@ def test_agent_inside_a_node_cannot_answer_the_users_gate(tmp_path, ff_home):
     p = write_plan(tmp_path / "p.yaml", plan)
     rc, d, _ = ff("run", p, "--yes")
     rid = d["data"]["run_id"]
-    st = Engine(RunPaths(ff_home, rid)).state()
+    st = Engine(RunPaths(flower_home, rid)).state()
     assert st.nodes["sneaky"].status == "succeeded"
     assert st.gates["review#a1"].status == "open", f"gate answered from inside a node by {st.gates['review#a1'].by}"

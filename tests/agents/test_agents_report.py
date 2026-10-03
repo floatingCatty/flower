@@ -7,7 +7,7 @@ import re
 import pytest
 
 from agentkit import agent_node, make_plan
-from forgeflow.report import audit, build_markdown, md_to_html, write_report
+from flower.report import audit, build_markdown, md_to_html, write_report
 
 
 def h2s(html: str) -> list[str]:
@@ -62,7 +62,7 @@ def test_audit_is_stable_json(fake, run_plan):
     a = audit(eng)
     s = json.dumps(a, default=str)
     a2 = json.loads(s)
-    assert a2["schema"] == "forgeflow.audit/1"
+    assert a2["schema"] == "flower.audit/1"
     assert set(a2) >= {"run", "plan", "nodes", "gates", "amendments", "notes"}
     (att,) = a2["nodes"]["p"]["attempts"]
     assert att["session"] and att["outputs"] == {"n": 3} and att["rationale"] == "r"

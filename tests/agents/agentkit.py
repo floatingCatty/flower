@@ -11,7 +11,7 @@ HERE = Path(__file__).resolve().parent
 FAKE = HERE / "fakes" / "fake_harness.py"
 FIXTURES = HERE / "fixtures"
 REPO = HERE.parent.parent
-FF_BIN = REPO / ".venv" / "bin" / "forgeflow"
+FLOWER_BIN = REPO / ".venv" / "bin" / "flower"
 PY = sys.executable
 
 
@@ -51,7 +51,7 @@ def agent_node(nid: str, harness: dict, prompt: str = "Do the task.", **kw) -> d
 
 
 def make_plan(nodes: list[dict], pid: str = "agent-test", **kw) -> dict:
-    p = {"forgeflow": 1, "id": pid, "title": "Agent test", "description": "Tests the agent node contract.",
+    p = {"flower": 1, "id": pid, "title": "Agent test", "description": "Tests the agent node contract.",
          "nodes": nodes}
     p.update(kw)
     return p
@@ -74,7 +74,7 @@ def write_plan(path: Path, plan: dict) -> Path:
 
 def ff(*args, cwd=None, env=None, input=None, timeout=90, json_out=True):
     """Run the real CLI in a subprocess. Returns (exit_code, parsed_json_or_None, completed_process)."""
-    argv = [str(FF_BIN), *[str(a) for a in args]]
+    argv = [str(FLOWER_BIN), *[str(a) for a in args]]
     if json_out:
         argv.append("--json")
     e = dict(os.environ)

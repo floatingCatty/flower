@@ -5,8 +5,8 @@ import multiprocessing as mp
 
 import pytest
 
-from forgeflow import template as tpl
-from forgeflow.template import TemplateError
+from flower import template as tpl
+from flower.template import TemplateError
 
 CTX = {
     "inputs": {"n": 3, "name": "si", "tags": ["a", "b"], "cfg": {"k": 1.5}, "flag": False, "dollar": "$${x}"},

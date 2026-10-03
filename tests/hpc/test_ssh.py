@@ -15,9 +15,9 @@ from pathlib import Path
 
 import pytest
 
-from forgeflow.hpc.transport import SSHTransport
+from flower.hpc.transport import SSHTransport
 
-OUT = 'printf \'{"x": 1}\' > "$FF_OUTPUTS"\necho result > result.txt'
+OUT = 'printf \'{"x": 1}\' > "$FLOWER_OUTPUTS"\necho result > result.txt'
 
 FAKE_SSH = r"""#!/usr/bin/env bash
 # fake OpenSSH client for tests
@@ -107,7 +107,7 @@ def test_ssh_job_end_to_end(ff, fakessh, tmp_path):
     local = eng.paths.attempt_dir("a", 1) / "job"
     assert (local / "outputs.json").exists() and (local / "extra" / "e.log").exists()
     assert (local / f"slurm-{r.outputs['job_id']}.out").exists()
-    assert (local / ".forgeflow" / "ec").read_text().strip() == "0"
+    assert (local / ".flower" / "ec").read_text().strip() == "0"
     assert not (local / "seen.txt").exists()  # only declared/retrieved things come back
     assert Path(r.files["res"]["path"]) == (local / "result.txt").resolve()
     assert ff.events(eng, "job.retrieved")

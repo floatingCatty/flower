@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 
 from agentkit import FIXTURES
-from forgeflow.harness import HARNESSES, get_harness
-from forgeflow.harness.base import AgentRequest
-from forgeflow.transcript import render_transcript
+from flower.harness import HARNESSES, get_harness
+from flower.harness.base import AgentRequest
+from flower.transcript import render_transcript
 
 
 def req(tmp_path, **kw) -> AgentRequest:
@@ -187,8 +187,8 @@ def test_script_build(tmp_path):
     inv = get_harness("script").build(r)
     assert inv.argv == ["python3", "agent.py", "--x", "--y"]
     assert inv.stdin_text == r.prompt
-    assert json.loads(inv.env["FF_OUTPUT_SCHEMA"]) == schema
-    assert inv.env["FF_MODEL"] == "m1" and inv.env["K"] == "V"
+    assert json.loads(inv.env["FLOWER_OUTPUT_SCHEMA"]) == schema
+    assert inv.env["FLOWER_MODEL"] == "m1" and inv.env["K"] == "V"
 
 
 def test_script_build_requires_command(tmp_path):
@@ -362,7 +362,7 @@ def test_pi_parse_nonzero_exit_without_answer(tmp_path):
 def test_script_parse_strips_action_lines(tmp_path):
     p = tmp_path / "proc"
     p.mkdir()
-    (p / "stdout.log").write_text('{"forgeflow_action": "step one"}\nhello\n{"forgeflow_action": "step two"}\n{"a": 1}\n')
+    (p / "stdout.log").write_text('{"flower_action": "step one"}\nhello\n{"flower_action": "step two"}\n{"a": 1}\n')
     h = get_harness("script")
     hr = h.parse(p, {"returncode": 0})
     assert hr.ok and hr.text == 'hello\n{"a": 1}'

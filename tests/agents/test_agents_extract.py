@@ -7,7 +7,7 @@ import sys
 
 import pytest
 
-from forgeflow.harness.base import classify_error, extract_json, parse_retry_after
+from flower.harness.base import classify_error, extract_json, parse_retry_after
 
 
 # ---------------------------------------------------------------- extract_json
@@ -104,7 +104,7 @@ def test_final_bare_answer_beats_earlier_fenced_example():
 
 
 QUADRATIC_PROG = r"""
-from forgeflow.harness.base import extract_json
+from flower.harness.base import extract_json
 code = "\n".join("    if (x) { y(); }" for _ in range(4000)) + "\n" + "}" * 3000
 assert extract_json(code) is None
 """

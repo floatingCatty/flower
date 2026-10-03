@@ -1,6 +1,6 @@
-"""Fixtures for the forgeflow core test-suite (journal / plan / template / fold / engine / local executors).
+"""Fixtures for the flower core test-suite (journal / plan / template / fold / engine / local executors).
 
-Every test gets an isolated FORGEFLOW_HOME under ``tmp_path`` and a fixed actor. Any detached
+Every test gets an isolated FLOWER_HOME under ``tmp_path`` and a fixed actor. Any detached
 ``_runner`` (and its child process group) left behind by a test is killed on teardown.
 """
 from __future__ import annotations
@@ -51,9 +51,9 @@ def kill_leftovers(token: str) -> None:
 def home(tmp_path, monkeypatch):
     h = tmp_path / "home"
     h.mkdir()
-    monkeypatch.setenv("FORGEFLOW_HOME", str(h))
-    monkeypatch.setenv("FORGEFLOW_ACTOR", "human:tester")
-    monkeypatch.delenv("FORGEFLOW_INSIDE_RUN", raising=False)
+    monkeypatch.setenv("FLOWER_HOME", str(h))
+    monkeypatch.setenv("FLOWER_ACTOR", "human:tester")
+    monkeypatch.delenv("FLOWER_INSIDE_RUN", raising=False)
     monkeypatch.delenv("BASH_ENV", raising=False)  # a sourced ~/.bashrc makes every shell node ~0.5s slower
     monkeypatch.chdir(tmp_path)
     yield h
@@ -72,7 +72,7 @@ def mkplan(src_dir):
     """mkplan(nodes, **top) -> plan dict with `_source.dir` pointing at the per-test module dir."""
 
     def make(nodes, **top):
-        plan = {"forgeflow": 1, "id": top.pop("id", "t"), "nodes": nodes, "_source": {"dir": str(src_dir)}}
+        plan = {"flower": 1, "id": top.pop("id", "t"), "nodes": nodes, "_source": {"dir": str(src_dir)}}
         plan.update(top)
         return plan
 
@@ -82,7 +82,7 @@ def mkplan(src_dir):
 @pytest.fixture
 def start(home):
     """start(plan, inputs=None, approve=True) -> Engine."""
-    from forgeflow.engine import create_run
+    from flower.engine import create_run
 
     def go(plan, inputs=None, approve=True, **kw):
         return create_run(plan, inputs or {}, root=home, approve=approve, **kw)
@@ -92,8 +92,8 @@ def start(home):
 
 @pytest.fixture
 def cli(home, capsys):
-    """cli(*argv) -> (exit_code, parsed_json_or_text). Runs forgeflow.cli.main in-process."""
-    from forgeflow.cli import main
+    """cli(*argv) -> (exit_code, parsed_json_or_text). Runs flower.cli.main in-process."""
+    from flower.cli import main
 
     def call(*argv, as_json=True):
         argv = list(argv)

@@ -1,14 +1,14 @@
-# forgeflow
+# flower
 
 **Durable, file-first workflows for long-running research driven by people and coding agents.**
 
-You describe a multi-step study as a plan (YAML). You approve it. forgeflow runs it, for minutes or for
+You describe a multi-step study as a plan (YAML). You approve it. flower runs it, for minutes or for
 days. Steps can be agent tasks (Claude Code, Codex, pi), shell or Python steps, Slurm jobs on a cluster,
 human decisions, or waits for external data. You can stop, look away, come back in a new session, and
 the run tells you exactly where it is, what happened, why, and what it needs from you.
 
 ```text
-$ forgeflow status
+$ flower status
 Screening fcc metals for atomic-oxygen binding  ·  run fcc-catalyst-screening-20261003-…  ·  PARKED  ·  9m12s
   plan generation 2 (4be1…)  ·  14/16 done  ·  agents used 310k tokens
 
@@ -23,13 +23,13 @@ Screening fcc metals for atomic-oxygen binding  ·  run fcc-catalyst-screening-2
 
 Waiting for you:
   • gate review#a1: Best candidate: Pt …
-      forgeflow answer fcc-catalyst-screening-… review#a1 approve [--text '…']
+      flower answer fcc-catalyst-screening-… review#a1 approve [--text '…']
 ```
 
 ## Why
 
 Coding agents are now very good at single tasks. They struggle with long, multi-round work: jobs that
-outlive the session, context that gets compacted, decisions nobody recorded. forgeflow keeps the state
+outlive the session, context that gets compacted, decisions nobody recorded. flower keeps the state
 outside the agent:
 
 * **The plan is a contract.** The user approves its digest before anything runs. Changes during the
@@ -39,53 +39,53 @@ outside the agent:
   `status`, `log`, `report` and the scheduler are all folds of that log, so a run can be replayed and
   audited, and any process (you, cron, another agent) can continue it.
 * **Nothing holds a process open.** Local steps run under detached supervisors. Slurm jobs park
-  until they finish. `forgeflow tick` advances a run in one short pass, so there is no daemon to babysit;
+  until they finish. `flower tick` advances a run in one short pass, so there is no daemon to babysit;
   cron or `scrontab` is enough on a cluster.
 * **It is easy to read.** Every node reports a one-line summary and, for agents, a rationale. Failures
   have a class (`timeout`, `oom`, `node_fail`, `auth`, `contract`, …) and a hint. Every command prints
-  what to do next. `forgeflow report` writes a Markdown/HTML report with the decisions, results, files,
+  what to do next. `flower report` writes a Markdown/HTML report with the decisions, results, files,
   plan changes and a full timeline.
 
 ## Install
 
 ```bash
 pip install -e .            # Python ≥ 3.9; dependencies: pyyaml, jsonschema
-forgeflow doctor            # which harnesses and Slurm tools are available
+flower doctor            # which harnesses and Slurm tools are available
 ```
 
 ## Quick start
 
 ```bash
-forgeflow init                       # creates .forgeflow/ in this directory
-forgeflow plan new study.yaml        # a commented starter plan
-forgeflow plan validate study.yaml   # lists every problem with a fix hint
-forgeflow run study.yaml             # shows the plan, asks you to approve, then runs it live
+flower init                       # creates .flower/ in this directory
+flower plan new study.yaml        # a commented starter plan
+flower plan validate study.yaml   # lists every problem with a fix hint
+flower run study.yaml             # shows the plan, asks you to approve, then runs it live
 ```
 
-`ctrl-c` detaches. Running steps keep going. Continue with `forgeflow resume RUN` (foreground) or
-`forgeflow resume RUN --detach` (background). From any later session:
+`ctrl-c` detaches. Running steps keep going. Continue with `flower resume RUN` (foreground) or
+`flower resume RUN --detach` (background). From any later session:
 
 ```bash
-forgeflow ls                     # all runs
-forgeflow status [RUN]           # where it is, what needs you
-forgeflow log [RUN]              # what happened, in order, by whom
-forgeflow show RUN NODE          # attempts, inputs, outputs, files, errors, rationale
-forgeflow logs RUN NODE          # agent transcript / Slurm output / shell output
-forgeflow answer RUN GATE approve --text "why"
-forgeflow rerun RUN NODE         # run it again (a foreach: all its items) plus everything downstream (unchanged steps are reused)
-forgeflow report RUN             # report.md + report.html
+flower ls                     # all runs
+flower status [RUN]           # where it is, what needs you
+flower log [RUN]              # what happened, in order, by whom
+flower show RUN NODE          # attempts, inputs, outputs, files, errors, rationale
+flower logs RUN NODE          # agent transcript / Slurm output / shell output
+flower answer RUN GATE approve --text "why"
+flower rerun RUN NODE         # run it again (a foreach: all its items) plus everything downstream (unchanged steps are reused)
+flower report RUN             # report.md + report.html
 ```
 
 ## A plan
 
 ```yaml
-forgeflow: 1
+flower: 1
 id: si-bands
 title: Silicon band structure
 inputs:
   structure: {type: path}
 clusters:
-  hpc: {transport: ssh, host: myhpc, remote_root: ~/ff-runs, modules: [qe/7.3]}
+  hpc: {transport: ssh, host: myhpc, remote_root: ~/flower-runs, modules: [qe/7.3]}
 nodes:
   - id: relax
     kind: job
@@ -94,7 +94,7 @@ nodes:
     stage_in: ["${inputs.structure}"]
     script: |
       mpirun pw.x -in relax.in > relax.out
-      python parse.py relax.out > "$FF_OUTPUTS"      # {"energy": …, "converged": true}
+      python parse.py relax.out > "$FLOWER_OUTPUTS"      # {"energy": …, "converged": true}
     outputs: {energy: number, converged: boolean}
 
   - id: check
@@ -119,13 +119,13 @@ nodes:
 
 Node kinds: `agent`, `shell`, `function`, `job`, `gate`, `wait`. Plus `foreach` fan-out, `when`
 conditions, retries keyed on failure class, timeouts, caching and rework loops. The full format is in
-[`docs/PLAN_REFERENCE.md`](docs/PLAN_REFERENCE.md), also printed by `forgeflow plan reference`.
+[`docs/PLAN_REFERENCE.md`](docs/PLAN_REFERENCE.md), also printed by `flower plan reference`.
 The user guide is [`docs/GUIDE.md`](docs/GUIDE.md).
 
 ## Web UI
 
 ```bash
-forgeflow ui                         # prints http://localhost:8765/?token=…
+flower ui                         # prints http://localhost:8765/?token=…
 ```
 
 On a remote machine, tunnel first:
@@ -175,20 +175,20 @@ Everything it shows comes from the journal. Every action goes through the same e
 and is recorded under your name. It binds to `127.0.0.1` and needs a per-start token (shared login nodes
 are safe). It only serves files that belong to the run, and works offline, with no CDN.
 
-## Driving forgeflow from a coding agent
+## Driving flower from a coding agent
 
 ```bash
-forgeflow skill install claude      # or: codex | agents | project | all
+flower skill install claude      # or: codex | agents | project | all
 ```
 
 The skill teaches the agent the loop: draft → validate → show the user → **the user approves** →
-run detached → `forgeflow wait --json` → relay decisions → rerun or amend → report. Every command takes
+run detached → `flower wait --json` → relay decisions → rerun or amend → report. Every command takes
 `--json` and returns `{ok, data, error, next}`. Exit codes are `0` succeeded, `1` failed, `2` usage
-error, `3` needs a decision or still running. `forgeflow mcp` serves the same verbs over MCP. Approval
+error, `3` needs a decision or still running. `flower mcp` serves the same verbs over MCP. Approval
 verbs are deliberately not exposed there, so an agent cannot approve its own plan.
 
 Agent steps run the real harness CLIs (`claude -p`, `codex exec --json`, `pi --mode json`) in a
-dedicated work directory. forgeflow records the exact argv, the session id, the transcript, tokens and
+dedicated work directory. flower records the exact argv, the session id, the transcript, tokens and
 cost. It validates the agent's final JSON against the declared outputs and uses up to N repair turns on
 the same session if it doesn't match.
 
@@ -199,7 +199,7 @@ opens a ControlMaster). Submission is idempotent: a write-ahead intent, a determ
 job-id file and an in-job duplicate guard mean a crash at any point re-attaches instead of submitting
 twice. Polling batches `squeue` → `sacct` → evidence files, tolerates sacct lag and MinJobAge, and
 reports typed failures (`timeout`, `oom`, `node_fail`, `preempted`, `exit_nonzero`, `lost`). Try it without
-a cluster: `forgeflow fake-slurm ./fs` installs a local fake Slurm.
+a cluster: `flower fake-slurm ./fs` installs a local fake Slurm.
 
 ## Example: an end-to-end study, run for real
 
@@ -216,15 +216,17 @@ a cluster: `forgeflow fake-slurm ./fs` installs a local fake Slurm.
 
 **Faults injected during the run.**
 - An injected `NODE_FAIL` was retried automatically.
-- The background driver was killed with `SIGKILL` in the middle of the run. A single `forgeflow tick` from a
+- The background driver was killed with `SIGKILL` in the middle of the run. A single `flower tick` from a
   fresh process collected the jobs that had finished in the meantime, and the run continued.
 
-**Outcome.** 17/17 nodes succeeded in 7m56s. Afterwards, `forgeflow fork RUN --from plot` replayed the
+**Outcome.** 17/17 nodes succeeded in 7m56s. Afterwards, `flower fork RUN --from plot` replayed the
 whole study in 3 seconds. It reused every recorded result, including the agents' decisions and the job
 their amendment added, without calling the LLM again. Only the plot was re-executed, and the new run
 asked a human to review it again.
 
-**Record of the run** (in `docs/demo/`):
+**Record of the run** (in `docs/demo/`). The run was made before the project was renamed from
+forgeflow to flower, so these files and screenshots still show the old name (`forgeflow` commands,
+`.forgeflow/` paths, `ff-` job names):
 - [`final-status.txt`](docs/demo/final-status.txt)
 - [`timeline.txt`](docs/demo/timeline.txt)
 - [`report.md`](docs/demo/report.md) / [`report.html`](docs/demo/report.html)

@@ -1,4 +1,4 @@
-"""Pure unit tests for forgeflow.hpc.slurm and forgeflow.hpc.transport (no engine, no fake Slurm daemons)."""
+"""Pure unit tests for flower.hpc.slurm and flower.hpc.transport (no engine, no fake Slurm daemons)."""
 from __future__ import annotations
 
 import os
@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from forgeflow.hpc import slurm
-from forgeflow.hpc.transport import CmdResult, LocalTransport, SSHTransport, make_transport
+from flower.hpc import slurm
+from flower.hpc.transport import CmdResult, LocalTransport, SSHTransport, make_transport
 
 # ====================================================================== base_state
 
@@ -76,9 +76,9 @@ def test_parse_poll_error_markers_and_empty():
 
 def test_poll_command_is_one_script_and_quotes_dirs(tmp_path):
     d = tmp_path / "it's a dir"
-    (d / ".forgeflow").mkdir(parents=True)
-    (d / ".forgeflow" / "ec").write_text("0\n")
-    (d / ".forgeflow" / "started").write_text("x")
+    (d / ".flower").mkdir(parents=True)
+    (d / ".flower" / "ec").write_text("0\n")
+    (d / ".flower" / "started").write_text("x")
     (d / "outputs.json").write_text("{}")
     cmd = slurm.poll_command([("11", str(d)), ("12", str(tmp_path / "nope"))],
                              {"squeue": "false", "sacct": "true"})
@@ -98,7 +98,7 @@ def _poll(squeue=None, sacct=None, ev=None):
 
 
 SQUEUE_TABLE = [
-    # raw squeue %T (or %t)      -> forgeflow state
+    # raw squeue %T (or %t)      -> flower state
     ("PENDING", "QUEUED"), ("CONFIGURING", "QUEUED"), ("REQUEUED", "QUEUED"), ("REQUEUE_HOLD", "QUEUED"),
     ("REQUEUE_FED", "QUEUED"), ("RESV_DEL_HOLD", "QUEUED"), ("SPECIAL_EXIT", "QUEUED"),
     ("PD", "QUEUED"), ("CF", "QUEUED"), ("RQ", "QUEUED"), ("RH", "QUEUED"), ("SE", "QUEUED"),
@@ -208,7 +208,7 @@ VERDICTS = [
     (None, "REVOKED", False, None, ("failed", "cancelled_ext", False)),
     (None, "CANCELLED", True, "0:15", ("cancelled", "cancelled", False)),
     (None, None, True, None, ("cancelled", "cancelled", False)),
-    (None, "TIMEOUT", True, None, ("cancelled", "cancelled", False)),       # forgeflow asked; no ec
+    (None, "TIMEOUT", True, None, ("cancelled", "cancelled", False)),       # flower asked; no ec
     (0, "COMPLETED", True, "0:0", ("succeeded", None, False)),              # finished before the cancel landed
     (None, "COMPLETED", False, "0:0", ("failed", "missing_ec", True)),
     (None, None, False, None, ("failed", "unknown", True)),
@@ -231,7 +231,7 @@ def test_verdict_cancelled_by_uid_end_to_end_parse():
 
 
 def test_verdict_duplicate_guard_code_from_evidence():
-    # the guard exits before writing .forgeflow/ec, so a duplicate shows up as ec=None + sacct ExitCode 97 (P2-4)
+    # the guard exits before writing .flower/ec, so a duplicate shows up as ec=None + sacct ExitCode 97 (P2-4)
     status, cls, _, retry = slurm.verdict({"ec": None, "final": "FAILED", "exit": "97:0"})
     assert (status, cls, retry) == ("failed", "duplicate", False)
 
@@ -290,16 +290,16 @@ def test_sbatch_directives_reject_newline_injection():
 
 
 def _render(job_dir, env=None, resources=None, prelude=None, modules=None):
-    return slurm.render_job_script(key="ff-abc-n-a1", job_dir=str(job_dir), resources=resources or {"time": 5},
+    return slurm.render_job_script(key="flower-abc-n-a1", job_dir=str(job_dir), resources=resources or {"time": 5},
                                    env=env or {}, prelude=prelude, modules=modules)
 
 
 def test_render_job_script_shape(tmp_path):
-    s = _render(tmp_path, env={"FF_RUN_ID": "r1", "bad key": "x", "X": "a b'c$(touch PWN)"},
+    s = _render(tmp_path, env={"FLOWER_RUN_ID": "r1", "bad key": "x", "X": "a b'c$(touch PWN)"},
                 prelude=["echo pre"], modules=["gcc/12"])
     lines = s.splitlines()
     assert lines[0] == "#!/bin/bash"
-    assert "#SBATCH --job-name=ff-abc-n-a1" in lines
+    assert "#SBATCH --job-name=flower-abc-n-a1" in lines
     assert "#SBATCH --time=0:05:00" in lines
     # every #SBATCH line comes before the first command (Slurm stops parsing at the first command)
     first_cmd = next(i for i, l in enumerate(lines) if l and not l.startswith("#"))
@@ -311,7 +311,7 @@ def test_render_job_script_shape(tmp_path):
 
 def _run_script(job_dir: Path, jid: str, user: str = "echo ok") -> subprocess.CompletedProcess:
     (job_dir / "user.sh").write_text("set -eo pipefail\n" + user + "\n")
-    (job_dir / "job.sh").write_text(_render(job_dir, env={"X": "a b'c$(touch PWN)", "FF_ATTEMPT": 1}))
+    (job_dir / "job.sh").write_text(_render(job_dir, env={"X": "a b'c$(touch PWN)", "FLOWER_ATTEMPT": 1}))
     env = {**os.environ, "SLURM_JOB_ID": jid}
     return subprocess.run(["bash", str(job_dir / "job.sh")], cwd=job_dir, env=env, capture_output=True, text=True)
 
@@ -319,25 +319,25 @@ def _run_script(job_dir: Path, jid: str, user: str = "echo ok") -> subprocess.Co
 def test_job_script_writes_evidence_and_guards_duplicates(tmp_path):
     d = tmp_path / "jd"
     d.mkdir()
-    r = _run_script(d, "100", user='printf "%s" "$X" > x.txt; echo "$FF_OUTPUTS" > where.txt')
+    r = _run_script(d, "100", user='printf "%s" "$X" > x.txt; echo "$FLOWER_OUTPUTS" > where.txt')
     assert r.returncode == 0, r.stderr
-    assert (d / ".forgeflow" / "ec").read_text().strip() == "0"
-    assert (d / ".forgeflow" / "owner" / "id").read_text().strip() == "100"
-    assert (d / ".forgeflow" / "started").exists() and (d / ".forgeflow" / "ended").exists()
+    assert (d / ".flower" / "ec").read_text().strip() == "0"
+    assert (d / ".flower" / "owner" / "id").read_text().strip() == "100"
+    assert (d / ".flower" / "started").exists() and (d / ".flower" / "ended").exists()
     assert (d / "x.txt").read_text() == "a b'c$(touch PWN)"          # env value exported verbatim
     assert not (d / "PWN").exists()
     assert (d / "where.txt").read_text().strip() == f"{d}/outputs.json"
     # a second copy of the same attempt (different Slurm id) is refused with 97 and does not touch ec
-    (d / ".forgeflow" / "ec").write_text("0\n")
+    (d / ".flower" / "ec").write_text("0\n")
     r2 = _run_script(d, "101", user="echo SECOND > second.txt; exit 5")
     assert r2.returncode == 97
     assert "another job already owns this attempt" in r2.stderr
     assert not (d / "second.txt").exists()
-    assert (d / ".forgeflow" / "ec").read_text().strip() == "0"
+    assert (d / ".flower" / "ec").read_text().strip() == "0"
     # a Slurm requeue keeps the same id and is allowed to run again
     r3 = _run_script(d, "100", user="exit 6")
     assert r3.returncode == 6
-    assert (d / ".forgeflow" / "ec").read_text().strip() == "6"
+    assert (d / ".flower" / "ec").read_text().strip() == "6"
 
 
 def test_job_script_pipefail_in_user_payload(tmp_path):
@@ -346,7 +346,7 @@ def test_job_script_pipefail_in_user_payload(tmp_path):
     r = _run_script(d, "1", user="false | true\necho never > never.txt")
     assert r.returncode == 1
     assert not (d / "never.txt").exists()
-    assert (d / ".forgeflow" / "ec").read_text().strip() == "1"
+    assert (d / ".flower" / "ec").read_text().strip() == "1"
 
 
 def test_job_script_missing_dir_exits_96(tmp_path):
@@ -366,7 +366,7 @@ def test_submit_key_charset_length(node, attempt):
     k = slurm.submit_key("myplan-20261003-040528-4e92", node, attempt)
     assert len(k) <= 64
     assert re.fullmatch(r"[A-Za-z0-9_.\-]+", k), k
-    assert k.startswith("ff-") and k.endswith(f"-a{attempt}")
+    assert k.startswith("flower-") and k.endswith(f"-a{attempt}")
     assert slurm.submit_key("myplan-20261003-040528-4e92", node, attempt) == k   # deterministic
 
 
@@ -392,8 +392,8 @@ def test_parse_submit(out, want):
 
 def test_submit_command_reuses_jobid_file(tmp_path):
     d = tmp_path / "jd"
-    (d / ".forgeflow").mkdir(parents=True)
-    (d / ".forgeflow" / "jobid").write_text("4242;cluster\n")
+    (d / ".flower").mkdir(parents=True)
+    (d / ".flower" / "jobid").write_text("4242;cluster\n")
     cmd = slurm.submit_command(str(d), "k", "fp", {"sbatch": "false", "squeue": "false", "sacct": "false"})
     r = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True)
     assert r.returncode == 0
@@ -410,7 +410,7 @@ def test_submit_command_sbatch_failure_is_nonzero_and_leaves_no_jobid(tmp_path):
     r = subprocess.run(["bash", "-c", cmd], capture_output=True, text=True)
     assert r.returncode != 0
     assert slurm.parse_submit(r.stdout) is None
-    assert not (d / ".forgeflow" / "jobid").exists()
+    assert not (d / ".flower" / "jobid").exists()
 
 
 # ====================================================================== transport

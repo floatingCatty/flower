@@ -1,7 +1,7 @@
 """Fixtures for the HPC ``job`` node test-suite (fake Slurm, local + ssh transports).
 
 Every test gets:
-  * an isolated FORGEFLOW_HOME under ``tmp_path``;
+  * an isolated FLOWER_HOME under ``tmp_path``;
   * a fresh fake Slurm (``tmp_path/fs/{bin,state}``) with fast defaults (PEND 0.2 s, MinJobAge 5 s, no sacct lag);
   * teardown that kills every leftover fake-slurm runner / payload process that mentions ``tmp_path``.
 
@@ -22,8 +22,8 @@ from types import SimpleNamespace
 
 import pytest
 
-from forgeflow.engine import Engine, create_run
-from forgeflow.testing.fakeslurm import install
+from flower.engine import Engine, create_run
+from flower.testing.fakeslurm import install
 
 TERMINAL = ("succeeded", "failed", "cancelled", "rejected")
 
@@ -79,8 +79,8 @@ class FF:
         # a BASH_ENV (e.g. ~/.bashrc) would be sourced by every `bash -c` the local transport runs: slow + noisy
         monkeypatch.delenv("BASH_ENV", raising=False)
         monkeypatch.delenv("ENV", raising=False)
-        monkeypatch.setenv("FORGEFLOW_HOME", str(self.home))
-        monkeypatch.setenv("FORGEFLOW_ACTOR", "test:hpc")
+        monkeypatch.setenv("FLOWER_HOME", str(self.home))
+        monkeypatch.setenv("FLOWER_ACTOR", "test:hpc")
         monkeypatch.setenv("FAKESLURM_PEND_S", "0.1")
         monkeypatch.setenv("FAKESLURM_MINJOBAGE", "5")
         monkeypatch.setenv("FAKESLURM_SACCT_LAG", "0")
@@ -93,7 +93,7 @@ class FF:
         return c
 
     def plan(self, nodes: list[dict], clusters: dict | None = None, **kw) -> dict:
-        p = {"forgeflow": 1, "id": kw.pop("id", "hpc-test"), "clusters": clusters or {"c": self.cluster()},
+        p = {"flower": 1, "id": kw.pop("id", "hpc-test"), "clusters": clusters or {"c": self.cluster()},
              "nodes": nodes}
         p.update(kw)
         return p
@@ -228,7 +228,7 @@ def ff(tmp_path, monkeypatch):
 @pytest.fixture
 def clock(monkeypatch):
     """Shift the job executor's notion of time (backoffs, min_poll, lost grace) without sleeping."""
-    import forgeflow.executors.job as jobmod
+    import flower.executors.job as jobmod
 
     state = {"offset": 0.0}
     fake = SimpleNamespace(time=lambda: time.time() + state["offset"], sleep=time.sleep)
@@ -248,4 +248,4 @@ def node_attempts(st, nid: str):
     return st.nodes[nid].attempts
 
 
-FORGEFLOW_BIN = Path(sys.executable).parent / "forgeflow"
+FLOWER_BIN = Path(sys.executable).parent / "flower"

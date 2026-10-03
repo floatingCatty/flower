@@ -23,7 +23,7 @@ violation · **L** = robustness.
   "added handling for HTTP 429".
 - **Expected:** A reply that carries the answer (structured output, or text that parses as the JSON
   answer) is never a banner.
-- **Root cause:** `src/forgeflow/harness/claude.py:134`. `banner = classify_error(text) if len(text) < 400`
+- **Root cause:** `src/flower/harness/claude.py:134`. `banner = classify_error(text) if len(text) < 400`
   runs every `QUOTA_PATTERNS` regex (`\b429\b`, `rate[_ ]limit…`, `too many requests`) over successful
   answers.
 - **Fix:** Apply the banner heuristic only when `res.get("structured_output") is None` and
@@ -35,7 +35,7 @@ violation · **L** = robustness.
 - **Observed:** With the policy `kinds: [shell]`, an agent's proposal
   `{op: add, node: {id: x, kind: function, …}}` is auto-approved and applied.
 - **Expected:** It goes to an `amend-…` gate.
-- **Root cause:** `src/forgeflow/engine.py:926` builds `kinds` only from `op.get("nodes")`.
+- **Root cause:** `src/flower/engine.py:926` builds `kinds` only from `op.get("nodes")`.
   `plan.apply_amendment` also accepts `op["node"]` for `add`/`drop`/`stop`, and `op["with"]` for
   `replace`. The same blind spot applies to `replace … with: {kind: job}` when `replace` is an allowed op.
 - **Fix:** Derive the policy facts from the *result*, not the raw ops. Run
@@ -50,7 +50,7 @@ violation · **L** = robustness.
   nodes, and nobody approves any of it.
 - **Expected:** A pre-authorised policy ("agent may add ≤ N nodes …", DEV_PLAN D5) cannot be widened by
   the nodes it creates.
-- **Root cause:** `src/forgeflow/engine.py:911-937` (`_agent_amendment`) never inspects the added specs'
+- **Root cause:** `src/flower/engine.py:911-937` (`_agent_amendment`) never inspects the added specs'
   `effects`.
 - **Fix:** In the auto path, set `auto = False` if any added or replaced spec has `effects.amend`.
   Alternatively, clamp it to the parent's policy (intersection of kinds and ops, `max_nodes` taken from
@@ -63,18 +63,18 @@ violation · **L** = robustness.
   CLI driver dies with a traceback. `node.succeeded` was already journalled, so the proposal is silently
   dropped and no `plan.amendment.rejected` is recorded. Without auto-approve the same input is handled
   correctly: it is rejected with issues.
-- **Root cause:** `src/forgeflow/engine.py:924-926` calls `op.get(...)` and `len(op.get("nodes"))` on
+- **Root cause:** `src/flower/engine.py:924-926` calls `op.get(...)` and `len(op.get("nodes"))` on
   untrusted agent JSON before validation. It is also reached from `_record_outcome` (`engine.py:883`),
   which is not covered by the tick's "never crash" `try` (`engine.py:436-439`).
 - **Fix:** Before the policy checks: `if not isinstance(ops, list) or not all(isinstance(o, dict) for o in ops): auto = False`.
   Also wrap `_agent_amendment` in `try/except Exception` that journals `plan.amendment.rejected` with
   the error.
 
-## M2. `forgeflow report` crashes when a rejected amendment has non-object ops
+## M2. `flower report` crashes when a rejected amendment has non-object ops
 - **Test:** `test_agents_report.py::test_report_survives_rejected_malformed_agent_amendment`
 - **Observed:** `AttributeError: 'str' object has no attribute 'get'` in `build_markdown`. The proposal
   is journalled verbatim (`plan.amendment.proposed.ops = ["…"]`) and then rejected.
-- **Root cause:** `src/forgeflow/report.py:156-157` (`for op in am.ops: op.get("nodes")`).
+- **Root cause:** `src/flower/report.py:156-157` (`for op in am.ops: op.get("nodes")`).
 - **Fix:** Add `if not isinstance(op, dict): continue`. Apply the same guard anywhere else that iterates
   `am.ops`.
 
@@ -83,7 +83,7 @@ violation · **L** = robustness.
 - **Observed:** The rationale `"Chose PBE.\n```\n…\n## Provenance\n- forged"` is pasted verbatim. The
   stray fence swallows the following sections, so `report.html` loses its real **Timeline** and
   **Provenance** headings and gains an agent-authored "Provenance" heading. Agents control this text.
-- **Root cause:** `src/forgeflow/report.py:187`
+- **Root cause:** `src/flower/report.py:187`
   (`md.append(f"- rationale: {truncate(a.rationale, 1200)}")`). Error messages (`a.error["message"]`)
   and table cells have the same problem.
 - **Fix:** Render free text from agents as an indented or quoted block: prefix every line with `  > `,
@@ -98,7 +98,7 @@ violation · **L** = robustness.
   silently re-wired to need `k`. The reviewer never saw that change.
 - **Expected (DEV_PLAN D5):** "An amendment carries (parentGeneration, parentDigest). It is applied by
   compare-and-swap."
-- **Root cause:** `src/forgeflow/engine.py:965-970` (`_apply_amendment`) re-applies `am.ops` to
+- **Root cause:** `src/flower/engine.py:965-970` (`_apply_amendment`) re-applies `am.ops` to
   `st.plan` without comparing `am.parent_generation`/`parent_digest` with the current generation.
 - **Fix:** If `am.parent_generation != st.generation`, reject the amendment with
   `stale: proposed against generation N, plan is at M; re-propose`. Alternatively, re-run
@@ -112,8 +112,8 @@ violation · **L** = robustness.
   `test_quota_banner_retry_honours_retry_after_then_succeeds`.
 - **Expected (DEV_PLAN D8):** "detect quota or session-limit banners that exit 0 (park until the reset
   time; do not fail)".
-- **Root cause:** `src/forgeflow/executors/agent.py:176` maps quota to an ordinary failure class.
-  `src/forgeflow/engine.py:894-899` then spends the normal task-retry budget on it.
+- **Root cause:** `src/flower/executors/agent.py:176` maps quota to an ordinary failure class.
+  `src/flower/engine.py:894-899` then spends the normal task-retry budget on it.
 - **Fix:** Do not count `quota_retry` against `max_attempts`. Always schedule
   `node.retry_scheduled{not_before = retry_after or a default such as 15m}`, with a separate cap
   (e.g. `defaults.quota_max_wait: 24h`). When that cap is exhausted, park on a gate instead of failing.
@@ -124,7 +124,7 @@ violation · **L** = robustness.
   1,200 chars. The end of the reply, where the final answer or the explanation is, is lost. The same
   happens for quota and auth failures (600 chars). The non-resumable repair re-prompt also sends only
   the head (`Your previous answer (truncated)`, 3,000 chars), which drops the JSON attempt at the end.
-- **Root cause:** `src/forgeflow/executors/agent.py:180,194,213` use `util.truncate`, which keeps the
+- **Root cause:** `src/flower/executors/agent.py:180,194,213` use `util.truncate`, which keeps the
   prefix. DEV_PLAN D8: "keep the stdout **tail** when output is capped".
 - **Fix:** Add a `tail(text, n)` helper (`"…" + text[-(n-1):]`) and use it for `text_tail`. For the
   repair prompt use head + tail (Smithers: 1 KB head + 1 KB tail).
@@ -133,7 +133,7 @@ violation · **L** = robustness.
 - **Test:** `test_agents_executor.py::test_declared_output_named_summary_can_be_satisfied`
 - **Observed:** With `outputs: {summary: string}`, every answer is judged "summary: required". The
   repair turns are spent and the node ends in `schema_invalid`. Plan validation accepts these names.
-- **Root cause:** `src/forgeflow/executors/agent.py:26,187,195`. `EXTRA_KEYS` are stripped from the
+- **Root cause:** `src/flower/executors/agent.py:26,187,195`. `EXTRA_KEYS` are stripped from the
   answer before `check_outputs`, whatever the declared outputs are.
 - **Fix:** Strip only extras that are not declared:
   `extras = set(EXTRA_KEYS) - set(node["outputs"])`. Alternatively, reject these names in
@@ -141,40 +141,40 @@ violation · **L** = robustness.
 
 ## M8. The MCP server dies on a malformed request
 - **Test:** `test_agents_mcp.py::test_malformed_requests_do_not_kill_the_server` (5 cases)
-- **Observed:** Each of these kills `forgeflow mcp` with a traceback, and later requests get no answer:
+- **Observed:** Each of these kills `flower mcp` with a traceback, and later requests get no answer:
   - a JSON line that is not an object (`[1,2]`, `42`, `"x"`);
   - `tools/call` with `params.name: null`;
   - `params` that is a list.
-- **Root cause:** `src/forgeflow/mcp_server.py:106` (`msg.get` on a non-dict) and `:120`
+- **Root cause:** `src/flower/mcp_server.py:106` (`msg.get` on a non-dict) and `:120`
   (`.get("name", "").removeprefix` on `None`, `.get` on a list). Neither is inside `try`.
 - **Fix:** For a non-dict message, reply with `{"error": {"code": -32600}}` (or skip it when it has no
   id). Validate that `params` is a dict and `name` is a str, and return `-32602` otherwise. Wrap each
   request's handling in `try/except Exception` that returns `-32603`.
 
-## M9. `forgeflow mcp --read-only` still advances runs
+## M9. `flower mcp --read-only` still advances runs
 - **Test:** `test_agents_mcp.py::test_read_only_status_does_not_advance_the_run`
-- **Observed:** The `forgeflow_status` tool, annotated `readOnlyHint: true` and kept in read-only mode,
-  ran `forgeflow status`. That ticks the engine, which journals events and starts the next node's
+- **Observed:** The `flower_status` tool, annotated `readOnlyHint: true` and kept in read-only mode,
+  ran `flower status`. That ticks the engine, which journals events and starts the next node's
   process.
-- **Root cause:** `src/forgeflow/mcp_server.py:63-64` calls `status` without `--no-tick`, and
-  `src/forgeflow/cli.py:308-309` ticks by default. `wait` also drives the run.
+- **Root cause:** `src/flower/mcp_server.py:63-64` calls `status` without `--no-tick`, and
+  `src/flower/cli.py:308-309` ticks by default. `wait` also drives the run.
 - **Fix:** Over MCP, always call `status … --no-tick`. In `--read-only` mode, either drop `wait` or make
   it observe only (poll the state without ticking).
 
 ## M10. The recursion guard is not enforced: an agent inside a node can decide the user's gates
 - **Test:** `test_agents_cli.py::test_agent_inside_a_node_cannot_answer_the_users_gate`
-- **Observed:** A node process (`FORGEFLOW_INSIDE_RUN=1`, `FF_RUN_ID` set) runs
-  `forgeflow answer $FF_RUN_ID review#a1 approve`, and the human review gate is approved. The answer is
-  attributed to the human actor (`test:pytest`), because the node inherits `FORGEFLOW_ACTOR`. The MCP
+- **Observed:** A node process (`FLOWER_INSIDE_RUN=1`, `FLOWER_RUN_ID` set) runs
+  `flower answer $FLOWER_RUN_ID review#a1 approve`, and the human review gate is approved. The answer is
+  attributed to the human actor (`test:pytest`), because the node inherits `FLOWER_ACTOR`. The MCP
   server withholds decision verbs for exactly this reason, but the CLI, which every agent has, does not.
-- **Root cause:** No enforcement anywhere. `FORGEFLOW_INSIDE_RUN` is only set
-  (`src/forgeflow/executors/base.py:69`) and mentioned in the skill. `cmd_answer`/`cmd_approve`
-  (`src/forgeflow/cli.py`) and `Engine.answer` accept the call. `NodeCtx.base_env` passes the parent's
-  `FORGEFLOW_ACTOR` through.
+- **Root cause:** No enforcement anywhere. `FLOWER_INSIDE_RUN` is only set
+  (`src/flower/executors/base.py:69`) and mentioned in the skill. `cmd_answer`/`cmd_approve`
+  (`src/flower/cli.py`) and `Engine.answer` accept the call. `NodeCtx.base_env` passes the parent's
+  `FLOWER_ACTOR` through.
 - **Fix:**
   - In `cli.main`, refuse the decision verbs (`approve`, `reject`, `answer`, `amend --yes`) with exit 2
-    and code `inside_run` when `FORGEFLOW_INSIDE_RUN` is set.
-  - Drop `FORGEFLOW_ACTOR` from node environments, or set it to `agent:<run>/<node>`, so any action is
+    and code `inside_run` when `FLOWER_INSIDE_RUN` is set.
+  - Drop `FLOWER_ACTOR` from node environments, or set it to `agent:<run>/<node>`, so any action is
     attributed correctly.
   - Optionally, have `_ingest_files` ignore answer files whose `by` names an agent.
 
@@ -187,7 +187,7 @@ violation · **L** = robustness.
   or `agent_error` (script). A typo in `harness.command` therefore looks like an agent misbehaving.
   The node is still not retried, and the message does mention "not found", which
   `test_missing_harness_executable_fails_once_and_says_so` still asserts.
-- **Root cause:** `src/forgeflow/_runner.py:83-86` (the sh wrapper) together with
+- **Root cause:** `src/flower/_runner.py:83-86` (the sh wrapper) together with
   `executors/base.py:222` (`spawn_error` is never set now).
 - **Fix:** Before wrapping, resolve `argv[0]` in the runner (`shutil.which(argv[0], path=env["PATH"])`,
   or `os.access(argv[0], os.X_OK)` for paths). Write the `spawn_error` exit record if it is missing.
@@ -198,7 +198,7 @@ violation · **L** = robustness.
 - **Observed:** Given `"…example:\n```json\n{example}\n```\n…Final answer:\n{real}"`, the function
   returns `{example}`. The contract tells the agent to end with ONE JSON object, and the docstring says
   the search runs "from the END so the required final answer wins".
-- **Root cause:** `src/forgeflow/harness/base.py:172-177`. Any fence wins before the balanced-object
+- **Root cause:** `src/flower/harness/base.py:172-177`. Any fence wins before the balanced-object
   pass runs.
 - **Fix:** Compute the last fence (its end offset) and the last balanced object (its end offset), and
   return whichever ends later. Equivalently, accept a fence only if no balanced object starts after it.
@@ -208,7 +208,7 @@ violation · **L** = robustness.
   (subprocess, 4 s cap)
 - **Observed:** About 75 KB of code-like text with unmatched `}` and no JSON takes about 30 s. That
   happens inside `tick()`, under the run lock. Script-harness `text` is the whole stdout.
-- **Root cause:** `src/forgeflow/harness/base.py:178-202`. For every `}` from the end, the loop scans
+- **Root cause:** `src/flower/harness/base.py:178-202`. For every `}` from the end, the loop scans
   backwards to the start of the text when depth never returns to 0.
 - **Fix:** Do one forward pass with a string-aware stack that records the `(start, end)` spans of
   balanced objects. Try `json.loads` on those spans from the last to the first, with a bounded number
@@ -217,9 +217,9 @@ violation · **L** = robustness.
 ---
 
 ## Fixed upstream while testing (now plain regression tests)
-- `forgeflow output RUN NODE <missing.key>` raised an uncaught `KeyError` (traceback, no envelope). Test:
+- `flower output RUN NODE <missing.key>` raised an uncaught `KeyError` (traceback, no envelope). Test:
   `test_agents_cli.py::test_output_missing_key_is_a_clean_error`.
-- `forgeflow logs RUN NODE --attempt 9` raised an uncaught `StopIteration`. Test:
+- `flower logs RUN NODE --attempt 9` raised an uncaught `StopIteration`. Test:
   `test_agents_cli.py::test_logs_unknown_attempt_is_a_clean_error`.
 
 ## Observations (no failing test; worth a look)
@@ -232,6 +232,6 @@ violation · **L** = robustness.
   the agent printed) makes a script, codex or claude failure non-retryable `auth`.
 - `effects.amend.auto_approve: "no"` (a quoted string) is truthy, and policy fields are not type-checked
   by `plan.validate`.
-- `forgeflow skill all` installs only the home-level targets (claude, codex and agents), not the
-  project ones, but it still creates `.forgeflow/` in the current directory.
-- `--json` is only accepted after the subcommand: `forgeflow --json status` is a usage error (exit 2).
+- `flower skill all` installs only the home-level targets (claude, codex and agents), not the
+  project ones, but it still creates `.flower/` in the current directory.
+- `--json` is only accepted after the subcommand: `flower --json status` is a usage error (exit 2).

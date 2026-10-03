@@ -1,7 +1,7 @@
 """Atomic-O adsorption energy on an fcc(111) slab with ASE's EMT potential.
 
 Usage: python ads.py --metal Pt --a0 3.92 [--layers 4] [--size 3] [--site fcc]
-Writes outputs.json ($FF_OUTPUTS) and final.xyz (relaxed slab + O).
+Writes outputs.json ($FLOWER_OUTPUTS) and final.xyz (relaxed slab + O).
 
 E_ads = E(slab+O) - E(slab) - 1/2 E(O2)   (all relaxed, EMT; a toy model, not DFT)
 """
@@ -54,7 +54,7 @@ def main():
     out = {"metal": a.metal, "a0": a.a0, "layers": a.layers, "site": a.site, "e_ads": round(e_ads, 4),
            "converged": conv1 and conv2, "bfgs_steps": n1 + n2,
            "summary": f"O on {a.metal}(111) {a.site}, {a.layers} layers: E_ads = {e_ads:.3f} eV"}
-    with open(os.environ.get("FF_OUTPUTS", "outputs.json"), "w") as fh:
+    with open(os.environ.get("FLOWER_OUTPUTS", "outputs.json"), "w") as fh:
         json.dump(out, fh, indent=2)
     print(out["summary"])
 

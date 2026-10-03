@@ -1,4 +1,4 @@
-forgeflow: 1
+flower: 1
 id: fcc-catalyst-screening
 title: Screening fcc metals for atomic-oxygen binding (EMT toy model)
 description: |

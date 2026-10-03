@@ -1,10 +1,10 @@
-# Durable HPC job execution: what mature projects do and a design for forgeflow's `job` node
+# Durable HPC job execution: what mature projects do and a design for flower's `job` node
 
 Scope: how seven projects (jobflow-remote, dpdispatcher, psij-python, snakemake-executor-plugin-slurm, catgo,
 aiida-core, dflow) plus Eleforge's own `apps/backend/compute` submit, track, recover and cancel Slurm jobs over SSH.
-The last section is a concrete design for forgeflow, with each element tagged by the project it comes from.
+The last section is a concrete design for flower, with each element tagged by the project it comes from.
 
-Paths are relative to `forgeflow/context/repos/` unless they start with `apps/` (Eleforge). catgo is AGPL-3.0, so
+Paths are relative to `flower/context/repos/` unless they start with `apps/` (Eleforge). catgo is AGPL-3.0, so
 only its designs are described here and none of its code is copied.
 
 ---
@@ -21,7 +21,7 @@ only its designs are described here and none of its code is copied.
   READY") or a lost job. Only **Eleforge** closes the hole properly. It writes a remote marker before `sbatch`, tags
   the job with a deterministic `--job-name=<submit_key>` and `--comment=<fingerprint>`, and searches
   `squeue`/`sacct` for that tag before every submit and on recovery. dpdispatcher adds a remote `<hash>_job_id`
-  file. forgeflow should combine the two.
+  file. flower should combine the two.
 - **Jobs that vanish from the queue are normal.** `squeue` drops a job after `MinJobAge` (default 300 s), and
   `sacct` can lag at submission or be missing entirely. The mature pattern is batched `squeue` for live jobs, then
   `sacct` for jobs that left the queue (snakemake, Eleforge, catgo), then evidence files in the work dir (Eleforge,
@@ -32,7 +32,7 @@ only its designs are described here and none of its code is copied.
 - **Recommendation: don't depend on any of these libraries for the core.** Port and slim Eleforge's Slurm/OpenSSH
   code (the user's own code, about 600–900 LOC), borrowing named algorithms from aiida and snakemake (MIT, can copy
   with attribution) and designs from jobflow-remote (BSD-3). psij (MIT, light) is the only reasonable optional
-  dependency, and only for a future "run forgeflow on the login node" mode, because it has **no SSH**. dpdispatcher
+  dependency, and only for a future "run flower on the login node" mode, because it has **no SSH**. dpdispatcher
   (LGPL-3.0) is usable but its blocking, hash-keyed, batch-of-tasks model fights an amendable DAG. aiida and
   jobflow-remote are far too heavy (ORM/RabbitMQ, MongoDB/supervisord).
 
@@ -67,7 +67,7 @@ COMPLETED, FAILED, REMOTE_ERROR, PENDING_REVIEW, PAUSED, CANCELLED, SKIPPED, MAP
 - It splits `SUBMITTED` ("sbatch done, got job_id") from `QUEUED` ("SLURM PENDING"). `COMPLETED_REMOTE` ("HPC done,
   results on remote") equals jobflow-remote's RUN_FINISHED.
 - `PENDING_REVIEW` ("Local done, waiting for user confirm before HPC submit") is a gate fused into the job.
-  forgeflow keeps `gate` as a separate node kind, but the per-job "inputs generated, review before submit" stop is
+  flower keeps `gate` as a separate node kind, but the per-job "inputs generated, review before submit" stop is
   still useful.
 - `REMOTE_ERROR` carries an `error_type` field. `"transient"` (SSH) errors "should NOT consume retries or escalate
   to FAILED" (`workflow/engine/error_handler.py`). `"compute"` errors go through retry and smart recovery.
@@ -110,7 +110,7 @@ with requeue stay active.
 ### dflow (LGPL-3.0)
 dflow delegates everything to Argo. `SlurmRemoteExecutor` (`dflow/src/dflow/slurm.py:280`) runs a pod holding a Go
 `bin/slurm` poller with `jobIdFile: /tmp/job_id.txt` (on a PVC if configured, so an Argo retry reattaches).
-`DispatcherExecutor` wraps a dpdispatcher `run_submission` in a pod. **Anti-pattern for forgeflow:** a live process
+`DispatcherExecutor` wraps a dpdispatcher `run_submission` in a pod. **Anti-pattern for flower:** a live process
 (pod) is held for the whole job duration.
 
 ### Eleforge (brief; covered in depth elsewhere)
@@ -171,7 +171,7 @@ Lessons:
   `missing_sacct_status`. It retries up to `status_attempts=5` within the cycle, then warns "previously seen by
   sacct, but sacct doesn't report them any more … check slurmdbd" (l.1439).
 - **Status `UNKNOWN`:** treated as success ("the job probably does not exist anymore"). This is too optimistic for
-  forgeflow.
+  flower.
 - **Adaptive interval:** start at `init_seconds_before_status_checks` (default 40). Add 10 s for each cycle with no
   finished job, cap at `max_sleep_time = 180` ("conservative … with half that time" of MinJobAge), and reset when
   something finishes (l.1601–1607). There is also a framework-level `status_rate_limiter` (`throttler` dependency).
@@ -274,7 +274,7 @@ Lessons:
 | dflow | An Argo pod per step holds the poller | Argo | — |
 | Eleforge | Server background loop `watch_remote_jobs_loop`/`tick`, sharded reconcile, claim tokens (`jobs/manager_reconcile.py:132–201`) | DB claim tokens | Marker, `result.json` and `canceled` files |
 
-For forgeflow, the catgo scanner shape (an idempotent `scan_cycle` over persisted state) plus dpdispatcher-style
+For flower, the catgo scanner shape (an idempotent `scan_cycle` over persisted state) plus dpdispatcher-style
 re-entrancy is exactly the "reconcile on every CLI invocation" model. The jobflow-remote `running_runner`
 host/user check is the right diagnostic to show when a lock is held by another machine.
 
@@ -319,9 +319,9 @@ host/user check is the right diagnostic to show when a lock is held by another m
 
 ## 7. Licenses and the depend-vs-port decision
 
-| Project | License | Python | Core dependencies | SSH | Fit as forgeflow's scheduler/transport layer |
+| Project | License | Python | Core dependencies | SSH | Fit as flower's scheduler/transport layer |
 |---|---|---|---|---|---|
-| psij-python | **MIT** | ≥3.8 | psutil, pystache, typeguard, packaging (light) | **No.** It runs scheduler CLIs locally | Clean portable `JobSpec`/`JobState`/`attach(native_id)` API, but it would need forgeflow itself to run on the login node. Its poll thread fails all jobs after 2 errors. Possible optional "local Slurm" backend later |
+| psij-python | **MIT** | ≥3.8 | psutil, pystache, typeguard, packaging (light) | **No.** It runs scheduler CLIs locally | Clean portable `JobSpec`/`JobState`/`attach(native_id)` API, but it would need flower itself to run on the login node. Its poll thread fails all jobs after 2 errors. Possible optional "local Slurm" backend later |
 | dpdispatcher | **LGPL-3.0** | ≥3.10 | paramiko, dargs, requests, tqdm, pyyaml | Yes (paramiko, rsync) | Mature and DFT-community-proven (DeePMD/dflow). But the model is "a Submission = bag of tasks, blocking loop", identity comes from a content hash (amending inputs changes the hash), it polls per job, and `@retry` sleeps 60 s. Dynamic import is fine under LGPL, but vendoring triggers LGPL obligations |
 | jobflow-remote | **BSD-3** | ≥3.10 | jobflow, pymongo, fabric, supervisor, pydantic, qtoolkit, typer… | Yes (Fabric) | Too heavy and DB-centric. Borrow its state design, step-retry schema and runner-identity check. (Its scheduler layer *qtoolkit*, also Matgenix/BSD, is a lighter script-generation and squeue-parsing library. It was not cloned here; evaluate it separately if a parser dependency is wanted) |
 | aiida-core | **MIT** | ≥3.10 | ORM (SQLAlchemy/PostgreSQL or SQLite), plumpy, kiwipy/RabbitMQ… | Yes | Far too heavy to depend on. **Copy snippets with attribution:** squeue field format, single-id duplication trick, sacct-based `parse_output`, exponential backoff |
@@ -330,10 +330,10 @@ host/user check is the right diagnostic to show when a lock is held by another m
 | catgo | **AGPL-3.0** | — | — | asyncssh / OpenSSH | **Designs only.** No code copied |
 | Eleforge compute | Own code | 3.12 | Internal (DB stores, metrics) | OpenSSH CLI plus paramiko | Most robust idempotency (submit key, fingerprint, marker, work-dir fallback, reattach), but entangled with the DB job store, edge control plane and metrics. Port the algorithms, not the module |
 
-**Recommendation: port, don't depend.** Write `forgeflow/hpc/` as a small, dependency-free layer:
+**Recommendation: port, don't depend.** Write `flower/hpc/` as a small, dependency-free layer:
 `ssh.py` (OpenSSH subprocess wrapper with timeouts and a transient-error classifier), `slurm.py` (script render,
 submit, batch status query, cancel, parsers) and `staging.py` (rsync/tar).
-- Reasons: (a) forgeflow's identity is the plan file plus the event log, and every library above brings its own
+- Reasons: (a) flower's identity is the plan file plus the event log, and every library above brings its own
   persistence model (Mongo, ORM, hash JSON, in-memory) that would have to be reconciled with ours. (b) The
   hard-won logic is about 300 lines of algorithm, and the user already owns the best version (Eleforge). (c) The
   OpenSSH CLI gives the widest auth compatibility for zero dependencies. (d) Python ≥3.10 can be kept
@@ -348,7 +348,7 @@ submit, batch status query, cancel, parsers) and `staging.py` (rsync/tar).
 
 ---
 
-## 8. Recommended design for forgeflow's `job` node and runner
+## 8. Recommended design for flower's `job` node and runner
 
 ### 8.1 State enum (job sub-state; node-level READY/BLOCKED/etc. stay generic)
 ```
@@ -369,7 +369,7 @@ CANCELLED      (final)                                           [psij CANCELED]
 REMOTE_ERROR   infra failure (ssh/transfer/slurmctld); retried with backoff; never
                consumes job attempts; never fails the run        [jobflow-remote REMOTE_ERROR, catgo transient, aiida pause]
 LOST           no job id and no evidence after grace, or job vanished from squeue+sacct
-               with no exit-code file after N misses → needs a decision  [forgeflow; inputs from snakemake/Eleforge]
+               with no exit-code file after N misses → needs a decision  [flower; inputs from snakemake/Eleforge]
 ```
 Two fields are kept separately: `state` (above) and `sched` (last raw scheduler state, source, timestamp), following
 aiida's two axes. Transitions are monotonic per attempt, with a psij-style `order` to drop stale observations. The
@@ -392,14 +392,14 @@ runs/<run_id>/
 Remote (evidence, never authoritative):
 ```
 <remote_root>/<project>/<run_id>/<node_id>/a<N>/            human-readable path   [catgo "never hashes"]
-  .forgeflow/submit.json   {run, node, attempt, submit_key, fingerprint, created_at}  written BEFORE sbatch  [Eleforge marker]
-  .forgeflow/jobid         written atomically by the same remote command as sbatch     [dpdispatcher <hash>_job_id]
-  .forgeflow/owner/        mkdir-lock taken by the job itself; contains SLURM_JOB_ID   [forgeflow; dup-guard]
-  .forgeflow/started       touched at job start (timestamp, host)
-  .forgeflow/ec            exit code of the payload, written by trap                 [psij <native_id>.ec]
-  .forgeflow/done          touched only if ec==0 and declared outputs exist          [dpdispatcher job_tag_finished]
-  .forgeflow/cancelled     touched by `forgeflow cancel`                             [Eleforge canceled marker]
-  .forgeflow/timeout_imminent  written by USR1 trap                                  [Slurm --signal convention]
+  .flower/submit.json   {run, node, attempt, submit_key, fingerprint, created_at}  written BEFORE sbatch  [Eleforge marker]
+  .flower/jobid         written atomically by the same remote command as sbatch     [dpdispatcher <hash>_job_id]
+  .flower/owner/        mkdir-lock taken by the job itself; contains SLURM_JOB_ID   [flower; dup-guard]
+  .flower/started       touched at job start (timestamp, host)
+  .flower/ec            exit code of the payload, written by trap                 [psij <native_id>.ec]
+  .flower/done          touched only if ec==0 and declared outputs exist          [dpdispatcher job_tag_finished]
+  .flower/cancelled     touched by `flower cancel`                             [Eleforge canceled marker]
+  .flower/timeout_imminent  written by USR1 trap                                  [Slurm --signal convention]
 ```
 Event types (all carry `run, node, attempt, ts, actor`):
 `job.prepared{script_sha, resources}`, `job.staged{manifest_sha}`,
@@ -413,7 +413,7 @@ A replay folds these into state with no remote calls. `status` therefore works o
 
 ### 8.3 Idempotent submit protocol
 ```
-submit_key  = "ff-{run8}-{node}-a{N}"   (≤ 64 chars, [A-Za-z0-9_.-])   [Eleforge submit_key; snakemake --name run_uuid; dpdispatcher name sanitizer]
+submit_key  = "flower-{run8}-{node}-a{N}"   (≤ 64 chars, [A-Za-z0-9_.-])   [Eleforge submit_key; snakemake --name run_uuid; dpdispatcher name sanitizer]
 fingerprint = sha256(job.sh + input manifest + attempt)[:16]
 ```
 1. Take the run lock (non-blocking; if it's held, mutating commands exit with "runner on <host> pid <pid>").
@@ -421,29 +421,29 @@ fingerprint = sha256(job.sh + input manifest + attempt)[:16]
 2. If the attempt already has `job.submitted`, return (no-op). [aiida "already WITHSCHEDULER"]
 3. Append `job.submit_intent` and fsync. **Nothing remote happens before this record exists.**
    [aiida SUBMITTING, Eleforge marker]
-4. Stage inputs with rsync to `a<N>/`, then write `.forgeflow/submit.json`. Failures here become `REMOTE_ERROR`
+4. Stage inputs with rsync to `a<N>/`, then write `.flower/submit.json`. Failures here become `REMOTE_ERROR`
    (op=stage) with backoff.
 5. Do a dedupe lookup in the same SSH call as the submit:
    ```
-   cd <dir> && if [ -s .forgeflow/jobid ]; then echo EXISTING $(cat .forgeflow/jobid);
+   cd <dir> && if [ -s .flower/jobid ]; then echo EXISTING $(cat .flower/jobid);
    else J=$(squeue --me -h -o '%i|%j' | awk -F'|' -v k=<submit_key> '$2==k{print $1}' | head -1);
         [ -z "$J" ] && J=$(sacct -X -n -P --name=<submit_key> -S now-7days -o JobIDRaw | head -1);
-        if [ -n "$J" ]; then echo "$J" > .forgeflow/jobid; echo EXISTING $J;
+        if [ -n "$J" ]; then echo "$J" > .flower/jobid; echo EXISTING $J;
         else sbatch --parsable --job-name=<submit_key> --comment=<fingerprint> --chdir=<dir> \
-               -o slurm-%j.out -e slurm-%j.err job.sh > .forgeflow/jobid.tmp && mv .forgeflow/jobid.tmp .forgeflow/jobid \
-             && echo SUBMITTED $(cut -d';' -f1 .forgeflow/jobid); fi; fi
+               -o slurm-%j.out -e slurm-%j.err job.sh > .flower/jobid.tmp && mv .flower/jobid.tmp .flower/jobid \
+             && echo SUBMITTED $(cut -d';' -f1 .flower/jobid); fi; fi
    ```
    [Eleforge `_find_existing_slurm_job`; dpdispatcher remote job-id file; `--parsable` split on `;` per
    dpdispatcher/snakemake]
 6. Parse and validate the id (digits, plus an optional `_array`). Append `job.submitted{via}`.
    [snakemake `validate_or_get_slurm_job_id`]
 7. **Duplicate guard inside the job** (belt and braces). The first lines of `job.sh` run
-   `mkdir .forgeflow/owner 2>/dev/null || [ "$(cat .forgeflow/owner/id)" = "$SLURM_JOB_ID" ] || exit 97` and then
-   `echo $SLURM_JOB_ID > .forgeflow/owner/id`. A second copy of the same attempt aborts in seconds, while a Slurm
-   *requeue* (same id) proceeds. [forgeflow; generalizes dpdispatcher's finish-tag skip]
+   `mkdir .flower/owner 2>/dev/null || [ "$(cat .flower/owner/id)" = "$SLURM_JOB_ID" ] || exit 97` and then
+   `echo $SLURM_JOB_ID > .flower/owner/id`. A second copy of the same attempt aborts in seconds, while a Slurm
+   *requeue* (same id) proceeds. [flower; generalizes dpdispatcher's finish-tag skip]
 
 **Recovery for an attempt stuck in SUBMITTING** (run on every tick):
-- If remote `.forgeflow/jobid` exists, record `job.submitted(via=jobid_file)`.
+- If remote `.flower/jobid` exists, record `job.submitted(via=jobid_file)`.
 - Otherwise, if `squeue`/`sacct --name=<submit_key>` finds exactly one id, record `job.submitted(via=reattach)`.
   If it finds more than one, keep the earliest, cancel the rest and emit `job.orphan_detected` events.
   [Eleforge ambiguity handling]
@@ -464,7 +464,7 @@ tick(run):
             # probe_script:
             #  squeue --me -h -t all -o '%i|%T|%r' -j <ids>     (dup single id: aiida trick)
             #  sacct -X -n -P -j <ids not in squeue> -o JobIDRaw,State,ExitCode,Elapsed,End   [snakemake/catgo/Eleforge]
-            #  for each id not in either: cat <dir>/.forgeflow/{ec,done,cancelled,started} 2>/dev/null   [Eleforge workdir fallback, psij .ec]
+            #  for each id not in either: cat <dir>/.flower/{ec,done,cancelled,started} 2>/dev/null   [Eleforge workdir fallback, psij .ec]
         on ssh/timeout/slurmctld error: job.remote_error(op=poll) w/ backoff (30,300,1200)  [jobflow-remote delta_retry]
                                          — never change job verdicts on poll errors       [contrast psij fail-all]
         for job in jobs: apply(job, observation)  → emit job.observed / job.exited only on change
@@ -490,20 +490,20 @@ Lost-job detection:
   `LOST(why=vanished)`. [snakemake `missing_sacct_status` + status_attempts; Eleforge miss counter]
 - A job that was RUNNING and is now gone with `started` present but no `ec` means the node died or was hard-killed,
   so mark it `FAILED(reason=NODE_FAIL?)` and check sacct detail. [snakemake NODE_FAIL handling]
-- **Orphan sweep** (in `tick --sweep`, run every N ticks): `squeue --me -h -o '%i|%j' | grep '|ff-<run8>-'`. Any id
-  not bound to an attempt raises `job.orphan_detected` and suggests `forgeflow cancel --orphans`.
+- **Orphan sweep** (in `tick --sweep`, run every N ticks): `squeue --me -h -o '%i|%j' | grep '|flower-<run8>-'`. Any id
+  not bound to an attempt raises `job.orphan_detected` and suggests `flower cancel --orphans`.
   [Eleforge name search; snakemake `--name run_uuid`]
 
 CLI surface:
-- `forgeflow status [--refresh]`: a pure fold by default (fast, offline). `--refresh` runs one `tick` if the lock is
+- `flower status [--refresh]`: a pure fold by default (fast, offline). `--refresh` runs one `tick` if the lock is
   free, otherwise it prints the cached state plus the lock holder.
-- `forgeflow tick [--all-runs] [--sweep]`: one reconcile pass, then exit. This is what cron, systemd timers, Slurm
+- `flower tick [--all-runs] [--sweep]`: one reconcile pass, then exit. This is what cron, systemd timers, Slurm
   `scrontab` or the outer agent harness call. [catgo scanner `scan_cycle`, dpdispatcher `exit_on_submit`
   re-entrancy]
-- `forgeflow watch [--interval auto]`: loops `tick` in the foreground with snakemake's adaptive interval (40 s,
+- `flower watch [--interval auto]`: loops `tick` in the foreground with snakemake's adaptive interval (40 s,
   +10 s per idle cycle, cap 180 s, reset on any transition), streaming events. Ctrl-C is harmless because all state
   is in the log. [snakemake check_active_jobs]
-- Optional `forgeflow daemon install` writes a systemd `--user` timer or crontab line running `tick --all-runs`
+- Optional `flower daemon install` writes a systemd `--user` timer or crontab line running `tick --all-runs`
   every 2–5 min. It is never required. [jobflow-remote supervisord as the heavier alternative, deliberately not
   copied]
 - Lock semantics: `fcntl.flock` on `runs/<id>/lock`. A stale holder (pid dead on the same host) is reported and
@@ -511,18 +511,18 @@ CLI surface:
   given. [jobflow-remote `_check_running_runner`, `break_lock`]
 
 ### 8.5 Cancel, retry, rerun, walltime
-- `forgeflow cancel <node>` appends `job.cancel_requested`, then runs `scancel <id>` and
-  `touch .forgeflow/cancelled` in one SSH call, and moves to CANCELLING. The next tick confirms with CANCELLED via
+- `flower cancel <node>` appends `job.cancel_requested`, then runs `scancel <id>` and
+  `touch .flower/cancelled` in one SSH call, and moves to CANCELLING. The next tick confirms with CANCELLED via
   sacct or marker. If scancel errors and the job is already gone, it reconciles to the true terminal state.
   [aiida kill_calculation; Eleforge marker] Downstream nodes become BLOCKED (node-level, not the job runtime).
-- `forgeflow retry <node>` re-executes the stuck *infra step* of the current attempt (REMOTE_ERROR or LOST with
-  submit_unconfirmed). `forgeflow rerun <node> [--downstream]` creates attempt N+1 (new dir, new submit_key) and
+- `flower retry <node>` re-executes the stuck *infra step* of the current attempt (REMOTE_ERROR or LOST with
+  submit_unconfirmed). `flower rerun <node> [--downstream]` creates attempt N+1 (new dir, new submit_key) and
   invalidates downstream. [jobflow-remote retry vs rerun]
 - Automatic job retries come from the node's `retry:` policy keyed on the typed FAILED reason:
   `NODE_FAIL|BOOT_FAIL|PREEMPTED → resubmit, add --exclude=<failed nodes>` [snakemake],
   `TIMEOUT → resubmit with restart:` mapping if the node declares one (e.g. `CONTCAR→POSCAR`, `--signal=B:USR1@300`
   trap writes a checkpoint) [aiida BaseRestartWorkChain handlers; Slurm convention], `OOM/EXIT_NONZERO →` no blind
-  retry; emit a proposed amendment for the planning agent or human to approve [catgo tier 3 "escalate"; forgeflow
+  retry; emit a proposed amendment for the planning agent or human to approve [catgo tier 3 "escalate"; flower
   amendment flow]. Infra retries (REMOTE_ERROR) are counted separately and never consume this budget.
   [jobflow-remote step_attempts; catgo transient]
 - Each auto-retry is an event with its rationale (`job.retry_scheduled{reason, policy_rule}`), so provenance shows
@@ -534,7 +534,7 @@ CLI surface:
   [Eleforge openssh.py; catgo campaign]
 - Hosts come from `~/.ssh/config` aliases, never stored credentials. If an alias has a ControlMaster, check it with
   `ssh -O check` (5 s timeout) and fall back to a fresh connection on failure. Automation never starts a master
-  itself; `forgeflow cluster login <alias>` opens one interactively for MFA sites.
+  itself; `flower cluster login <alias>` opens one interactively for MFA sites.
   [Eleforge lesson; aiida OpenSSH backend]
 - The transient-error classifier matches "Connection timed out/refused/reset", "Socket timed out on send/recv",
   "Unable to contact slurm controller", "Invalid user for SlurmUser", ssh exit 255 and subprocess timeouts. These

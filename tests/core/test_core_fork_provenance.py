@@ -7,9 +7,9 @@ import stat
 import sys
 import textwrap
 
-from forgeflow.engine import Engine, create_run
-from forgeflow.provenance import build_crate, export_crate
-from forgeflow.rundir import RunPaths
+from flower.engine import Engine, create_run
+from flower.provenance import build_crate, export_crate
+from flower.rundir import RunPaths
 
 from core_helpers import drive
 
@@ -32,9 +32,9 @@ def _agent_script(tmp_path):
 
 def _plan(tmp_path, script):
     return {
-        "forgeflow": 1, "id": "replay", "_source": {"dir": str(tmp_path)},
+        "flower": 1, "id": "replay", "_source": {"dir": str(tmp_path)},
         "nodes": [
-            {"id": "prep", "kind": "shell", "run": 'echo "{\\"x\\": 1}" > "$FF_OUTPUTS"', "outputs": {"x": "integer"}},
+            {"id": "prep", "kind": "shell", "run": 'echo "{\\"x\\": 1}" > "$FLOWER_OUTPUTS"', "outputs": {"x": "integer"}},
             {"id": "pick", "kind": "agent", "needs": ["prep"],
              "harness": {"name": "script", "command": [sys.executable, str(script)]},
              "prompt": "choose", "outputs": {"choice": "string"},
@@ -71,8 +71,8 @@ def test_fork_reuses_agent_decisions_and_replays_their_amendments(home, tmp_path
 
 
 def test_reuse_only_when_definition_and_inputs_match(home, tmp_path):
-    plan = {"forgeflow": 1, "id": "r2", "inputs": {"n": {"type": "integer", "default": 1}},
-            "nodes": [{"id": "a", "kind": "shell", "run": 'echo "{\\"v\\": ${inputs.n}}" > "$FF_OUTPUTS"'},
+    plan = {"flower": 1, "id": "r2", "inputs": {"n": {"type": "integer", "default": 1}},
+            "nodes": [{"id": "a", "kind": "shell", "run": 'echo "{\\"v\\": ${inputs.n}}" > "$FLOWER_OUTPUTS"'},
                       {"id": "b", "kind": "shell", "run": "echo b"}]}
     e1 = create_run(plan, {"n": 1}, root=home, approve=True)
     assert drive(e1, timeout=20).status == "succeeded"
@@ -88,7 +88,7 @@ def test_fork_does_not_reuse_function_result_after_its_module_changed(home, tmp_
     src = tmp_path / "src"
     src.mkdir()
     (src / "calc.py").write_text("def f():\n    return {'v': 1}\n")
-    plan = {"forgeflow": 1, "id": "code", "_source": {"dir": str(src)},
+    plan = {"flower": 1, "id": "code", "_source": {"dir": str(src)},
             "nodes": [{"id": "f", "kind": "function", "call": "calc:f"},
                       {"id": "b", "kind": "shell", "run": "echo b"}]}
     e1 = create_run(dict(plan), {}, root=home, approve=True)
@@ -106,8 +106,8 @@ def test_fork_does_not_reuse_function_result_after_its_module_changed(home, tmp_
 
 
 def test_ro_crate_export_is_valid_json_ld_with_provenance(home, tmp_path):
-    plan = {"forgeflow": 1, "id": "crate", "title": "Crate test",
-            "nodes": [{"id": "a", "kind": "shell", "run": 'echo hi > out.txt; echo "{}" > "$FF_OUTPUTS"',
+    plan = {"flower": 1, "id": "crate", "title": "Crate test",
+            "nodes": [{"id": "a", "kind": "shell", "run": 'echo hi > out.txt; echo "{}" > "$FLOWER_OUTPUTS"',
                        "files": {"out": "out.txt"}},
                       {"id": "g", "kind": "gate", "needs": ["a"], "message": "ok?"}]}
     eng = create_run(plan, {}, root=home, approve=True)
@@ -131,10 +131,10 @@ def test_ro_crate_export_is_valid_json_ld_with_provenance(home, tmp_path):
 def test_generated_files_respect_umask(home, tmp_path):
     old = os.umask(0o022)
     try:
-        eng = create_run({"forgeflow": 1, "id": "perm", "nodes": [{"id": "a", "kind": "shell", "run": "true"}]},
+        eng = create_run({"flower": 1, "id": "perm", "nodes": [{"id": "a", "kind": "shell", "run": "true"}]},
                          {}, root=home, approve=True)
         drive(eng, timeout=20)
-        from forgeflow.report import write_report
+        from flower.report import write_report
         paths = write_report(eng)
         for p in (eng.paths.plan_file, paths["md"], paths["html"]):
             mode = stat.S_IMODE(os.stat(p).st_mode)

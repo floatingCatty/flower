@@ -1,7 +1,7 @@
-# forgeflow design input: dynamic graphs, durable replay, provenance, event schema
+# flower design input: dynamic graphs, durable replay, provenance, event schema
 
 Scope: semantics only (not harness adapters or Slurm transport). Sources are local clones under
-`forgeflow/context/repos/` (paths below are relative to that directory unless they start with `/`),
+`flower/context/repos/` (paths below are relative to that directory unless they start with `/`),
 plus `/homes/nessa/zhanghao/dev/Eleforge/packages/labflow` and the Claude Code Workflow docs
 (`/homes/nessa/zhanghao/dev/Eleforge/context/workflow-design` has no journal material, so the replay
 quotes come from the bundled `/workflow-authoring` skill and the prior-art survey notes).
@@ -100,7 +100,7 @@ stop_children: bool = False      stop_jobflow: bool = False
 
   `_full_rerun` also refuses a job that "is not the highest index".
 
-  **Lesson for forgeflow:** rerunning a node whose amendment already grew the graph needs explicit
+  **Lesson for flower:** rerunning a node whose amendment already grew the graph needs explicit
   semantics. Our answer is supersede + retire the spawned subgraph (§3.4).
 
 ### 1.2 AiiDA WorkChain (MIT, EPFL)
@@ -115,7 +115,7 @@ stop_children: bool = False      stop_jobflow: bool = False
   after each outline step" (`docs/source/topics/workflows/concepts.rst:196`). The runner calls back
   `call_on_process_finish(pk)` rather than polling from a blocked thread. This is the right shape for a
   Slurm wait that lasts hours.
-- **Fit for forgeflow: poor as a plan model.** The graph is only visible *after the fact* through CALL
+- **Fit for flower: poor as a plan model.** The graph is only visible *after the fact* through CALL
   links, and there is nothing to approve up front. Two parts are worth borrowing: the step-level
   checkpoint and the callback-on-child-finish wake.
 
@@ -137,7 +137,7 @@ Dynamism is Argo-native and *declared statically*:
   the outputs from the reused step." Outputs can be edited before reuse with
   `modify_output_parameter/artifact` (README l.360). Keys are *user-chosen names*, not content hashes.
 
-Fit for forgeflow: the `map`/`slice` and `continue_on_success_ratio` ideas are useful as *plan-level
+Fit for flower: the `map`/`slice` and `continue_on_success_ratio` ideas are useful as *plan-level
 node templates*, for example a `map` node that expands to N children at dispatch time and is recorded
 as an auto-approved amendment. Key-based `reuse_step` is the model for an explicit "import result
 from run X".
@@ -216,7 +216,7 @@ Invariants:
 | yak | named artifacts `artifacts/<name>.json` | by name | `artifact.written{hash,bytes}` |
 | LabFlow | `outputs.committed{payload.outputs, envelope{materialization, artifactRef, contentHash, sizeBytes}}`; CAS `templates/cas/{aa}/{hash}.json` (`template_cas.py`), `sha256:` over `sort_keys, separators=(",",":")` | — | sha256 of canonical JSON |
 
-**forgeflow proposal**
+**flower proposal**
 - Ref syntax: `${node_id}.outputs.<key>[.<json-path>]` and `${node_id}.files.<name>`, plus
   `needs: [node_id]` for ordering-only dependencies (Smithers `Pending`).
 - Each attempt writes `runs/<run>/nodes/<node_id>/<attempt_id>/outputs.json` plus `files/`.
@@ -252,7 +252,7 @@ Invariants:
   boundary**.
 - **Version gating**: "An application's version is computed from a hash of the source of its
   workflows ... if the app's workflows are updated (which would break recovery), its version changes"
-  (`_dbos.py:327`). Recovery only picks up workflows of the matching version. **Analogue: forgeflow plan
+  (`_dbos.py:327`). Recovery only picks up workflows of the matching version. **Analogue: flower plan
   generation/digest.**
 - **cancel** (`_sys_db.py:1188`): sets `CANCELLED` unless already `SUCCESS/ERROR`, clears queue and
   owner, and can cascade to children level by level (`cancel_children`).
@@ -311,7 +311,7 @@ Content-addressed caching avoids that class of waste".
   cache source only if `is_finished and is_sealed` (`orm/nodes/process/process.py:59`). A hit records
   `_aiida_cached_from`.
 
-### 3.4 Distilled replay rule for forgeflow (coarse nodes)
+### 3.4 Distilled replay rule for flower (coarse nodes)
 
 Per node declaration, compute:
 - `decl_hash` covers the node definition minus churn:
@@ -364,7 +364,7 @@ Per node declaration, compute:
   through a recorded companion amendment (`plan.amendment.approved{retires:[...]}`). The new attempt
   may propose afresh. Never edit history silently.
 
-**Rule R3: Fork or new run (`forgeflow fork <run> [--from <node>] [--plan <file>]`).**
+**Rule R3: Fork or new run (`flower fork <run> [--from <node>] [--plan <file>]`).**
 - This is the DBOS `fork_workflow` analogue, but cut by **graph cone rather than step ordinal**. Nodes
   not in the cone of `--from` (and not affected by plan changes) carry over their recorded results:
   `node.succeeded{reused_from:"<run>/<node>/<attempt>"}`, the AiiDA `cached_from` idea.
@@ -403,7 +403,7 @@ is the counterpart of DBOS app-version gating, made explicit so that it does not
   inputs:{label: input.hash}}` (`orm/nodes/caching.py:59`, `process/process.py:86`). Hits are stored as
   `_aiida_hash` / `_aiida_cached_from`.
 
-### 4.2 Minimal forgeflow provenance record (per attempt, in `node.started` / `node.succeeded` events plus `attempt.json`)
+### 4.2 Minimal flower provenance record (per attempt, in `node.started` / `node.succeeded` events plus `attempt.json`)
 
 | Field | Why |
 |---|---|
@@ -411,7 +411,7 @@ is the counterpart of DBOS app-version gating, made explicit so that it does not
 | `decl_hash`, `input_hash`, resolved `inputs{ref → sha256}` | data provenance and replay keys |
 | `outputs{key → {sha256, bytes, path or inline}}` | data provenance |
 | `executor`: harness name+version (`claude --version`, `codex --version`), `model_id`, effort/params, permission profile hash; or `job`: cluster, scheduler_job_id, partition, nodes, `sacct` final state, exit code; or `function`: qualname + code hash | reproducibility (AiiDA computer_uuid + code) |
-| `env`: forgeflow version, git commit of workdir (+dirty flag), container/module digest | AiiDA `version` attributes |
+| `env`: flower version, git commit of workdir (+dirty flag), container/module digest | AiiDA `version` attributes |
 | `transcript`: path + sha256 of harness JSONL (CC `agent-<id>.jsonl`, Codex `--json` stream), `session_id` | opaque agent window, and `--resume` |
 | `usage`: tokens/cost, wallclock, core-hours | budget |
 | `rationale`: short structured `{decision, alternatives_considered, evidence_refs}` returned by the agent in its output schema | logical provenance ("why") |
@@ -438,7 +438,7 @@ same: "Nothing reconstructs an outcome from current source, an attempt status, o
     of the workflow run, such as step executions and intermediate outputs". The mapping is:
     - each attempt → `CreateAction{instrument: SoftwareApplication (harness/code), object: inputs, result: outputs, agent}`;
     - each plan node → `HowToStep`, with `ControlAction{instrument: HowToStep, object: CreateAction}`;
-    - the forgeflow engine run → `OrganizeAction{instrument: forgeflow, object: [ControlActions], result: run CreateAction}`;
+    - the flower engine run → `OrganizeAction{instrument: flower, object: [ControlActions], result: run CreateAction}`;
     - plan file → `ComputationalWorkflow`; node inputs/outputs → `FormalParameter`.
   - Amendments and rationale have no native term; carry them as additional `File`s (amendment YAMLs)
     linked from the relevant `ControlAction`.
@@ -484,13 +484,13 @@ same: "Nothing reconstructs an outcome from current source, an attempt status, o
   `gate.opened{requestPath}`, `gate.answered`, `run.suspended{reason}`, `run.finished`. Every event has
   `{at, runId}`.
 
-### 5.2 Proposed forgeflow envelope (LabFlow-compatible superset)
+### 5.2 Proposed flower envelope (LabFlow-compatible superset)
 
 ```json
 {"schemaVersion":1, "seq":42, "eventId":"01J...ULID", "runId":"r-...",
  "eventType":"node.submitted", "occurredAtIso":"...Z",
  "nodeRunId":"relax-Li3N@r1", "attemptId":"relax-Li3N@r1#a2",
- "actorType":"system|agent|human", "actorId":"forgeflow|claude-code:opus|user:zh",
+ "actorType":"system|agent|human", "actorId":"flower|claude-code:opus|user:zh",
  "planGeneration":3, "writerEpoch":7,
  "idempotencyKey":"node.submitted:relax-Li3N@r1#a2",
  "payload":{...}}
@@ -501,19 +501,19 @@ same: "Nothing reconstructs an outcome from current source, an attempt status, o
   writer drops duplicates by key (Smithers `Duplicate`). This makes CLI retries and agent re-invocations
   safe.
 - `writerEpoch`: from `run.lease.acquired`. Appends carrying a stale epoch are refused (Smithers
-  `fence_lost`). This is needed because the outer agent, cron/`forgeflow tick`, and the user can all
+  `fence_lost`). This is needed because the outer agent, cron/`flower tick`, and the user can all
   invoke the CLI concurrently.
 - `nodeRunId = node_id@rev`, `attemptId = nodeRunId#aN`. These map onto LabFlow's
   `nodeRunId/attemptId` and onto jobflow `(uuid, index)` + attempt.
 - Payloads are **deltas plus identities**. A `payload.nodeRun` snapshot may be included for LabFlow
-  projection compatibility, but it is never required for forgeflow's own fold.
+  projection compatibility, but it is never required for flower's own fold.
 - Secret scrubbing on write (Smithers). Large blobs never go inline; they go by `{path, sha256}`.
 
 ### 5.3 Vocabulary (fields beyond the envelope)
 
 | Event | Payload | LabFlow equivalent |
 |---|---|---|
-| `run.created` | `planPath, planDigest(base), forgeflowVersion, workdir, gitCommit` | `workflow.accepted` |
+| `run.created` | `planPath, planDigest(base), flowerVersion, workdir, gitCommit` | `workflow.accepted` |
 | `run.lease.acquired` / `run.lease.released` | `owner{host,pid}, epoch, ttl` | — |
 | `plan.proposed` | `generation:0, digest, path, proposedBy` | `workflow.planned` |
 | `plan.approved` | `generation, digest, baseDigest, approver, note` | `approval.resolved` (subject=plan) |

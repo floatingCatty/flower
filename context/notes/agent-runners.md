@@ -1,6 +1,6 @@
-# Agent-workflow runners and the pi harness: source-level digest for forgeflow
+# Agent-workflow runners and the pi harness: source-level digest for flower
 
-Date: 2026-10-02. Scope: source-level reads of the shallow clones under `forgeflow/context/repos/`: `archon` (coleam00/Archon @ d26e3cd), `orc` (tjdals12/orc v1.3.1 @ fe58b1c), `yak` (lchase/yak v0.5.0 @ fcd5825), `gh-aw` (github/gh-aw @ de6e5b9) and `pi` (earendil-works/pi @ a276dab). I also cross-checked the Smithers 0.x CLI-agent adapters (`repos/smithers-0.x/packages/agents/src/`), which fill a gap left open by the prior-art survey. Background reading: `notes/prior-art-survey/closest_prior_art_deep_dive.md`.
+Date: 2026-10-02. Scope: source-level reads of the shallow clones under `flower/context/repos/`: `archon` (coleam00/Archon @ d26e3cd), `orc` (tjdals12/orc v1.3.1 @ fe58b1c), `yak` (lchase/yak v0.5.0 @ fcd5825), `gh-aw` (github/gh-aw @ de6e5b9) and `pi` (earendil-works/pi @ a276dab). I also cross-checked the Smithers 0.x CLI-agent adapters (`repos/smithers-0.x/packages/agents/src/`), which fill a gap left open by the prior-art survey. Background reading: `notes/prior-art-survey/closest_prior_art_deep_dive.md`.
 
 File paths are relative to each repo root unless stated otherwise. "Verbatim" marks text copied from source. Unmarked text is my summary.
 
@@ -23,7 +23,7 @@ File paths are relative to each repo root unless stated otherwise. "Verbatim" ma
 
 ## 1. yak (lchase/yak)
 
-**Positioning.** yak describes an agentic workflow engine as a "build system whose compilers are nondeterministic" (`spec.md` §1). Its principles include "Everything on disk, everything greppable. No hidden state in a database." It is the closest prior art to forgeflow's storage philosophy.
+**Positioning.** yak describes an agentic workflow engine as a "build system whose compilers are nondeterministic" (`spec.md` §1). Its principles include "Everything on disk, everything greppable. No hidden state in a database." It is the closest prior art to flower's storage philosophy.
 
 ### 1.1 Workflow file format
 
@@ -231,7 +231,7 @@ CLI (`src/cli/index.ts`):
 - "Demotable gates": collect labelled gate answers, then a predictor runs in shadow mode and is promoted to `skipIf` (`spec.md` §9 #10).
 
 ### 1.5 Outer-agent surface
-There is no skill file and no MCP server; agents use the CLI. A separate `yak-harness` package (`specs/yak-harness.md`, moved to `lchase/yak-harness`) consumes yak "only through the documented CLI and the on-disk journal / `pending/` contract". That is the same decoupling forgeflow wants.
+There is no skill file and no MCP server; agents use the CLI. A separate `yak-harness` package (`specs/yak-harness.md`, moved to `lchase/yak-harness`) consumes yak "only through the documented CLI and the on-disk journal / `pending/` contract". That is the same decoupling flower wants.
 
 ### 1.6 License, size, tests
 - MIT (`LICENSE`, © 2026 Lawrence Chase). Node ≥22.
@@ -915,15 +915,15 @@ The same server can be mounted inside a workflow (`tools: agentic-workflows:`), 
 - 1,844 `*_test.go` files, about 598k LOC.
 - `.github/workflows/` holds 649 files, mostly dogfooded `.md` workflows paired with their `.lock.yml`.
 
-### 4.7 What forgeflow can borrow
+### 4.7 What flower can borrow
 1. **Declare permitted side effects per agent node.** Use an `effects:` block that the compiler turns into the agent's tool list, a prompt block and a validation config, and error at compile time if the chosen harness cannot enforce it.
-2. **Emit intents, apply them deterministically.** The agent emits intent JSONL through `forgeflow emit` or MCP, and limits are enforced at call time and again at apply time. A separate deterministic node applies the intents and writes a manifest.
+2. **Emit intents, apply them deterministically.** The agent emits intent JSONL through `flower emit` or MCP, and limits are enforced at call time and again at apply time. A separate deterministic node applies the intents and writes a manifest.
    - For HPC, `submit_job` should be an intent that the engine validates and executes, never a raw `sbatch` run by the agent.
 3. **Mandatory terminal intent.** Require one of `noop`, `report_incomplete` or `missing_data`, so a silent exit is detectable.
 4. **Code changes as patches.** The agent produces a patch with a `base_commit`, and the apply step checks protected paths and size limits.
 5. **Lock-file header with hashes.** Record frontmatter and body hashes, engine versions and per-node effect tools, and treat a mismatch as a staleness check.
 6. **Audit command.** A stable-schema `audit --json` with finding codes and run-vs-run diffs.
-7. **Engine capability flags.** These stop forgeflow promising restrictions a harness cannot enforce.
+7. **Engine capability flags.** These stop flower promising restrictions a harness cannot enforce.
 
 ---
 
@@ -945,7 +945,7 @@ The agent lives in `packages/coding-agent/` (npm `@earendil-works/pi-coding-agen
 
 **Input and preflight.**
 - `@file` arguments include a file in the first prompt; RPC mode rejects them.
-- Non-TTY stdin is read to EOF and prepended to the prompt with **no separator**. If forgeflow leaves the stdin pipe open, pi hangs.
+- Non-TTY stdin is read to EOF and prepended to the prompt with **no separator**. If flower leaves the stdin pipe open, pi hangs.
 - `pi auth check --provider X [--json]` exits 0 for ready, 1 for not_ready and 2 for invalid. It works as a preflight check.
 
 **Exit codes:**
@@ -1029,7 +1029,7 @@ pi has **no native output schema**: no `--json-schema` and no `--output-schema`.
 
 **Pattern** (`examples/extensions/structured-output.ts`): an extension registers a `submit_result` tool whose parameters are the JSON schema.
 - Set `constrainedSampling:{type:"json_schema",strict:"prefer"}`, and have `execute` return `{details: params, terminate: true}`.
-- forgeflow reads `tool_execution_end{toolName:"submit_result"}.result.details`.
+- flower reads `tool_execution_end{toolName:"submit_result"}.result.details`.
 - If the tool is never called, re-prompt the same session.
 
 ### 5.7 Auth, config, extensions and permissions
@@ -1059,8 +1059,8 @@ pi has **no native output schema**: no `--json-schema` and no `--output-schema`.
 **Skills.** Discovered from `~/.pi/agent/skills`, `.pi/skills`, `~/.agents/skills` and `.agents/skills`, using the Agent Skills `SKILL.md` format (`name`, `description`, …).
 
 ### 5.8 Cancel, cost and timeouts
-- Print and json modes handle **only SIGTERM and SIGHUP**. Each kills tracked detached children and disposes the runtime. SIGINT kills the process without that cleanup, **so forgeflow should send SIGTERM**.
-- There is no run-level timeout; forgeflow must enforce its own.
+- Print and json modes handle **only SIGTERM and SIGHUP**. Each kills tracked detached children and disposes the runtime. SIGINT kills the process without that cleanup, **so flower should send SIGTERM**.
+- There is no run-level timeout; flower must enforce its own.
 - Built-in auto-retry: 3 attempts with backoff.
 - `httpIdleTimeoutMs` defaults to 300 s.
 
@@ -1069,7 +1069,7 @@ pi has **no native output schema**: no `--json-schema` and no `--output-schema`.
 # cwd = node workdir; stdin = prompt then EOF
 pi --mode json --session-dir "$RUN/sessions/pi" --session-id "$RUN_ID-$NODE-$ATTEMPT" --name "ff:$NODE" \
    --model anthropic/claude-sonnet-4-5 --thinking medium --no-approve \
-   [-e /abs/forgeflow-submit.ts --append-system-prompt /abs/node-contract.md] < prompt.md > events.jsonl 2> stderr.log
+   [-e /abs/flower-submit.ts --append-system-prompt /abs/node-contract.md] < prompt.md > events.jsonl 2> stderr.log
 # follow-up / resume same session:
 pi --mode json --session "<abs session .jsonl>" --no-approve … < followup.md
 # branch instead of append:  --fork <path> --session-id <new-id>
@@ -1118,7 +1118,7 @@ type CliOutputInterpreter = { onStdoutLine?(line); onStderrLine?(line); onExit?(
 
 ---
 
-## 7. Synthesis for forgeflow
+## 7. Synthesis for flower
 
 ### 7.1 Side-by-side
 
@@ -1143,7 +1143,7 @@ type CliOutputInterpreter = { onStdoutLine?(line); onStderrLine?(line); onExit?(
 The plan file is YAML. Each field is annotated with the project its convention comes from. Where projects disagree, I picked the majority or the safer convention.
 
 ```yaml
-forgeflow: 1                       # schema version int                       [orc `version`]
+flower: 1                       # schema version int                       [orc `version`]
 id: si-vacancy-formation           # ^[a-z0-9_-]+$, == file basename          [orc]
 description: "…"                   # required; used by the outer agent to pick plans [orc, Archon]
 inputs:                            # typed named inputs                       [Archon `inputs`, yak `inputSchema`]
@@ -1170,7 +1170,7 @@ nodes:
     budget: { max_usd: 5, max_turns: 80 }   # [Archon maxBudgetUsd; orc max_turns; yak Budget]
     cache: strict                  # strict | loose | never (= Archon always_run) [yak; Archon]
   - id: relax
-    kind: job                      # HPC job node — forgeflow-specific
+    kind: job                      # HPC job node — flower-specific
     depends_on: [setup-cells]      # node-id edges                             [Archon, orc]
     when: "$setup-cells.output.n_cells > 0"  # tiny expression lang, fail-closed [Archon `when`; yak jexl `skipIf`]
     trigger_rule: all_success      # [Archon]
@@ -1210,7 +1210,7 @@ Harness stream events do **not** go in the journal. They go to per-attempt `tran
 2. Reuse a node only if its yak-style `semanticKey`/`definitionKey` still match, and the upstream artifact hashes still match. Matching on hashes gives Archon's value-equality invalidation for free.
 3. Agent outputs are reused from `artifacts/` and the cache. They are never regenerated.
 
-**Amendments** are new plan revisions: a `plan.revised` event plus a stored diff. They gate on the same answer mechanism, and approval binds to the digest. This follows the Smithers 1.0 PlanCard and the brief's approved-amendment requirement. Archon instead freezes the shape "a run does not change shape while it is running", and forgeflow relaxes that only through approved revisions.
+**Amendments** are new plan revisions: a `plan.revised` event plus a stored diff. They gate on the same answer mechanism, and approval binds to the digest. This follows the Smithers 1.0 PlanCard and the brief's approved-amendment requirement. Archon instead freezes the shape "a run does not change shape while it is running", and flower relaxes that only through approved revisions.
 
 ### 7.3 Harness adapter interface
 
@@ -1267,25 +1267,25 @@ interface NodeResult { ok: boolean; stopReason: 'complete'|'max_turns'|'budget'|
 
 1. **Gate = yak's file protocol + Archon's and orc's semantics.**
    - Reaching a gate writes `pending/<node>.request.json`, discriminated by `kind`: gate, loop-exhausted, budget or amendment. It journals `gate.opened` and the process **exits** with a distinct code (yak 78; Smithers uses 3 for waiting).
-   - The answer comes from any frontend writing `pending/<node>.answer.json`, or from `forgeflow approve|reject|answer <run> <node> [--reason]`. The answer is validated against the gate's schema, and `gate.answered{decision, by, notes}` is journalled.
+   - The answer comes from any frontend writing `pending/<node>.answer.json`, or from `flower approve|reject|answer <run> <node> [--reason]`. The answer is validated against the gate's schema, and `gate.answered{decision, by, notes}` is journalled.
    - Open gates are derived from the journal, not from which files exist [yak].
    - Approval **does not auto-continue in `--json` mode**. Keep the explicit `resume` two-step [orc, Archon]. A human-mode convenience flag can continue inline.
    - Rework: `on_reject` re-runs named nodes with `$REJECTION_REASON`, bounded by `max_attempts` (default 3) [Archon]. When attempts run out, cancel and record that outcome.
-   - `forgeflow pending` lists every open gate across runs [yak].
+   - `flower pending` lists every open gate across runs [yak].
    - The skill must carry orc's rule verbatim: *"The decision is the user's. Never run approve or reject on your own judgment."*
 2. **Budget and loop exhaustion suspends rather than fails** [yak §3.3, §9 #9]. It opens a `loop-exhausted` request with the fixed answer `{action: continue|abort, addIterations?}`.
 3. **Waits and jobs park; no owner process stays alive.**
-   - Archon keeps an owner process alive and uses a server scan only for recovery. forgeflow should instead use a stateless `forgeflow tick` scanner, modelled on CatGo, run from cron, scrontab or a systemd timer, or from an optional `forgeflow serve` loop.
+   - Archon keeps an owner process alive and uses a server scan only for recovery. flower should instead use a stateless `flower tick` scanner, modelled on CatGo, run from cron, scrontab or a systemd timer, or from an optional `flower serve` loop.
    - The scanner (a) polls Slurm (`sacct`/`squeue` over SSH) for `job` nodes, (b) applies signals, (c) fires time and deadline expiries, and (d) resumes the runs that became ready.
-   - Signals use Archon's occurrence-token idea. The wait records a `token`, and the signal must quote it: `forgeflow signal <run> <node> --token T --data @payload.json`, or a file drop into `signals/`. A Slurm epilogue can call it, and duplicate or stale signals are no-ops.
+   - Signals use Archon's occurrence-token idea. The wait records a `token`, and the signal must quote it: `flower signal <run> <node> --token T --data @payload.json`, or a file drop into `signals/`. A Slurm epilogue can call it, and duplicate or stale signals are no-ops.
    - Archon's expiry semantics apply: `deadline` → `wait.expired`, which completes with `status: expired` and does not fail, so downstream `when:` can branch on it.
    - An `attention` wait is never auto-resumed [Archon].
-4. **Cancel.** Journal the pid and pgid at start [yak, orc]. `forgeflow cancel` signals the process group with a grace period, `scancel`s any submitted job ids, then journals `run.finished{status: cancelled}`. It is idempotent [yak], and it must **not** run `git reset --hard` (orc's destructive stop is an anti-pattern).
+4. **Cancel.** Journal the pid and pgid at start [yak, orc]. `flower cancel` signals the process group with a grace period, `scancel`s any submitted job ids, then journals `run.finished{status: cancelled}`. It is idempotent [yak], and it must **not** run `git reset --hard` (orc's destructive stop is an anti-pattern).
 5. **Rerun a node and its downstream.** None of the three ships this; orc and Archon lack it, and yak's version exists only in its spec. Implement it as a journal event `node.invalidated{node, cascade: true}`, which the fold honours, followed by `resume`. This is Smithers' `retry-task` semantics on top of yak's journal.
-6. **Outer-agent surface.** Install one skill into both `.claude/skills/forgeflow/` and `.agents/skills/forgeflow/` [orc], with version staleness checked via `metadata.version`.
+6. **Outer-agent surface.** Install one skill into both `.claude/skills/flower/` and `.agents/skills/flower/` [orc], with version staleness checked via `metadata.version`.
    - Structure: a router to sub-docs [Archon, gh-aw].
    - Instructions to keep:
-     - launch with `--detach --json`, then `forgeflow wait <run> --json` as a background task, never polling [Archon, orc];
+     - launch with `--detach --json`, then `flower wait <run> --json` as a background task, never polling [Archon, orc];
      - check the brief before launch [Archon's six items];
      - validate the plan until it is valid [orc];
      - a completed run is not necessarily a success, so check `outcome` [Archon].

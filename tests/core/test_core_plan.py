@@ -4,12 +4,12 @@ from __future__ import annotations
 
 import pytest
 
-from forgeflow import plan as planmod
-from forgeflow.plan import PlanInvalid
+from flower import plan as planmod
+from flower.plan import PlanInvalid
 
 
 def P(nodes, **top):
-    d = {"forgeflow": 1, "id": "p", "nodes": nodes}
+    d = {"flower": 1, "id": "p", "nodes": nodes}
     d.update(top)
     return d
 
@@ -78,24 +78,24 @@ def test_plan_invalid_error_payload():
 
 
 @pytest.mark.parametrize("raw,code", [
-    ({"forgeflow": 2, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"}]}, "version"),
-    ({"forgeflow": 1, "nodes": [{"id": "a", "kind": "shell", "run": "x"}]}, "plan_id"),
-    ({"forgeflow": 1, "id": "p", "nodes": []}, "nodes"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "1bad", "kind": "shell", "run": "x"}]}, "node_id"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"},
+    ({"flower": 2, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"}]}, "version"),
+    ({"flower": 1, "nodes": [{"id": "a", "kind": "shell", "run": "x"}]}, "plan_id"),
+    ({"flower": 1, "id": "p", "nodes": []}, "nodes"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "1bad", "kind": "shell", "run": "x"}]}, "node_id"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"},
                                            {"id": "a", "kind": "shell", "run": "y"}]}, "duplicate_id"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "a", "kind": "agent"}]}, "required"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "a", "kind": "agent", "prompt": "x", "harness": "gpt"}]}, "harness"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x",
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "agent"}]}, "required"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "agent", "prompt": "x", "harness": "gpt"}]}, "harness"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x",
                                            "outputs": {"k": "tensor"}}]}, "output_type"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x", "when": "lambda: 1"}]}, "expr"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x", "foreach": 3}]}, "foreach"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "a", "kind": "gate", "decisions": []}]}, "decisions"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "a", "kind": "wait", "signal": "s", "deadline": "soon"}]}, "duration"),
-    ({"forgeflow": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"}], "results": ["zz"]}, "unknown_ref"),
-    ({"forgeflow": 1, "id": "p", "clusters": {"h": {"transport": "ftp"}},
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x", "when": "lambda: 1"}]}, "expr"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x", "foreach": 3}]}, "foreach"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "gate", "decisions": []}]}, "decisions"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "wait", "signal": "s", "deadline": "soon"}]}, "duration"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"}], "results": ["zz"]}, "unknown_ref"),
+    ({"flower": 1, "id": "p", "clusters": {"h": {"transport": "ftp"}},
       "nodes": [{"id": "a", "kind": "job", "cluster": "h", "script": "x"}]}, "cluster"),
-    ({"forgeflow": 1, "id": "p", "clusters": {"h": {"transport": "ssh"}},
+    ({"flower": 1, "id": "p", "clusters": {"h": {"transport": "ssh"}},
       "nodes": [{"id": "a", "kind": "job", "cluster": "h", "script": "x"}]}, "cluster"),
 ])
 def test_single_issue_codes(raw, code):
@@ -267,9 +267,9 @@ def test_amend_does_not_mutate_input_plan():
 
 def test_yaml_on_off_yes_no_are_strings_not_booleans(tmp_path):
     """YAML 1.1 turns the key `on` into True; `retry: {on: [...]}` must survive loading and hashing."""
-    from forgeflow import plan as P
+    from flower import plan as P
     f = tmp_path / "p.yaml"
-    f.write_text("forgeflow: 1\nid: y\nnodes:\n  - id: a\n    kind: shell\n    run: 'true'\n"
+    f.write_text("flower: 1\nid: y\nnodes:\n  - id: a\n    kind: shell\n    run: 'true'\n"
                  "    retry: {on: [exit_nonzero], max_attempts: 2}\n    env: {MODE: yes, FLAG: off}\n")
     plan = P.check(P.load_plan_file(f))
     node = plan["nodes"][0]

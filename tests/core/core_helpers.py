@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[2]
-FORGEFLOW_EXE = REPO / ".venv" / "bin" / "forgeflow"
+FLOWER_EXE = REPO / ".venv" / "bin" / "flower"
 
 
 TERMINAL = ("succeeded", "failed", "cancelled", "rejected")
@@ -59,8 +59,8 @@ def events(eng, etype=None, node=None):
 
 
 def out_json(obj) -> str:
-    """Shell snippet writing ``obj`` as JSON to $FF_OUTPUTS."""
-    return f"cat > \"$FF_OUTPUTS\" <<'FFEOF'\n{json.dumps(obj)}\nFFEOF"
+    """Shell snippet writing ``obj`` as JSON to $FLOWER_OUTPUTS."""
+    return f"cat > \"$FLOWER_OUTPUTS\" <<'FFEOF'\n{json.dumps(obj)}\nFFEOF"
 
 
 def pid_alive(pid: int) -> bool:

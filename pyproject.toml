@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "forgeflow"
+name = "flower"
 version = "0.1.0"
 description = "Durable, file-first workflow CLI for long-running agent + HPC research workflows"
 readme = "README.md"
@@ -15,14 +15,13 @@ dependencies = ["pyyaml>=5.4", "jsonschema>=4"]
 dev = ["pytest>=7"]
 
 [project.scripts]
-forgeflow = "forgeflow.cli:main"
-ff = "forgeflow.cli:main"
+flower = "flower.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
 
 [tool.setuptools.package-data]
-forgeflow = ["data/*", "data/**/*"]
+flower = ["data/*", "data/**/*"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

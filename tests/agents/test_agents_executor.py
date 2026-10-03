@@ -7,7 +7,7 @@ import time
 import pytest
 
 from agentkit import agent_node, events, last_attempt, make_plan
-from forgeflow.executors.agent import answer_schema
+from flower.executors.agent import answer_schema
 
 GOOD = {"energy": -5.25, "summary": "computed the energy", "rationale": "PBE because the task said so"}
 OUT = {"energy": "number"}
@@ -58,15 +58,15 @@ def test_claude_happy_path_argv_env_and_contract(fake, run_plan, monkeypatch):
     # prompt via stdin, with the node contract block
     stdin = call["stdin"]
     assert stdin.startswith("Compute the energy of Si. Unicode ok: 能量 ✓")
-    assert "## forgeflow node contract" in stdin and "You are node `calc`" in stdin
-    assert "Do not run `forgeflow` commands yourself" in stdin
+    assert "## flower node contract" in stdin and "You are node `calc`" in stdin
+    assert "Do not run `flower` commands yourself" in stdin
     assert '"topic": "si"' in stdin and "amendment" not in stdin
     assert all("Compute the energy" not in x for x in argv)
     # environment: nested-session vars removed, recursion guard + node env set
     env = call["env"]
     assert env["CLAUDECODE"] is None and env["CLAUDE_CODE_ENTRYPOINT"] is None
-    assert env["FORGEFLOW_INSIDE_RUN"] == "1" and env["FF_NODE_ID"] == "calc" and env["FF_ATTEMPT"] == "1"
-    assert env["FF_IN_TOPIC"] == "si"
+    assert env["FLOWER_INSIDE_RUN"] == "1" and env["FLOWER_NODE_ID"] == "calc" and env["FLOWER_ATTEMPT"] == "1"
+    assert env["FLOWER_IN_TOPIC"] == "si"
     assert call["cwd"] == str(attempt_dir(eng, "calc") / "work")
     # journalled artefacts
     adir = attempt_dir(eng, "calc")
@@ -138,7 +138,7 @@ def test_script_happy_path_env_and_live_actions(fake, run_plan):
     assert st.status == "succeeded"
     call = f.calls()[0]
     assert call["argv"] == []  # the command is used verbatim
-    assert call["env"]["FF_MODEL"] == "tiny" and call["env"]["FF_OUTPUT_SCHEMA"] is None  # no native schema
+    assert call["env"]["FLOWER_MODEL"] == "tiny" and call["env"]["FLOWER_OUTPUT_SCHEMA"] is None  # no native schema
     assert last_attempt(st, "s").usage["cost_usd"] == 0.0
 
 
@@ -160,9 +160,9 @@ def test_claude_repair_resumes_same_session(fake, run_plan):
     assert "--resume" not in c0["argv"]
     assert c1["argv"][c1["argv"].index("--resume") + 1] == sid
     assert "--session-id" not in c1["argv"]
-    assert "did not satisfy the forgeflow output contract" in c1["stdin"]
+    assert "did not satisfy the flower output contract" in c1["stdin"]
     assert "the reply did not end with a JSON object" in c1["stdin"]
-    assert "## forgeflow node contract" not in c1["stdin"]  # resumed: short correction only
+    assert "## flower node contract" not in c1["stdin"]  # resumed: short correction only
     a = last_attempt(st, "a")
     assert a.repairs == 1 and a.session == sid
     assert a.usage["cost_usd"] == pytest.approx(0.5)  # both turns are billed
@@ -202,9 +202,9 @@ def test_script_repair_reprompts_with_original_task(fake, run_plan):
     c0, c1 = f.calls()
     assert c0["argv"] == c1["argv"] == []
     assert c1["stdin"].startswith("ORIGINAL TASK TEXT")
-    assert "## forgeflow node contract" in c1["stdin"]
+    assert "## flower node contract" in c1["stdin"]
     assert "Your previous answer (head and tail):\nfirst try: energy is about -5" in c1["stdin"]
-    assert "did not satisfy the forgeflow output contract" in c1["stdin"]
+    assert "did not satisfy the flower output contract" in c1["stdin"]
 
 
 def test_repair_reports_type_errors(fake, run_plan):
@@ -413,10 +413,10 @@ def test_huge_script_stdout_keeps_the_tail_answer(fake, run_plan):
     assert st.status == "succeeded", st.status_reason
 
 
-def test_cancel_running_agent_kills_the_harness(fake, ff_home):
-    from forgeflow.engine import create_run
+def test_cancel_running_agent_kills_the_harness(fake, flower_home):
+    from flower.engine import create_run
     f = fake("claude", [{"answer": GOOD, "hang": 120}])
-    eng = create_run(make_plan([agent_node("a", f.harness())]), {}, root=ff_home, approve=True)
+    eng = create_run(make_plan([agent_node("a", f.harness())]), {}, root=flower_home, approve=True)
     eng.drive(timeout=2)
     assert eng.state().nodes["a"].status == "running"
     eng.cancel(node="a", reason="test")
@@ -483,13 +483,13 @@ def test_agent_nodes_are_not_cached_across_reruns(fake, run_plan):
 
 # ====================================================================== robustness
 
-def test_killed_runner_and_harness_lead_to_clean_retry(fake, ff_home):
+def test_killed_runner_and_harness_lead_to_clean_retry(fake, flower_home):
     import os
     import signal
-    from forgeflow.engine import create_run
+    from flower.engine import create_run
     f = fake("claude", [{"answer": GOOD, "hang": 120}, {"answer": GOOD}])
     plan = make_plan([agent_node("a", f.harness(), outputs=OUT, retry={"max_attempts": 2, "backoff": "0s"})])
-    eng = create_run(plan, {}, root=ff_home, approve=True)
+    eng = create_run(plan, {}, root=flower_home, approve=True)
     eng.tick()
     rj = attempt_dir(eng, "a") / "proc" / "runner.json"
     deadline = time.time() + 20
@@ -524,11 +524,11 @@ def test_large_prompt_goes_through_stdin(fake, run_plan):
     assert f.calls()[0]["stdin"].startswith(big)
 
 
-def test_status_view_shows_live_agent_activity(fake, ff_home):
-    from forgeflow.engine import create_run
-    from forgeflow.render import node_detail, status_view
+def test_status_view_shows_live_agent_activity(fake, flower_home):
+    from flower.engine import create_run
+    from flower.render import node_detail, status_view
     f = fake("claude", [{"answer": GOOD, "hang": 120}])
-    eng = create_run(make_plan([agent_node("a", f.harness())]), {}, root=ff_home, approve=True)
+    eng = create_run(make_plan([agent_node("a", f.harness())]), {}, root=flower_home, approve=True)
     live = attempt_dir(eng, "a") / "live.json"
     deadline = time.time() + 20
     while time.time() < deadline:

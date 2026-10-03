@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Fake coding-agent CLIs for forgeflow tests (no LLM is ever called).
+"""Fake coding-agent CLIs for flower tests (no LLM is ever called).
 
-Usage (as a forgeflow harness ``command``)::
+Usage (as a flower harness ``command``)::
 
     harness: {name: claude, command: [python, fake_harness.py, claude], env: {FAKE_SCENARIO: …, FAKE_LOG: …}}
 
-forgeflow appends its own flags after ``command[1:]``, so ``sys.argv[2:]`` is exactly the argv forgeflow
+flower appends its own flags after ``command[1:]``, so ``sys.argv[2:]`` is exactly the argv flower
 built.  The behaviour of the N-th invocation is ``scenario["turns"][N]`` (the last entry repeats).  Every
 invocation appends one JSON record (argv, stdin, cwd, interesting env vars) to ``$FAKE_LOG`` so tests can
-assert on what forgeflow passed.
+assert on what flower passed.
 
 Turn keys (all optional):
   answer      dict  -> the final JSON answer (rendered per ``format``: bare | fenced | only)
@@ -29,9 +29,9 @@ import sys
 import time
 import uuid
 
-WATCH_ENV = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "FORGEFLOW_INSIDE_RUN", "FF_RUN_ID",
-             "FF_NODE_ID", "FF_ATTEMPT", "FF_OUTPUT_SCHEMA", "FF_MODEL", "FF_INPUTS", "FF_NODE_DIR", "FAKE_EXTRA",
-             "FF_IN_TOPIC")
+WATCH_ENV = ("CLAUDECODE", "CLAUDE_CODE_ENTRYPOINT", "CLAUDE_CODE_SSE_PORT", "FLOWER_INSIDE_RUN", "FLOWER_RUN_ID",
+             "FLOWER_NODE_ID", "FLOWER_ATTEMPT", "FLOWER_OUTPUT_SCHEMA", "FLOWER_MODEL", "FLOWER_INPUTS", "FLOWER_NODE_DIR", "FAKE_EXTRA",
+             "FLOWER_IN_TOPIC")
 
 
 def emit(ev):
@@ -163,7 +163,7 @@ def run_pi(argv, t):
 
 def run_script(argv, t):
     if t.get("action"):
-        print(json.dumps({"forgeflow_action": t["action"]}), flush=True)
+        print(json.dumps({"flower_action": t["action"]}), flush=True)
     if t.get("hang"):
         time.sleep(float(t["hang"]))
     kb = int(t.get("noise_kb") or 0)

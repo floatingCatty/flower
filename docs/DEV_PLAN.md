@@ -1,4 +1,4 @@
-# forgeflow — Development Plan (draft v0.1)
+# flower — Development Plan (draft v0.1)
 
 Date: 2026-10-02 · Status: draft for review · Working name, easy to rename before the first release.
 
@@ -39,7 +39,7 @@ Reference clones are in `context/repos/` (git-ignored). Re-create them with `con
 
 ---
 
-## 1. What forgeflow is
+## 1. What flower is
 
 A **lightweight, file-first workflow CLI for long-running research**. Coding agents (Claude Code, Codex,
 pi) and people use it to plan, run, monitor and grow multi-step computations. Typical work is DFT/MD
@@ -52,8 +52,8 @@ chains on Slurm that run for days, but nothing in the core is domain-specific.
   `shell`, `function`, `job` (HPC), `gate` (human decision) and `wait`. You use agents where judgment
   is needed and deterministic nodes where reproducibility is needed.
 - **Durable without a daemon.** State is `plan` + `events.jsonl`. Every command folds the log. A Slurm
-  job is "parked" and holds no process. A stateless `forgeflow tick` advances the run, called from cron,
-  `forgeflow watch` or the outer agent. *(catgo stateless scanner; Smithers park-on-job; dpdispatcher
+  job is "parked" and holds no process. A stateless `flower tick` advances the run, called from cron,
+  `flower watch` or the outer agent. *(catgo stateless scanner; Smithers park-on-job; dpdispatcher
   `exit_on_submit`)*
 - **Grows mid-run.** An agent or the user proposes an amendment. The user approves it. It is appended
   as a new plan generation, and history is never rewritten. *(Smithers plan-store generations + jobflow
@@ -68,19 +68,19 @@ chains on Slurm that run for days, but nothing in the core is domain-specific.
 ### Non-goals
 - **Not another agent harness.** There is no LLM loop and no tool registry. Reasoning happens inside
   existing harnesses, as Eleforge decided on 07-02 (`doc/design/external-agent-brain.md`).
-- **Not a scheduler or a cluster manager.** forgeflow submits to Slurm; it does not replace it.
+- **Not a scheduler or a cluster manager.** flower submits to Slurm; it does not replace it.
 - **No server, database or UI in the core.** Eleforge's web UI can become a viewer on top later (M6).
 - **No convergence or scientific judgment inside `job` nodes.** That belongs to a downstream `function`
   or `agent` node. *(catgo: "COMPLETED ≠ converged")*
 
 ### Design rule that resolves "agent vs. deterministic"
-> **Agents decide; forgeflow executes durable effects.** An agent node produces files and a structured
+> **Agents decide; flower executes durable effects.** An agent node produces files and a structured
 > result. When it wants a long computation, it does not run `sbatch` itself. It emits an *amendment
-> proposal* or a declared *effect intent*, and forgeflow turns that into a `job` node with idempotent
+> proposal* or a declared *effect intent*, and flower turns that into a `job` node with idempotent
 > submit, polling and provenance.
 > *(gh-aw "safe outputs": the agent runs read-only and its side effects are validated JSONL intents)*
 
-This rule keeps long waits and exactly-once submission in forgeflow, where they can be made durable,
+This rule keeps long waits and exactly-once submission in flower, where they can be made durable,
 instead of inside an agent session that can die.
 
 ---
@@ -97,12 +97,12 @@ instead of inside an agent session that can die.
   - a CLI framework (`typer` or `click`).
 
   Nothing else in the core: no DB, no message broker, no ORM.
-- Distribution: `pipx install forgeflow` / `uv tool install forgeflow`. The CLI entry point is `forgeflow`,
+- Distribution: `pipx install flower` / `uv tool install flower`. The CLI entry point is `flower`,
   with the alias `ff`.
 
 ### D2. On-disk layout (file-first, the log is the only source of truth)
 ```
-<project>/.forgeflow/
+<project>/.flower/
   plans/<plan-id>/plan.yaml                     # editable draft (contract)
   runs/<run-id>/
     plan.lock.yaml                              # frozen gen-0 plan + digests (approved)
@@ -119,7 +119,7 @@ instead of inside an agent session that can die.
 - yak: `journal.jsonl` as the only state; `pending/` files.
 - orc / Archon: frozen spec per run.
 - `hpc-execution.md` §8.2: attempt directories.
-- New in forgeflow: `argv.json`. None of the surveyed runners records the exact invocation.
+- New in flower: `argv.json`. None of the surveyed runners records the exact invocation.
 
 **Why not SQLite.** WAL mode is unsafe on NFS/Lustre, where HPC home directories live (`smithers.md` §1).
 Eleforge's "SQL first, files as a mirror" never converged (`eleforge-reuse.md` §5).
@@ -147,7 +147,7 @@ A `--labflow-compat` projection keeps Eleforge able to read runs.
 
 ### D4. Plan file schema: YAML, with every convention borrowed
 Full sketch in `agent-runners.md` §7.2. Summary:
-- **Top level:** `forgeflow: 1`, `id`, `description`, typed `inputs`, `defaults` (harness, timeout
+- **Top level:** `flower: 1`, `id`, `description`, typed `inputs`, `defaults` (harness, timeout
   `{total, idle}`, retry by failure class, concurrency).
 - **Nodes:** `id`, `kind ∈ {agent, shell, function, job, gate, wait, loop, map}`, `depends_on`, `when`,
   `trigger_rule`, `consumes` / `produces`, `output.schema`, `budget`, `cache: strict|loose|never`.
@@ -161,7 +161,7 @@ Full sketch in `agent-runners.md` §7.2. Summary:
   `PlanLoadError`; orc's validate-until-valid skill rule).
 
 ### D5. Approval and amendments: digest-bound, append-only generations
-- `forgeflow plan approve` binds the approval to `baseDigest` (canonical JSON + SHA-256; LabFlow
+- `flower plan approve` binds the approval to `baseDigest` (canonical JSON + SHA-256; LabFlow
   `template_cas.py`, or RFC 8785).
 - An amendment carries `(parentGeneration, parentDigest)`. It is applied by compare-and-swap, which
   gives `generation+1` and a new `digest`; `baseDigest` stays unchanged. (Smithers `Plan.append`,
@@ -203,7 +203,7 @@ Full design in `hpc-execution.md` §8.
 - **Idempotent submit.**
   - Write-ahead `job.submit_intent`, then a remote marker.
   - One SSH call: dedupe by `--job-name=<submit_key>` in `squeue`/`sacct`, then
-    `sbatch --parsable --comment=<fingerprint>`, then write `.forgeflow/jobid` atomically.
+    `sbatch --parsable --comment=<fingerprint>`, then write `.flower/jobid` atomically.
   - An in-job mkdir guard against duplicates.
 
   This combines Eleforge (the only surveyed system that closes the crash window) with dpdispatcher's
@@ -227,7 +227,7 @@ Full design in `hpc-execution.md` §8.
   - The automatic retry policy is keyed on the typed failure reason. `OOM` / `EXIT_NONZERO` are never
     retried blindly; they emit an amendment proposal.
 - **Data hand-off between jobs** (Eleforge "band hand-off gap": nscf cannot see the SCF charge
-  density). `consumes` can reference a remote path from an upstream attempt. forgeflow stages it
+  density). `consumes` can reference a remote path from an upstream attempt. flower stages it
   remote-to-remote or symlinks it in the same filesystem, not via a download/upload.
 - **Dependencies:** none. psij is an optional future backend for running *on* the login node.
   dpdispatcher is LGPL and its model fights an amendable DAG. aiida and jobflow-remote are too heavy.
@@ -257,7 +257,7 @@ Interface in `agent-runners.md` §7.3; argv details in `smithers.md` Appendix A.
   - detect quota or session-limit banners that exit 0 (park until the reset time; do not fail);
   - treat auth/config errors as non-retryable;
   - on session loss, drop the resume id;
-  - set the recursion guard env `FORGEFLOW_INSIDE_RUN`; inside a node the skill forbids driving forgeflow;
+  - set the recursion guard env `FLOWER_INSIDE_RUN`; inside a node the skill forbids driving flower;
   - never write the user's credential files (Eleforge token-rotation incident).
 - **Structured output.**
   - Prompt-inject the schema.
@@ -276,12 +276,12 @@ Interface in `agent-runners.md` §7.3; argv details in `smithers.md` Appendix A.
 - Reaching a gate writes `pending/<id>.request.json`, journals `gate.requested`, and the run exits with
   code `3` ("parked"). The request kinds are node, plan, amendment, loop-exhausted and budget.
 - The answer is written either as `pending/<id>.answer.json` (any frontend) or with
-  `forgeflow answer|approve|reject`. It is validated against the gate's schema, and `gate.answered`
+  `flower answer|approve|reject`. It is validated against the gate's schema, and `gate.answered`
   is journalled.
 - Open gates are derived from the log. (yak)
 - An answer does not auto-continue in `--json` mode; `resume` is a separate step. (orc, Archon)
 - When a loop or budget is exhausted, the run **suspends** with a gate instead of failing. (yak)
-- `wait` nodes use tokenised signals (`forgeflow signal <run> <node> --token T`). A deadline expiry is
+- `wait` nodes use tokenised signals (`flower signal <run> <node> --token T`). A deadline expiry is
   a status the plan can branch on with `when:`, not a failure. (Archon)
 
 ### D10. Outer-agent surface
@@ -308,12 +308,12 @@ Interface in `agent-runners.md` §7.3; argv details in `smithers.md` Appendix A.
   - `fork <run> [--from <node>]`, `replay` (pure fold, no execution)
   - `audit <run>` (stable JSON schema; gh-aw)
   - `export --ro-crate`
-- **Skill** (`skills/forgeflow/SKILL.md`), installed into `.claude/skills/` and `.agents/skills/`. Key
+- **Skill** (`skills/flower/SKILL.md`), installed into `.claude/skills/` and `.agents/skills/`. Key
   rules, each borrowed:
-  - Rule 0: if `FORGEFLOW_INSIDE_RUN` is set, never drive forgeflow (Smithers).
+  - Rule 0: if `FLOWER_INSIDE_RUN` is set, never drive flower (Smithers).
   - Validate the plan until it is valid (orc).
   - "**The decision is the user's. Never approve on your own judgment**" (orc).
-  - Launch detached, then `forgeflow wait` as a background task; never poll in a loop (Archon).
+  - Launch detached, then `flower wait` as a background task; never poll in a loop (Archon).
   - "Admission is not completion" (Smithers 1.0).
   - Act on the `next` block.
   - For multi-goal work, route by shape, not size.
@@ -360,10 +360,10 @@ Interface in `agent-runners.md` §7.3; argv details in `smithers.md` Appendix A.
 Each milestone ends with a demo that runs and a short record in `docs/milestones/`.
 
 ### M0. Bootstrap (≈1 week)
-- Package skeleton (`src/forgeflow/{store,model,engine,executors,cli}`), ruff, pytest, CI.
+- Package skeleton (`src/flower/{store,model,engine,executors,cli}`), ruff, pytest, CI.
 - Decide name and license (§6).
 - **Store:** port LabFlow's `events.py`, `repository.py`, `plan.py`, `template_cas.py` into
-  `forgeflow.store`, with flock + `seq` + idempotency keys + fail-closed reads. Port the golden
+  `flower.store`, with flock + `seq` + idempotency keys + fail-closed reads. Port the golden
   fixtures through a name mapping.
 - **Done when:** golden fold tests pass. Concurrent appenders (multiprocess test) never interleave or
   duplicate. Truncating the last line is tolerated; a corrupt earlier line is fatal.
@@ -403,7 +403,7 @@ Each milestone ends with a demo that runs and a short record in `docs/milestones
     lag, vanishing jobs and preemption) used over `ssh localhost` in CI;
   - a real-cluster acceptance run on `eleforge-4090` (relax → scf → nscf → bands for Si).
 - **Done when:**
-  - Killing forgeflow at each step of the submit protocol never yields 0 or 2 Slurm jobs for one
+  - Killing flower at each step of the submit protocol never yields 0 or 2 Slurm jobs for one
     attempt.
   - A job that vanishes from `squeue` is resolved correctly from `sacct` or evidence.
   - A 24 h job is tracked by `tick` from cron alone.
@@ -422,15 +422,15 @@ Each milestone ends with a demo that runs and a short record in `docs/milestones
 
 ### M5. Outer-agent surface (≈1–2 weeks)
 - The `--json` envelope with `next` hints, fixed exit codes, `audit --json`.
-- `skills/forgeflow/SKILL.md` with an installer (`forgeflow skill install`).
-- An optional MCP server (`forgeflow mcp`), read-only by default, approval verbs withheld.
+- `skills/flower/SKILL.md` with an installer (`flower skill install`).
+- An optional MCP server (`flower mcp`), read-only by default, approval verbs withheld.
 - **Done when** the validation experiment (§5) passes.
 
 ### M6. Provenance export + Eleforge integration (≈2 weeks, can overlap)
 - `export --ro-crate`: Workflow Run RO-Crate / Provenance Run Crate, with a PROV-O mapping
   (`workflow-semantics.md` §4).
-- A `--labflow-compat` projection, so the Eleforge canvas can display forgeflow runs. Long term,
-  Eleforge's own `packages/labflow` can depend on `forgeflow.store` instead of keeping a fork.
+- A `--labflow-compat` projection, so the Eleforge canvas can display flower runs. Long term,
+  Eleforge's own `packages/labflow` can depend on `flower.store` instead of keeping a fork.
 
 ---
 
@@ -441,7 +441,7 @@ This is the experiment proposed in the design discussion. It is the M5 acceptanc
 - **Task:** a 4-step DFT chain (relax → scf → dos → bands) on a real cluster, plus one injected failure
   that needs a plan change.
 - **A:** Claude Code with plain bash/ssh only.
-- **B:** Claude Code with the forgeflow skill.
+- **B:** Claude Code with the flower skill.
 - **Protocol:** force a *new session* after each step, and a context compaction mid-way.
 - **Measure:**
   - recoveries without human help;
@@ -457,15 +457,15 @@ This is the experiment proposed in the design discussion. It is the M5 acceptanc
 
 ## 6. Open decisions (need the user)
 
-1. **Name.** `forgeflow` is a working name. Checking PyPI and GitHub availability is a 5-minute task
+1. **Name.** `flower` is a working name. Checking PyPI and GitHub availability is a 5-minute task
    before M0 ends.
 2. **License.**
    - Recommendation: **Apache-2.0** (patent grant, common in science tooling) or MIT.
    - Either way it constrains us: no code from AGPL catgo or LGPL dpdispatcher/dflow; design only.
 3. **Relation to Eleforge's `packages/labflow`.**
-   - Recommendation: forgeflow is a separate package that copies and adapts LabFlow's store now (M0).
-   - Eleforge migrates to depend on forgeflow later (M6).
-   - The alternative, evolving `packages/labflow` in place, ties forgeflow to Eleforge's release cycle
+   - Recommendation: flower is a separate package that copies and adapts LabFlow's store now (M0).
+   - Eleforge migrates to depend on flower later (M6).
+   - The alternative, evolving `packages/labflow` in place, ties flower to Eleforge's release cycle
      and its stalled refactor.
 4. **First harness.**
    - Recommendation: build `claude` first (best-specified output, already installed here), then pi
@@ -473,13 +473,13 @@ This is the experiment proposed in the design discussion. It is the M5 acceptanc
    - codex is not installed on this machine, so its flags are verified only from orc, Smithers and
      gh-aw source.
 5. **Where agent nodes run.**
-   - Recommendation: on the machine running forgeflow (a workstation or login node), never inside
+   - Recommendation: on the machine running flower (a workstation or login node), never inside
      Slurm jobs. This avoids putting LLM credentials on compute nodes and respects login-node policies.
    - Some HPC centres forbid long-lived processes on login nodes. The no-daemon `tick` design handles
      that: cron or `scrontab` on the cluster, or ticks from the workstation over SSH.
 6. **`function` nodes.** Do they import user Python in-process (fast, risky) or always run in a
    subprocess (safer, slower)?
-   - Recommendation: a subprocess by default (`python -m forgeflow.exec_function`).
+   - Recommendation: a subprocess by default (`python -m flower.exec_function`).
 
 ## 7. Risks
 
@@ -489,5 +489,5 @@ This is the experiment proposed in the design discussion. It is the M5 acceptanc
 | Harness CLIs change flags and output formats quickly | Adapters are tiny, versioned and preflight-checked; fake-CLI fixtures are recorded per version; `argv.json` makes drift visible |
 | Login-node daemon policies | No daemon is required; `tick` from cron/scrontab or remotely |
 | Double submission under concurrency | Write-ahead intent + submit key + in-job guard + flock/epoch; crash-injection tests (M3) |
-| Agent nodes make results non-reproducible | Agents decide and forgeflow executes; deterministic `job`/`shell` nodes hold the computation; agent outputs are recorded and reused on replay |
+| Agent nodes make results non-reproducible | Agents decide and flower executes; deterministic `job`/`shell` nodes hold the computation; agent outputs are recorded and reused on replay |
 | Scope creep toward a platform | The non-goals above; UI and DB stay in Eleforge |

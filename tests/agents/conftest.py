@@ -1,6 +1,6 @@
 """Fixtures for the agent / harness / CLI / MCP / report test-suite.
 
-Every test runs in its own FORGEFLOW_HOME (tmp_path) and with a PATH whose first entry holds *poisoned*
+Every test runs in its own FLOWER_HOME (tmp_path) and with a PATH whose first entry holds *poisoned*
 ``claude`` / ``codex`` / ``pi`` executables, so an accidental fallback to a real harness fails loudly
 instead of calling an LLM.
 """
@@ -20,7 +20,7 @@ exit 99
 
 
 @pytest.fixture(autouse=True)
-def ff_home(tmp_path, monkeypatch):
+def flower_home(tmp_path, monkeypatch):
     home = tmp_path / "ffhome"
     home.mkdir()
     poison = tmp_path / "poison-bin"
@@ -30,8 +30,8 @@ def ff_home(tmp_path, monkeypatch):
         p.write_text(POISON)
         p.chmod(0o755)
     monkeypatch.setenv("PATH", f"{poison}{os.pathsep}{os.environ.get('PATH', '')}")
-    monkeypatch.setenv("FORGEFLOW_HOME", str(home))
-    monkeypatch.setenv("FORGEFLOW_ACTOR", "test:pytest")
+    monkeypatch.setenv("FLOWER_HOME", str(home))
+    monkeypatch.setenv("FLOWER_ACTOR", "test:pytest")
     monkeypatch.setenv("NO_COLOR", "1")
     monkeypatch.chdir(tmp_path)
     yield home
@@ -42,7 +42,7 @@ def _reap_leftovers(home: Path) -> None:
     """Kill any runner/harness a test left behind (hanging fakes must never outlive the test)."""
     import json
     import signal
-    for rj in home.glob(".forgeflow/runs/*/nodes/*/*/proc*/runner.json"):
+    for rj in home.glob(".flower/runs/*/nodes/*/*/proc*/runner.json"):
         if (rj.parent / "exit.json").exists():
             continue
         try:
@@ -55,7 +55,7 @@ def _reap_leftovers(home: Path) -> None:
                     fn(arg, signal.SIGKILL)
                 except (ProcessLookupError, PermissionError):
                     pass
-    drv = list(home.glob(".forgeflow/runs/*/driver.json"))
+    drv = list(home.glob(".flower/runs/*/driver.json"))
     for d in drv:
         try:
             pid = json.loads(d.read_text()).get("pid")
@@ -79,12 +79,12 @@ def fake(tmp_path):
 
 
 @pytest.fixture
-def run_plan(ff_home):
+def run_plan(flower_home):
     """Create + approve + drive a plan in-process until it settles. Returns (engine, state)."""
-    from forgeflow.engine import create_run
+    from flower.engine import create_run
 
     def go(plan: dict, timeout: float = 45.0, approve: bool = True):
-        eng = create_run(plan, {}, root=ff_home, actor="test:pytest", approve=approve)
+        eng = create_run(plan, {}, root=flower_home, actor="test:pytest", approve=approve)
         eng.drive(until="settled", timeout=timeout)
         return eng, eng.state()
 
