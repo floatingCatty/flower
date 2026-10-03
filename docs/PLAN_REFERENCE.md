@@ -20,8 +20,8 @@ clusters:                    # for job nodes, and shell/function nodes with `clu
   hpc:  {transport: ssh, host: myhpc, remote_root: ~/flower-runs, max_jobs: 20, min_poll: 60s,
          modules: [vasp/6.4], prelude: ["source ~/env.sh"], resources: {partition: cpu, account: abc}}
   here: {transport: local}   # flower runs on the login node itself
-  box:  {transport: ssh, host: mybox, scheduler: none,     # no batch system: run directly on the host,
-         prelude: ["conda activate abacus"]}               # in its own login environment
+  box:  {transport: ssh, host: mybox, scheduler: none}     # no batch system: run directly on the host
+                             # install: never  -> environment steps only check, never run setup.sh
 nodes:
   - id: name                 # unique; letters, digits, - _
     kind: shell|function|agent|job|gate|wait
@@ -46,6 +46,10 @@ nodes:
   Add `cluster: name` to run it on that cluster instead (as a Slurm job, or directly on the host with
   `scheduler: none`), in its own attempt directory there; `stage_in`, `retrieve`, `resources`, `modules`,
   `prelude` work as for `job`.
+* **environment** — on any node that runs on a cluster: `environment: abacus` uses the frozen recipe
+  `envs/abacus/` (setup.sh / activate.sh / check.sh, see `docs/ENVIRONMENTS.md`). A generated step
+  `env-abacus-<cluster>` checks it there (installs it if missing) before the node, which runs with it
+  activated. Recipes are made with `flower env new|freeze|replay` and `flower remote exec --env`.
 * **function** — `call: package.module:function`; kwargs = `args:` (or `inputs:`); returns a dict.
   `python: /path/to/python` to use another environment; `pythonpath: [dir]`. The cache key includes the
   source of the called module (its whole top-level package) when it lives on `pythonpath` or next to the

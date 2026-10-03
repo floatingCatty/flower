@@ -40,13 +40,14 @@ TOP_KEYS = {"flower", "id", "title", "description", "inputs", "defaults", "clust
 
 COMMON_KEYS = {"id", "kind", "title", "description", "needs", "when", "trigger", "inputs", "outputs",
                "files", "retry", "timeout", "cache", "foreach", "tags", "env", "cwd", "on_failure",
-               "bind", "expanded_from"}
+               "bind", "expanded_from", "generated"}
 KIND_KEYS = {
-    "shell": {"run", "shell", "cluster", "stage_in", "retrieve", "resources", "modules", "prelude"},
+    "shell": {"run", "shell", "cluster", "stage_in", "retrieve", "resources", "modules", "prelude", "environment"},
     "function": {"call", "python", "pythonpath", "args", "cluster", "stage_in", "retrieve", "resources", "modules",
-                 "prelude"},
+                 "prelude", "environment"},
     "agent": {"prompt", "prompt_file", "harness", "system", "repair_attempts", "effects", "context"},
-    "job": {"cluster", "script", "resources", "stage_in", "retrieve", "poll", "deadline", "modules", "prelude"},
+    "job": {"cluster", "script", "resources", "stage_in", "retrieve", "poll", "deadline", "modules", "prelude",
+            "environment"},
     "gate": {"message", "decisions", "on_reject", "approve_value"},
     "wait": {"signal", "deadline", "timer", "token"},
 }
@@ -202,10 +203,81 @@ def normalize(raw: dict) -> dict:
     nodes = plan.get("nodes")
     if isinstance(nodes, list):
         plan["nodes"] = [normalize_node(n, plan["defaults"]) if isinstance(n, dict) else n for n in nodes]
+        _expand_environments(plan)
     return plan
 
 
+ENV_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
+
+
+def _expand_environments(plan: dict) -> None:
+    """For each (environment, cluster) the nodes use, add one generated step that makes it ready (check, else
+    setup + check), make the users of it depend on that step, and activate it in their prelude. Idempotent:
+    a stored plan normalised again keeps the step and the recipe version it was approved with."""
+    from . import envs as envmod
+    src = (plan.get("_source") or {}).get("dir")
+    nodes = plan["nodes"]
+    by_id = {n.get("id"): n for n in nodes if isinstance(n, dict)}
+    added = []
+    for n in nodes:
+        if not (isinstance(n, dict) and n.get("environment") and on_cluster(n) and n.get("cluster")):
+            continue
+        name, cl = str(n["environment"]), str(n["cluster"])
+        if not ENV_NAME_RE.match(name):
+            continue
+        eid = envmod.node_id(name, cl)
+        existing = by_id.get(eid)
+        if existing is not None and str(existing.get("generated", "")).startswith(f"env:{name}:"):
+            h = str(existing["generated"]).split(":", 2)[2]
+        else:
+            d = envmod.find(name, src)
+            state, fz = envmod.status(d) if d is not None else ("missing", None)
+            if state != "frozen":
+                continue  # validation reports it
+            h = fz["hash"]
+            c = (plan.get("clusters") or {}).get(cl) or {}
+            en = normalize_node(envmod.env_node(name, cl, d, h, c.get("install", "auto") != "never"),
+                                plan.get("defaults") or {})
+            en["generated"] = f"env:{name}:{h}"
+            added.append(en)
+            by_id[eid] = en
+        needs = n.get("needs") if isinstance(n.get("needs"), list) else []
+        if eid not in needs:
+            n["needs"] = [*needs, eid]
+        pre = n.get("prelude")
+        pre = list(pre) if isinstance(pre, list) else ([pre] if pre else [])
+        pre = [x for x in pre if not str(x).startswith(('export FLOWER_ENV_PREFIX=', 'set +u; source "$FLOWER_ENV_DIR'))]
+        n["prelude"] = envmod.activation(name, h) + pre
+    if added:
+        plan["nodes"] = added + nodes
+
+
 # ====================================================================== validation
+
+def _environment_issues(plan: dict, n: dict, p: str) -> list:
+    from . import envs as envmod
+    name = n.get("environment")
+    if not isinstance(name, str) or not ENV_NAME_RE.match(name):
+        return [Issue("environment", f"{p}.environment", f"invalid environment name {name!r}",
+                      "letters, digits, '.', '-', '_'; the recipe lives in envs/<name>/")]
+    if not on_cluster(n) or not n.get("cluster"):
+        return [Issue("environment", f"{p}.environment", "`environment` applies to a node that runs on a cluster",
+                      "add `cluster: <name>` (a `transport: local, scheduler: none` cluster is this machine)")]
+    if any(isinstance(x, dict) and str(x.get("generated", "")).startswith(f"env:{name}:") for x in plan.get("nodes") or []):
+        return []  # the step was generated from a frozen recipe
+    src = (plan.get("_source") or {}).get("dir")
+    d = envmod.find(name, src)
+    if d is None:
+        return [Issue("environment", f"{p}.environment", f"no recipe envs/{name}/ next to the plan or above it",
+                      f"create it: flower env new {name}  (then explore, write the scripts, flower env freeze {name})")]
+    state, _ = envmod.status(d)
+    if state == "draft":
+        return [Issue("environment", f"{p}.environment", f"recipe {d} is not frozen", f"flower env freeze {name}")]
+    if state == "changed":
+        return [Issue("environment", f"{p}.environment", f"recipe {d} was edited after it was frozen",
+                      f"freeze the new version: flower env freeze {name}")]
+    return []
+
 
 def on_cluster(node: dict) -> bool:
     """True for nodes that run through a cluster (and the job executor): ``job`` nodes, and ``shell`` /
@@ -248,6 +320,9 @@ def validate(plan: dict) -> list[Issue]:
                                 "use `local` (flower runs on the login node) or `ssh` (with `host:`)"))
         if t == "ssh" and not c.get("host"):
             issues.append(Issue("cluster", f"clusters.{name}.host", "ssh transport needs `host` (an ~/.ssh/config alias)"))
+        if c.get("install", "auto") not in ("auto", "never"):
+            issues.append(Issue("cluster", f"clusters.{name}.install", "install must be `auto` or `never`",
+                                "`never`: environment steps only check, they never run setup.sh there"))
         if c.get("scheduler", "slurm") not in ("slurm", "none"):
             issues.append(Issue("cluster", f"clusters.{name}.scheduler", f"unknown scheduler {c.get('scheduler')!r}",
                                 "`slurm` (sbatch) or `none` (run the payload directly on the host)"))
@@ -368,6 +443,8 @@ def validate(plan: dict) -> list[Issue]:
                 for fld in ("kinds", "ops"):
                     if fld in am and not (isinstance(am[fld], list) and all(isinstance(k, str) for k in am[fld])):
                         issues.append(Issue("effects", f"{p}.effects.amend.{fld}", "must be a list of strings"))
+        if n.get("environment") is not None:
+            issues.extend(_environment_issues(plan, n, p))
         if kind in ("shell", "function"):
             if n.get("cluster") is not None and n["cluster"] not in (plan.get("clusters") or {}):
                 issues.append(Issue("cluster", f"{p}.cluster", f"unknown cluster {n['cluster']!r}",

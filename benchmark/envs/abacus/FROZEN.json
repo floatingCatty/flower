@@ -1,0 +1,32 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "ed58bc25a0cf7ac72ac35a859b620a1d847a01706fae793ddd6293ce950360f1",
+    "check.sh": "e1dffe9baa631ffc9d838532f239601bc0a315c0ca4c6dff430119589dd1a764",
+    "conda-explicit.txt": "2dec6cec2e860f7586bfb6dca91ec7ce905e9b9a6ec9119d95b7daa0734d78d7",
+    "env.yaml": "4b9aa0d1e7ba343557615c8b290c8240e05edf8ed279fe95b4807fd95a560348",
+    "setup.sh": "c6d575349a502b6341469f329ffbc3b1e740b2879dc06bbc82e5b6c9fde0dac3"
+  },
+  "frozen_at": "2026-10-03T15:42:32.316Z",
+  "hash": "sha256:8126c595763cf438ddba9c433fd8130cdf39f1b191d9e4f240552c077c91df82",
+  "name": "abacus",
+  "previous": null,
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-03T15:42:38.458Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/home/zhanghao/.flower/envs/abacus-8126c595763c-replay-20261003-154234",
+      "rc": 0,
+      "seconds": 4.0,
+      "tail": "ABACUS version v3.9.0\nHYDRA build details:\nmpirun -np 2: OK\npython3 3.14.4\nenvironment abacus installed in /home/zhanghao/.flower/envs/abacus-8126c595763c-replay-20261003-154234\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-03.jsonl"
+  ]
+}

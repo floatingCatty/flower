@@ -821,6 +821,156 @@ def cmd_open(args, out: Out) -> int:
     return 0
 
 
+def _plan_cluster(args) -> tuple[dict, Path]:
+    """A cluster's settings as a run of ``args.plan`` would use them (inputs from -i / --inputs)."""
+    from . import template as tpl
+    from .engine import coerce_inputs
+    raw = planmod.load_plan_file(args.plan)
+    plan = planmod.normalize(raw)  # not validated: the environment being explored may not be frozen yet
+    src = Path((plan.get("_source") or {}).get("dir") or ".")
+    inputs = parse_kv(args.input)
+    if args.inputs:
+        inputs.update(json.loads(Path(args.inputs).read_text()))
+    values = coerce_inputs(plan.get("inputs") or {}, inputs, Path.cwd())
+    res = tpl.make_resolver({"inputs": values, "env": dict(os.environ), "plan": {"dir": str(src), "id": plan.get("id")}})
+    clusters = tpl.render(plan.get("clusters") or {}, res)
+    if args.cluster not in clusters:
+        raise FlowerError("usage", f"plan {args.plan} has no cluster {args.cluster!r}",
+                          f"clusters: {', '.join(clusters) or 'none'}")
+    c = dict(clusters[args.cluster])
+    c["_name"] = args.cluster
+    return c, src
+
+
+def _remote_home(tr) -> str:
+    if tr.is_local:
+        return os.path.expanduser("~")
+    r = tr.run("echo $HOME", timeout=60)
+    if r.rc != 0 or not r.out.strip():
+        raise FlowerError("remote", f"cannot reach the cluster: {(r.err or r.out).strip()[-300:]}")
+    return r.out.strip().splitlines()[-1]
+
+
+def _prelude(c: dict) -> str:
+    pre = c.get("prelude") or []
+    pre = pre if isinstance(pre, list) else [pre]
+    mods = [f"module load {m}" for m in (c.get("modules") or [])]
+    return "".join(f"{x}\n" for x in [*mods, *pre] if str(x).strip())
+
+
+def cmd_remote(args, out: Out) -> int:
+    """Run one command on a cluster, logged (for agents exploring an environment)."""
+    from . import envs as envmod
+    from .hpc.transport import make_transport
+    cmd = list(args.command or [])
+    if cmd and cmd[0] == "--":
+        cmd = cmd[1:]
+    if not cmd:
+        raise FlowerError("usage", "no command given", "flower remote exec --plan P --cluster C -- <command>")
+    c, src = _plan_cluster(args)
+    tr = make_transport(c)
+    text = " ".join(cmd) if len(cmd) > 1 else cmd[0]
+    pre = _prelude(c)
+    d = None
+    if args.env:  # explore with what a real setup gets: a prefix to install into, and the activation so far
+        d = envmod.find(args.env, src) or (src / envmod.ENVS_DIR / args.env)
+        pre += (f'export FLOWER_ENV_PREFIX="$HOME/.flower/envs/{args.env}-explore"\n'
+                'export FLOWER_ENV_DIR="$FLOWER_ENV_PREFIX.recipe"; mkdir -p "$FLOWER_ENV_DIR"\n')
+        act = d / "activate.sh"
+        if act.is_file() and act.read_text() != envmod.TEMPLATES["activate.sh"]:
+            pre += "set +u\n" + act.read_text() + "\n"
+    t0 = time.time()
+    r = tr.run(pre + text, timeout=args.timeout)
+    entry = {"at": now_iso(), "cluster": c["_name"], "cmd": text, "rc": r.rc,
+             "probe": bool(args.probe), "seconds": round(time.time() - t0, 2),
+             "out_tail": (r.out or "")[-2000:], "err_tail": (r.err or "")[-2000:], "by": args.actor or default_actor()}
+    logged = str(envmod.log_session(d, entry)) if d is not None else None
+    if out.json:
+        return out.done({**entry, "out": r.out, "err": r.err, "log": logged}, code=0 if r.rc == 0 else 1)
+    sys.stdout.write(r.out or "")
+    sys.stderr.write(r.err or "")
+    return r.rc if r.rc < 256 else 1
+
+
+def _env_dir(args, src: Path | None = None) -> Path:
+    from . import envs as envmod
+    d = envmod.find(args.name, getattr(args, "dir", None) or src)
+    if d is None:
+        raise FlowerError("env_not_found", f"no recipe envs/{args.name}/ here or in a parent directory",
+                          f"flower env new {args.name}")
+    return d
+
+
+def cmd_env(args, out: Out) -> int:
+    from . import envs as envmod
+    act = args.env_action
+    if act == "new":
+        d = Path(args.dir or ".").resolve() / envmod.ENVS_DIR / args.name
+        made = envmod.new(d)
+        return out.done({"dir": str(d), "created": made},
+                        f"recipe {d}: " + (", ".join(made) + " created from templates" if made else "already there"),
+                        [f"flower remote exec --env {args.name} --plan PLAN --cluster C -- <command>   # explore",
+                         f"flower env freeze {args.name}"])
+    if act == "freeze":
+        d = _env_dir(args)
+        fz = envmod.freeze(d, by=args.actor or default_actor())
+        msg = (f"recipe {d.name} unchanged (frozen {envmod.short(fz['hash'])})" if fz.get("unchanged") else
+               f"froze {d.name} as {envmod.short(fz['hash'])}" + (" (setup.sh drafted from the logged commands: "
+                                                                     "review it)" if fz.get("drafted_setup") else ""))
+        return out.done(fz, msg, [f"flower env replay {d.name} --plan PLAN --cluster C --fresh   # prove it repeats"])
+    if act == "show":
+        from .util import read_json
+        root = Path(args.dir or ".").resolve()
+        names = [args.name] if args.name else sorted(
+            {p.name for d in [root, *root.parents] for p in (d / envmod.ENVS_DIR).glob("*") if p.is_dir()})
+        rows = []
+        for n in names:
+            d = envmod.find(n, root)
+            if d is None:
+                continue
+            state, fz = envmod.status(d)
+            rows.append({"name": n, "dir": str(d), "state": state, "hash": (fz or {}).get("hash"),
+                         "replays": (fz or {}).get("replays", [])[-3:],
+                         "sessions": len(envmod.session_commands(d))})
+        text = "\n".join(f"{r['name']:<16} {r['state']:<8} {envmod.short(r['hash'] or '') or '-':<13} "
+                         f"{r['sessions']} logged command(s), {len(r['replays'])} recent replay(s)  {r['dir']}"
+                         for r in rows) or "no environment recipes here"
+        return out.done({"envs": rows}, text)
+    # replay / check: on a cluster of a plan
+    from .hpc.transport import make_transport
+    import shlex
+    c, src = _plan_cluster(args)
+    d = _env_dir(args, src)
+    state, fz = envmod.status(d)
+    if state != "frozen":
+        raise FlowerError("env_not_frozen", f"recipe {d} is {state}", f"flower env freeze {args.name}")
+    h = fz["hash"]
+    tr = make_transport(c)
+    home = _remote_home(tr)
+    staging = f"{home}/.flower/envs/.staging/{args.name}-{envmod.short(h)}"
+    r = tr.put_tree(d, staging)
+    if r.rc != 0:
+        raise FlowerError("remote", f"could not upload the recipe: {(r.err or '').strip()[-300:]}")
+    fresh = act == "replay" and args.fresh
+    pfx = f"{home}/.flower/envs/{args.name}-{envmod.short(h)}" + (f"-replay-{time.strftime('%Y%m%d-%H%M%S')}-{os.urandom(2).hex()}" if fresh else "")
+    script = envmod.setup_script(args.name, h, recipe_dir=staging, allow_install=(act == "replay"), fresh=fresh,
+                                 env_prefix=pfx)
+    t0 = time.time()
+    r = tr.run(_prelude(c) + f"cd {shlex.quote(staging)} && {{\n{script}}}",
+               timeout=args.timeout)
+    ok = r.rc == 0
+    rec = {"at": now_iso(), "action": act, "cluster": c["_name"], "fresh": fresh,
+           "prefix": pfx, "ok": ok, "rc": r.rc, "seconds": round(time.time() - t0, 1),
+           "tail": ((r.out or "") + (r.err or ""))[-1500:], "by": args.actor or default_actor()}
+    envmod.record_replay(d, rec)
+    text = (r.out or "") + (r.err or "")
+    head = (f"{act} {args.name} ({envmod.short(h)}) on {c['_name']}: " + ("OK" if ok else f"FAILED (exit {r.rc})")
+            + f" in {rec['seconds']}s, prefix {pfx}")
+    if not ok:
+        raise FlowerError("env_failed", head, text.strip()[-1500:])
+    return out.done(rec, head + "\n" + text.strip())
+
+
 def cmd_mcp(args, out: Out) -> int:
     from .mcp_server import serve
     return serve(read_only=args.read_only)
@@ -1031,6 +1181,35 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--flower", default="flower", help="the flower command on the remote machine")
     s.add_argument("--ssh-arg", action="append", help="extra ssh argument, e.g. --ssh-arg=-F --ssh-arg=~/ssh_config")
     s.add_argument("--no-browser", action="store_true")
+
+    def plan_cluster_args(sp):
+        sp.add_argument("--plan", required=True, help="the plan whose `clusters:` defines the cluster")
+        sp.add_argument("--cluster", required=True)
+        sp.add_argument("-i", "--input", action="append", help="NAME=VALUE for the plan's inputs (repeatable)")
+        sp.add_argument("--inputs", help="JSON file with the plan's inputs")
+        sp.add_argument("--timeout", type=float, default=7200.0, help="seconds (default 2h)")
+
+    s = add("remote", cmd_remote, "run a command on a cluster, logged (e.g. to explore an environment)")
+    rs = s.add_subparsers(dest="remote_action", required=True)
+    e = rs.add_parser("exec", parents=[common], help="flower remote exec --plan P --cluster C [--env E] -- <command>")
+    plan_cluster_args(e)
+    e.add_argument("--env", help="log the command in envs/<env>/sessions/ (exploration of that environment)")
+    e.add_argument("--probe", action="store_true", help="a look-only command: not drafted into setup.sh")
+    e.add_argument("command", nargs="+", help="the command, after --")
+
+    s = add("env", cmd_env, "environment recipes: new, freeze, replay, check, show")
+    es = s.add_subparsers(dest="env_action", required=True)
+    e = es.add_parser("new", parents=[common], help="create envs/<name>/ with template scripts")
+    e.add_argument("name"); e.add_argument("--dir", help="project directory (default: here)")
+    e = es.add_parser("freeze", parents=[common], help="pin the recipe (drafts setup.sh from logged commands if needed)")
+    e.add_argument("name"); e.add_argument("--dir")
+    e = es.add_parser("show", parents=[common], help="recipes and their state")
+    e.add_argument("name", nargs="?"); e.add_argument("--dir")
+    e = es.add_parser("replay", parents=[common], help="run the frozen recipe on a cluster: check, else setup + check")
+    e.add_argument("name"); plan_cluster_args(e); e.add_argument("--dir")
+    e.add_argument("--fresh", action="store_true", help="into a new empty prefix: proves the recipe works from scratch")
+    e = es.add_parser("check", parents=[common], help="run only check.sh (with activate.sh) on a cluster")
+    e.add_argument("name"); plan_cluster_args(e); e.add_argument("--dir")
 
     s = add("mcp", cmd_mcp, "serve flower over MCP (stdio)")
     s.add_argument("--read-only", action="store_true")

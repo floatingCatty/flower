@@ -113,7 +113,10 @@ def plan_overview(plan: dict, inputs: dict | None = None) -> str:
     clusters = plan.get("clusters") or {}
     if clusters:
         out += ["", "Compute:"] + [f"  {n}: {c.get('transport', 'local')}"
-                                   + (f" via {c['host']}" if c.get("host") else "") + " (slurm)" for n, c in clusters.items()]
+                                   + (f" via {c['host']}" if c.get("host") else "")
+                                   + (" (no scheduler)" if c.get("scheduler") == "none" else " (slurm)")
+                                   + (", installs nothing" if c.get("install") == "never" else "")
+                                   for n, c in clusters.items()]
     agents = {kind_label(s) for s in g.nodes.values() if s.get("kind") == "agent"}
     if agents:
         out += ["", "Agents used: " + ", ".join(sorted(agents))]

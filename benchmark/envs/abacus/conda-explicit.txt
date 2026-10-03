@@ -1,0 +1,43 @@
+# This file may be used to create an environment using:
+# $ conda create --name <env> --file <this file>
+# platform: linux-64
+# created-by: conda 25.11.1
+@EXPLICIT
+https://conda.anaconda.org/conda-forge/linux-64/libzlib-1.3.2-h25fd6f3_3.conda#0de0122d9570a8ab637c6b73db268389
+https://conda.anaconda.org/conda-forge/linux-64/llvm-openmp-23.1.2-h7148c6a_0.conda#ea93fc2d6563d7401bba4a6fffd9d641
+https://conda.anaconda.org/conda-forge/noarch/mpi-1.0.1-mpich.conda#1052de900d672ec8b3713b8e300a8f06
+https://conda.anaconda.org/conda-forge/linux-64/_openmp_mutex-4.5-8_kmp_llvm.conda#b4d1b93dd1dab4eea23395fd5e5b357d
+https://conda.anaconda.org/conda-forge/linux-64/libgcc-16.2.0-ha9f2e26_7.conda#735629b400b70eeab21a2ba8f5b1c2ce
+https://conda.anaconda.org/conda-forge/linux-64/libcap-2.78-h084b8d7_1.conda#5db514adf5f843126ff846d1510f22a4
+https://conda.anaconda.org/conda-forge/linux-64/libgfortran5-16.2.0-h6b99dfc_7.conda#7719ed7be38ad8c492c4bd5cc2bce0c4
+https://conda.anaconda.org/conda-forge/linux-64/libiconv-1.18-h0cb94f2_3.conda#f92233bf33e24a25668bb2119e2c51f9
+https://conda.anaconda.org/conda-forge/linux-64/liblzma-5.8.3-hb03c661_1.conda#1390b7c5ac0b1d8e447bc5efa6d3c8c2
+https://conda.anaconda.org/conda-forge/linux-64/libnl-3.11.0-hb03c661_1.conda#eeaf53e3c9593d63ffee5ad97182858e
+https://conda.anaconda.org/conda-forge/linux-64/libstdcxx-16.2.0-h934c35e_7.conda#9b6707e0caca917fa6ea9ee473f37a5d
+https://conda.anaconda.org/conda-forge/linux-64/libuv-1.52.1-h280c20c_1.conda#01c4ed87826af55996768af6dbc936b4
+https://conda.anaconda.org/conda-forge/linux-64/libxc-c-6.2.2-cpu_h20a523f_6.conda#3d9febeeb5476346f5ccb08600b4793f
+https://conda.anaconda.org/conda-forge/linux-64/libabseil-20240722.0-cxx17_hbbce691_4.conda#488f260ccda0afaf08acb286db439c2f
+https://conda.anaconda.org/conda-forge/linux-64/libgfortran-16.2.0-h69a702a_7.conda#3a8d285f5f22138ef826ad54cf267e73
+https://conda.anaconda.org/conda-forge/linux-64/libsystemd0-262-h26e0ef7_2.conda#e76269d6aff0b947103cbe37a96b5737
+https://conda.anaconda.org/conda-forge/linux-64/libudev1-262-h26e0ef7_2.conda#2303b56f6f9d8a5ae81bf5f0c75d31b8
+https://conda.anaconda.org/conda-forge/linux-64/libxml2-16-2.15.4-hbdfff7e_0.conda#176fa262c40e1141e9f364d3e4783795
+https://conda.anaconda.org/conda-forge/linux-64/sleef-3.9.0-ha0421bc_0.conda#e8a0b4f5e82ecacffaa5e805020473cb
+https://conda.anaconda.org/conda-forge/linux-64/libopenblas-0.3.34-pthreads_hf13c14d_2.conda#7e19fcd73d7f0997d3cb3326d2586a86
+https://conda.anaconda.org/conda-forge/linux-64/libprotobuf-5.28.3-h6128344_1.conda#d8703f1ffe5a06356f06467f1d0b9464
+https://conda.anaconda.org/conda-forge/linux-64/libxml2-2.15.4-ha7a5771_0.conda#c322ae4591dfe866b2a9b1e8537fe805
+https://conda.anaconda.org/conda-forge/linux-64/rdma-core-65.0-h7b4f2e6_0.conda#b47757f1512801cd064f0f973896d724
+https://conda.anaconda.org/conda-forge/linux-64/libblas-3.11.0-11_h4a7cf45_openblas.conda#b8cce1486f3c62f33291d6318c193d0d
+https://conda.anaconda.org/conda-forge/linux-64/libfabric1-2.6.0-h6b3ec72_0.conda#7d8c510157360d0a6fdd84a1d3db8de7
+https://conda.anaconda.org/conda-forge/linux-64/libhwloc-2.12.2-default_hafda6a7_1000.conda#0ed3aa3e3e6bc85050d38881673a692f
+https://conda.anaconda.org/conda-forge/linux-64/ucx-1.20.1-hbe80e26_0.conda#7d06bc10996e75c90b8cd7631b5dcf6c
+https://conda.anaconda.org/conda-forge/linux-64/libcblas-3.11.0-11_h0358290_openblas.conda#73a248c30811075059b5aeda766c2624
+https://conda.anaconda.org/conda-forge/linux-64/libfabric-2.6.0-ha770c72_0.conda#b04e60c49d09399a009f3bb70bb53a23
+https://conda.anaconda.org/conda-forge/linux-64/liblapack-3.11.0-11_h47877c9_openblas.conda#5622a13917855ce4b953b9e655cf9262
+https://conda.anaconda.org/conda-forge/linux-64/tbb-2021.13.0-hb700be7_5.conda#d4cfccb9ccd4f7cbfde7353b5e20d31a
+https://conda.anaconda.org/conda-forge/linux-64/mkl-2024.2.2-ha770c72_17.conda#e4ab075598123e783b788b995afbdad0
+https://conda.anaconda.org/conda-forge/linux-64/mpich-4.3.2-h23078de_105.conda#389a090c7fc18637931d52695bff505c
+https://conda.anaconda.org/conda-forge/linux-64/fftw-3.3.10-mpi_mpich_h084ba78_11.conda#67140e827381d9dcbc80760c288481fd
+https://conda.anaconda.org/conda-forge/linux-64/libtorch-2.5.1-cpu_mkl_he8ec5d7_108.conda#a070bb62918bea542fbb092c2abd7004
+https://conda.anaconda.org/conda-forge/linux-64/scalapack-2.2.0-h6b1b6a3_5.conda#6b978406219e5aaa34342afff38ddb04
+https://conda.anaconda.org/conda-forge/linux-64/elpa-2021.11.002-mpi_mpich_he7c5047_2.conda#835f6460774bbb6058ec2ea908cd76e0
+https://conda.anaconda.org/conda-forge/linux-64/abacus-3.9.0-cpu_mpi_mpich_haa44c28_0.conda#4a1d1a3ad875a486d1e8713a42d0be30

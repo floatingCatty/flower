@@ -221,6 +221,16 @@ or `function` node can run on a cluster or remote machine by adding `cluster: <n
 local module is shipped with it and runs in the remote Python. See the
 [guide](docs/GUIDE.md#a-machine-without-a-batch-system-scheduler-none).
 
+## Software on remote machines
+
+flower does not decide how software gets installed. An agent explores the target, through the logged
+`flower remote exec`, and writes a small recipe: `envs/<name>/setup.sh`, `activate.sh` and `check.sh`,
+plus any lock files it wants. `flower env freeze` content-hashes and versions the recipe, and
+`flower env replay --fresh` proves it works from scratch. Steps then say `environment: <name>`: a
+generated step checks the environment on the cluster, installs it if missing, and the steps run with it
+activated. A changed recipe installs into a new prefix and invalidates cached results. See
+[`docs/ENVIRONMENTS.md`](docs/ENVIRONMENTS.md); the ABACUS benchmark's `envs/abacus/` is a real example.
+
 ## Example: an end-to-end study, run for real
 
 [`examples/catalyst-screening`](examples/catalyst-screening) is a complete study, and

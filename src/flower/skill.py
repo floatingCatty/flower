@@ -25,8 +25,8 @@ clusters:                    # for job nodes, and shell/function nodes with `clu
   hpc:  {transport: ssh, host: myhpc, remote_root: ~/flower-runs, max_jobs: 20, min_poll: 60s,
          modules: [vasp/6.4], prelude: ["source ~/env.sh"], resources: {partition: cpu, account: abc}}
   here: {transport: local}   # flower runs on the login node itself
-  box:  {transport: ssh, host: mybox, scheduler: none,     # no batch system: run directly on the host,
-         prelude: ["conda activate abacus"]}               # in its own login environment
+  box:  {transport: ssh, host: mybox, scheduler: none}     # no batch system: run directly on the host
+                             # install: never  -> environment steps only check, never run setup.sh
 nodes:
   - id: name                 # unique; letters, digits, - _
     kind: shell|function|agent|job|gate|wait
@@ -51,6 +51,10 @@ nodes:
   Add `cluster: name` to run it on that cluster instead (as a Slurm job, or directly on the host with
   `scheduler: none`), in its own attempt directory there; `stage_in`, `retrieve`, `resources`, `modules`,
   `prelude` work as for `job`.
+* **environment** — on any node that runs on a cluster: `environment: abacus` uses the frozen recipe
+  `envs/abacus/` (setup.sh / activate.sh / check.sh, see `docs/ENVIRONMENTS.md`). A generated step
+  `env-abacus-<cluster>` checks it there (installs it if missing) before the node, which runs with it
+  activated. Recipes are made with `flower env new|freeze|replay` and `flower remote exec --env`.
 * **function** — `call: package.module:function`; kwargs = `args:` (or `inputs:`); returns a dict.
   `python: /path/to/python` to use another environment; `pythonpath: [dir]`. The cache key includes the
   source of the called module (its whole top-level package) when it lives on `pythonpath` or next to the
@@ -172,6 +176,13 @@ what was done and why. For a single quick command, just do it directly.
 5. **Let it run in the background:** approval starts a background driver. Monitor with
    `flower wait RUN --timeout 600 --json` (run it as a background task if your harness supports it;
    don't poll in a tight loop). Exit code 0 = succeeded, 1 = failed, 3 = needs a decision / still running.
+   **Software on a cluster:** if a step needs software on a remote target, make an environment recipe
+   instead of hand-written preludes: `flower env new NAME`; explore the target with
+   `flower remote exec --plan P --cluster C --env NAME [--probe] -- <cmd>` (logged; `--probe` for
+   look-only commands); write envs/NAME/setup.sh (install into $FLOWER_ENV_PREFIX, pin exact versions),
+   activate.sh and check.sh; `flower env freeze NAME`; prove it with
+   `flower env replay NAME --plan P --cluster C --fresh`; then put `environment: NAME` on the steps.
+   Ask the user before installing anything on a machine they share with others.
    To let the user watch it, run `flower ui --json` (starts or reuses the project's UI in the background)
    and give them its links: the local one if they sit at this machine, else the `ssh -N -L …` line, or
    `flower open user@host:/path/to/project` if they have flower on their laptop.

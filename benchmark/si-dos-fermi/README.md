@@ -34,17 +34,25 @@ ABACUS conda env and the `PP_ORB` directory are plan inputs.
 | step | where | how |
 |---|---|---|
 | `prepare` | this machine | `function`: writes STRU and counts electrons |
-| `scf`, `dos[i]` | **remote**, over `ssh` | `shell` + `cluster: remote` (`scheduler: none`): a detached ABACUS process in the remote machine's own environment |
+| `env-abacus-remote` | **remote** | generated from `environment: abacus`: runs the frozen recipe [`envs/abacus/`](../envs/abacus/)'s `check.sh`, and installs it with `setup.sh` if missing |
+| `scf`, `dos[i]` | **remote**, over `ssh` | `shell` + `cluster: remote` (`scheduler: none`) + `environment: abacus`: a detached ABACUS process with the environment activated |
 | `fermi[i]`, `converge` | this machine | `function`: reads the DOS files fetched back to `${item.local_dir}` |
 | `review` | this machine | agent |
 
-The structure, pseudopotential, orbital and the input helper are uploaded with `stage_in`. The remote
-side needs only ABACUS and `python3`, and nothing stays connected while ABACUS runs. To run it, put the
-connection settings in an inputs file:
+The structure, pseudopotential, orbital and the input helper are uploaded with `stage_in`, and nothing
+stays connected while ABACUS runs. The software comes from the environment recipe `envs/abacus/`:
+- **How it was made:** found by exploring the remote with `flower remote exec`; the log is in
+  `sessions/`.
+- **What it pins:** the exact conda-forge package files (`conda-explicit.txt`, 38 files with md5:
+  ABACUS 3.9.0 `cpu_mpi_mpich`, MPICH 4.3.2).
+- **How it's frozen and checked:** frozen with `flower env freeze`, and replayed from scratch with
+  `flower env replay --fresh` (a new prefix, installed and checked in 4 s).
+- **What the remote needs:** only conda, mamba or micromamba, plus `python3`.
+
+To run it, put the connection settings in an inputs file:
 
 ```json
-{"host": "<ssh alias>", "remote_prelude": "source ~/miniconda3/bin/activate abacus",
- "ssh_options": ["-F", "/path/to/ssh_config"]}
+{"host": "<ssh alias>", "ssh_options": ["-F", "/path/to/ssh_config"]}
 ```
 
 ```bash
@@ -53,11 +61,13 @@ connection settings in an inputs file:
 
 `ssh_options` is optional; leave it out when the alias is in `~/.ssh/config`.
 
-**Run on a real remote machine** (`si-dos-fermi-remote-20261003-141020-e58e`, 2026-10-03,
-`-i agent_review=false`): it **succeeded in 1 min 06 s**.
+**Run on a real remote machine** (`si-dos-fermi-remote-20261003-154251-0de6`, 2026-10-03,
+`-i agent_review=false`): it **succeeded in 47 s**.
 - **The remote machine:** a 32-core Linux workstation reached over the internet (ssh on a custom port),
-  without a batch system, running ABACUS 3.9.0 from a conda-forge env created for this test
-  (`cpu_mpi_mpich`).
+  without a batch system.
+- **The environment step:** `env-abacus-remote` installed the recipe's prefix (10 s, `how: installed`);
+  `scf` and `dos[i]` ran with it activated. An earlier run, with a hand-written `remote_prelude`
+  instead of a recipe, took 1 min 06 s with the same results.
 - **Where the time goes:** ABACUS itself takes about 5 s per nscf run. Each remote step takes 14–20 s
   in total, which includes uploading the inputs, the 3 s poll interval and fetching the DOS files back.
 - **Results:** every number matches the fully local run in the table below (E_F = 6.8301 eV at 24³).

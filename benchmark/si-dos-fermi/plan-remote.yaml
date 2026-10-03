@@ -6,7 +6,9 @@ description: |
   * the ABACUS calculations (SCF + nscf DOS on several k-meshes) run on a remote machine reached
     over ssh that has no batch system (`scheduler: none`): each one is a detached process there, in
     that machine's own environment; the structure, pseudopotential, orbital and input helper are
-    uploaded with `stage_in`, so the remote side only needs ABACUS and python3;
+    uploaded with `stage_in`; the software comes from the environment recipe envs/abacus/ (explored,
+    frozen and replayed with `flower env`), which the generated step env-abacus-remote checks, and
+    installs there if missing, before the first calculation;
   * the setup (structure, electron count) and the analysis (Fermi-Dirac integration of the DOS,
     k-mesh convergence, agent review) run on this machine, on the DOS files fetched back with `files:`.
 
@@ -14,7 +16,6 @@ inputs:
   host: {type: string, required: true, description: "ssh alias of the remote machine"}
   ssh_options: {type: array, default: [], description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
   remote_root: {type: string, default: ~/flower-runs, description: where attempt directories live on the remote}
-  remote_prelude: {type: string, default: "", description: 'shell line run first on the remote, e.g. "source ~/miniconda3/bin/activate abacus"'}
   remote_abacus: {type: string, default: abacus}
   remote_mpirun: {type: string, default: mpirun}
   remote_python: {type: string, default: python3}
@@ -45,7 +46,6 @@ clusters:
     ssh_options: ${inputs.ssh_options}
     scheduler: none
     remote_root: ${inputs.remote_root}
-    prelude: ["${inputs.remote_prelude}"]
     max_jobs: ${inputs.max_parallel}
     min_poll: 3s
     env: {OMP_NUM_THREADS: "1"}
@@ -69,6 +69,7 @@ nodes:
     kind: shell
     cluster: remote
     title: ABACUS SCF (remote)
+    environment: abacus
     stage_in: ["${prepare.files.stru}", "${inputs.pp_dir}/${inputs.pseudo}", "${inputs.pp_dir}/${inputs.orbital}",
                "${plan.dir}/abacus_si.py"]
     run: |
@@ -82,6 +83,7 @@ nodes:
     kind: shell
     cluster: remote
     title: ABACUS nscf DOS (remote)
+    environment: abacus
     foreach: "${inputs.dos_kmeshes}"
     when: "${scf.outputs.converged}"
     stage_in: ["${prepare.files.stru}", "${inputs.pp_dir}/${inputs.pseudo}", "${inputs.pp_dir}/${inputs.orbital}",
