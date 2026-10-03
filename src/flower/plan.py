@@ -19,6 +19,7 @@ Validation never stops at the first problem: it returns every issue as
 from __future__ import annotations
 
 import copy
+import difflib
 import re
 from collections import defaultdict
 from pathlib import Path
@@ -41,8 +42,9 @@ COMMON_KEYS = {"id", "kind", "title", "description", "needs", "when", "trigger",
                "files", "retry", "timeout", "cache", "foreach", "tags", "env", "cwd", "on_failure",
                "bind", "expanded_from"}
 KIND_KEYS = {
-    "shell": {"run", "shell"},
-    "function": {"call", "python", "pythonpath", "args"},
+    "shell": {"run", "shell", "cluster", "stage_in", "retrieve", "resources", "modules", "prelude"},
+    "function": {"call", "python", "pythonpath", "args", "cluster", "stage_in", "retrieve", "resources", "modules",
+                 "prelude"},
     "agent": {"prompt", "prompt_file", "harness", "system", "repair_attempts", "effects", "context"},
     "job": {"cluster", "script", "resources", "stage_in", "retrieve", "poll", "deadline", "modules", "prelude"},
     "gate": {"message", "decisions", "on_reject", "approve_value"},
@@ -169,7 +171,7 @@ def normalize_node(node: dict, defaults: dict) -> dict:
         n.setdefault("decisions", ["approve", "reject"])
         dec = n["decisions"]
         n.setdefault("approve_value", dec[0] if isinstance(dec, list) and dec else "approve")
-    if kind == "job":
+    if on_cluster(n):
         n.setdefault("resources", {})
         n.setdefault("stage_in", [])
         n.setdefault("retrieve", [])
@@ -205,6 +207,13 @@ def normalize(raw: dict) -> dict:
 
 # ====================================================================== validation
 
+def on_cluster(node: dict) -> bool:
+    """True for nodes that run through a cluster (and the job executor): ``job`` nodes, and ``shell`` /
+    ``function`` nodes that name a ``cluster:``."""
+    kind = node.get("kind")
+    return kind == "job" or (kind in ("shell", "function") and bool(node.get("cluster")))
+
+
 def effective_needs(node: dict) -> list[str]:
     """Explicit `needs` plus every node referenced from templates/expressions (refs imply edges)."""
     refs = tpl.node_refs({k: v for k, v in node.items() if k not in ("needs", "id", "title", "description")})
@@ -239,8 +248,9 @@ def validate(plan: dict) -> list[Issue]:
                                 "use `local` (flower runs on the login node) or `ssh` (with `host:`)"))
         if t == "ssh" and not c.get("host"):
             issues.append(Issue("cluster", f"clusters.{name}.host", "ssh transport needs `host` (an ~/.ssh/config alias)"))
-        if c.get("scheduler", "slurm") not in ("slurm",):
-            issues.append(Issue("cluster", f"clusters.{name}.scheduler", "only `slurm` is supported"))
+        if c.get("scheduler", "slurm") not in ("slurm", "none"):
+            issues.append(Issue("cluster", f"clusters.{name}.scheduler", f"unknown scheduler {c.get('scheduler')!r}",
+                                "`slurm` (sbatch) or `none` (run the payload directly on the host)"))
 
     nodes = plan.get("nodes")
     if not isinstance(nodes, list) or not nodes:
@@ -296,7 +306,8 @@ def validate(plan: dict) -> list[Issue]:
         allowed = COMMON_KEYS | KIND_KEYS[kind]
         for k in n:
             if k not in allowed:
-                close = [a for a in sorted(allowed) if a[:3] == k[:3]]
+                close = difflib.get_close_matches(str(k), sorted(allowed), n=1, cutoff=0.6) \
+                    or [a for a in sorted(allowed) if a[:3] == str(k)[:3]]
                 issues.append(Issue("unknown_field", f"{p}.{k}", f"field {k!r} is not valid for kind {kind}",
                                     f"did you mean {close[0]!r}?" if close else f"valid fields: {', '.join(sorted(KIND_KEYS[kind]))}"))
         for dep in effective_needs(n):
@@ -357,6 +368,19 @@ def validate(plan: dict) -> list[Issue]:
                 for fld in ("kinds", "ops"):
                     if fld in am and not (isinstance(am[fld], list) and all(isinstance(k, str) for k in am[fld])):
                         issues.append(Issue("effects", f"{p}.effects.amend.{fld}", "must be a list of strings"))
+        if kind in ("shell", "function"):
+            if n.get("cluster") is not None and n["cluster"] not in (plan.get("clusters") or {}):
+                issues.append(Issue("cluster", f"{p}.cluster", f"unknown cluster {n['cluster']!r}",
+                                    f"declare it under top-level `clusters:` (known: {', '.join(plan.get('clusters') or {}) or 'none'})"))
+            if n.get("cluster") is None:
+                stray = [k for k in ("stage_in", "retrieve", "resources", "modules", "prelude") if n.get(k)]
+                if stray:
+                    issues.append(Issue("cluster", f"{p}.{stray[0]}", f"`{stray[0]}` only applies to a node that runs on a cluster",
+                                        "add `cluster: <name>`, or drop it"))
+            elif n.get("cwd") or n.get("shell"):
+                k = "cwd" if n.get("cwd") else "shell"
+                issues.append(Issue("cluster", f"{p}.{k}", f"`{k}` is not supported on a cluster node",
+                                    "the payload runs in its own attempt directory on the cluster, under bash"))
         if kind == "job":
             cl = n.get("cluster")
             if not cl or cl not in (plan.get("clusters") or {}):

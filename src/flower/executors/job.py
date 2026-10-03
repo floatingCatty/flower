@@ -1,4 +1,10 @@
-"""``job`` nodes: batch jobs on a Slurm cluster, parked durably while queued/running.
+"""Nodes that run on a cluster: ``job`` nodes, and ``shell`` / ``function`` nodes that name a ``cluster:``.
+
+The cluster's ``scheduler`` decides how the payload is started: ``slurm`` (sbatch, the default) or ``none``
+(a detached process straight on the host, see :mod:`flower.hpc.direct`). Its ``transport`` decides where:
+``local`` or ``ssh``. A ``shell`` node's ``run`` and a ``function`` node's call become the payload; the
+function's module (a local file or package next to the plan / on ``pythonpath``) is shipped with it, so
+it runs in the remote machine's own Python environment.
 
 Lifecycle per attempt (all transitions journalled as ``job.*`` events):
 
@@ -24,11 +30,11 @@ import shlex
 import time
 from pathlib import Path
 
-from ..hpc import slurm
+from ..hpc import scheduler_for, slurm
 from ..hpc.transport import CmdResult, make_transport
 from ..rundir import fs_name
-from ..util import (FlowerError, atomic_write_json, atomic_write_text, digest, first_line, parse_duration,
-                    read_json, tail_text)
+from ..util import (FlowerError, atomic_write_json, atomic_write_text, digest, find_local_source, first_line,
+                    parse_duration, read_json, tail_text)
 from .base import RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, check_outputs, collect_files
 
 MAX_REMOTE_ERRORS = 8
@@ -58,6 +64,28 @@ def _backoff(n: int) -> float:
     return min(1200.0, 30.0 * 2 ** max(0, n - 1))
 
 
+def _payload(node: dict) -> str:
+    """The user payload (``user.sh``) for each node kind that can run on a cluster."""
+    kind = node.get("kind")
+    if kind == "shell":
+        return "set -euo pipefail\n" + str(node["run"]) + "\n"
+    if kind == "function":
+        py = shlex.quote(str(node.get("python") or "python3"))
+        return (f"set -eo pipefail\n{py} .flower/code/_flower_callfn.py {shlex.quote(str(node['call']))} "
+                '.flower/kwargs.json "$FLOWER_OUTPUTS" .flower/fctx.json\n')
+    return "set -eo pipefail\n" + str(node["script"]) + "\n"
+
+
+def _resources(cluster: dict, node: dict) -> dict:
+    res = dict(cluster.get("resources") or {})
+    res.update(node.get("resources") or {})
+    if scheduler_for(cluster).NAME == "none" and not res.get("time"):
+        total = (node.get("timeout") or {}).get("total")  # same limit as the node would have locally
+        if total:
+            res["time"] = total
+    return res
+
+
 class _Remote(Exception):
     def __init__(self, result: CmdResult, op: str = "submit"):
         super().__init__(result.err)
@@ -72,10 +100,9 @@ class JobExecutor(Executor):
     def start(self, ctx: NodeCtx) -> dict:
         cluster = _cluster(ctx)
         key = slurm.submit_key(ctx.run_id, ctx.node["id"], ctx.attempt)
-        resources = dict(cluster.get("resources") or {})
-        resources.update(ctx.node.get("resources") or {})
-        slurm.sbatch_directives(resources)  # validate now (newline injection, bad extra flags)
-        user = "set -eo pipefail\n" + str(ctx.node["script"]) + "\n"
+        resources = _resources(cluster, ctx.node)
+        scheduler_for(cluster).validate_resources(resources)  # e.g. newline injection, bad extra flags
+        user = _payload(ctx.node)
         fingerprint = digest({"user": user, "inputs": ctx.inputs, "resources": resources,
                               "attempt": ctx.attempt})[7:23]
         tr = make_transport(cluster)
@@ -123,15 +150,40 @@ class JobExecutor(Executor):
         np = ctx.node.get("prelude")
         prelude = list(cluster.get("prelude") or []) + (list(np) if isinstance(np, list) else ([np] if np else []))
         modules = list(cluster.get("modules") or []) + list(ctx.node.get("modules") or [])
-        script = slurm.render_job_script(key=ctx.job["submit_key"], job_dir=job_dir,
-                                         resources=ctx.job.get("resources") or {}, env=env, prelude=prelude,
-                                         modules=modules)
+        script = scheduler_for(cluster).render_job_script(key=ctx.job["submit_key"], job_dir=job_dir,
+                                                          resources=ctx.job.get("resources") or {}, env=env,
+                                                          prelude=prelude, modules=modules)
         atomic_write_text(stage / "job.sh", script)
-        atomic_write_text(stage / "user.sh", "set -eo pipefail\n" + str(ctx.node["script"]) + "\n")
+        atomic_write_text(stage / "user.sh", _payload(ctx.node))
+        if ctx.node.get("kind") == "function":
+            self._render_function(ctx, job_dir, stage)
         atomic_write_json(stage / "inputs.json", ctx.inputs)
         atomic_write_json(stage / "submit.json", {"run_id": ctx.run_id, "node": ctx.node["id"], "attempt": ctx.attempt,
                                                   "submit_key": ctx.job["submit_key"],
                                                   "fingerprint": ctx.job["fingerprint"]})
+
+    def _render_function(self, ctx: NodeCtx, job_dir: str, stage: Path) -> None:
+        """Ship the called module (when it is local code) plus the call shim, kwargs and context."""
+        import shutil
+        node = ctx.node
+        code = stage / "code"
+        if code.exists():
+            shutil.rmtree(code)
+        code.mkdir(parents=True)
+        shutil.copy2(Path(__file__).resolve().parent.parent / "_callfn.py", code / "_flower_callfn.py")
+        dirs = [str(Path(str(p)).expanduser()) for p in (node.get("pythonpath") or [])]
+        dirs.append((ctx.plan.get("_source") or {}).get("dir") or ".")
+        src = find_local_source(str(node["call"]).partition(":")[0], dirs)
+        if src is not None:  # otherwise the module must already be importable in the remote environment
+            if src.is_dir():
+                shutil.copytree(src, code / src.name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
+            else:
+                shutil.copy2(src, code / src.name)
+        kwargs = node.get("args") if node.get("args") is not None else ctx.inputs
+        atomic_write_json(stage / "kwargs.json", kwargs or {})
+        atomic_write_json(stage / "fctx.json", {
+            "workdir": job_dir, "run_dir": job_dir, "run_id": ctx.run_id, "node_id": node["id"],
+            "attempt": ctx.attempt, "pythonpath": [f"{job_dir}/.flower/code"] + [str(p) for p in node.get("pythonpath") or []]})
 
     def _stage(self, ctx: NodeCtx, cluster: dict, tr, job_dir: str) -> None:
         self._render(ctx, cluster, job_dir)
@@ -147,6 +199,12 @@ class JobExecutor(Executor):
         r = tr.put(stage / "submit.json", f"{job_dir}/.flower/submit.json")
         if r.rc != 0:
             raise _Remote(r, "stage")
+        if ctx.node.get("kind") == "function":
+            for name, dst in (("code", ".flower/code"), ("kwargs.json", ".flower/kwargs.json"),
+                              ("fctx.json", ".flower/fctx.json")):
+                r = tr.put(stage / name, f"{job_dir}/{dst}")
+                if r.rc != 0:
+                    raise _Remote(r, "stage")
         for item in ctx.node.get("stage_in") or []:
             item = {"from": item} if isinstance(item, str) else item
             src = str(item.get("from"))
@@ -182,9 +240,10 @@ class JobExecutor(Executor):
             if ctx.job.get("job_dir") != job_dir:
                 ctx.emit("job.staged", {"job_dir": job_dir})
                 ctx.job["job_dir"] = job_dir
-            r = tr.run(slurm.submit_command(job_dir, ctx.job["submit_key"], ctx.job["fingerprint"], _cmds(cluster)),
+            sched = scheduler_for(cluster)
+            r = tr.run(sched.submit_command(job_dir, ctx.job["submit_key"], ctx.job["fingerprint"], _cmds(cluster)),
                        timeout=180)
-            got = slurm.parse_submit(r.out) if r.rc == 0 else None
+            got = sched.parse_submit(r.out) if r.rc == 0 else None
             if not got:
                 raise _Remote(r, "submit")
         except _Remote as exc:
@@ -192,7 +251,8 @@ class JobExecutor(Executor):
             msg = (res.err or res.out or f"exit {res.rc}").strip()[-400:]
             if not res.transient and exc.op == "submit":
                 ctx.emit("job.remote_error", {"op": "submit", "error": msg, "transient": False})
-                return Outcome.fail("submit", f"sbatch rejected the job: {first_line(msg, 300)}", retryable=False,
+                what = "sbatch rejected the job" if scheduler_for(cluster).NAME == "slurm" else "could not start the process"
+                return Outcome.fail("submit", f"{what}: {first_line(msg, 300)}", retryable=False,
                                     details={"stderr": msg})
             n = int(ctx.job.get("remote_errors") or 0) + 1
             retry_at = time.time() + _backoff(n)
@@ -245,14 +305,15 @@ class JobExecutor(Executor):
             return
         cache_path = ctxs[0].run_dir / "cache" / f"cluster-{fs_name(name)}.json"
         cache = read_json(cache_path, {}) or {}
-        min_poll = parse_duration(cluster.get("min_poll")) or 30.0
+        sched = scheduler_for(cluster)
+        min_poll = parse_duration(cluster.get("min_poll")) or sched.DEFAULT_MIN_POLL
         nowt = time.time()
         if nowt - float(cache.get("last_poll", 0)) < min_poll or nowt < float(cache.get("retry_at", 0)):
             return
         jobs = [(ctx.job["job_id"], ctx.job["job_dir"]) for _, ctx in live]
-        r = tr.run(slurm.poll_command(jobs, _cmds(cluster)), timeout=120)
+        r = tr.run(sched.poll_command(jobs, _cmds(cluster)), timeout=120)
         cache["last_poll"] = time.time()
-        poll = slurm.parse_poll(r.out) if r.out else None
+        poll = sched.parse_poll(r.out) if r.out else None
         if r.rc != 0 or poll is None or not poll.get("complete"):
             n = int(cache.get("poll_errors", 0)) + 1
             delay = min(POLL_BACKOFF[-1], min_poll * 10 ** (n - 1))  # 30 s -> 300 s -> 1200 s at min_poll 30 s
@@ -306,7 +367,8 @@ class JobExecutor(Executor):
 
     def _advance(self, ctx: NodeCtx, cluster: dict, tr, poll: dict) -> Outcome | None:
         jid = ctx.job["job_id"]
-        obs = slurm.observe(jid, poll)
+        sched = scheduler_for(cluster)
+        obs = sched.observe(jid, poll)
         prev = ctx.job.get("state")
         # duplicate guard / orphan: the attempt's owner is another job id -> follow the owner
         owner = obs.get("owner")
@@ -323,14 +385,19 @@ class JobExecutor(Executor):
             track["misses"] = int(track.get("misses", 0)) + 1
             track.setdefault("first_miss", time.time())
             atomic_write_json(ctx.attempt_dir / "job_poll.json", track)
-            grace = parse_duration(cluster.get("lost_after")) or 600.0
+            grace = parse_duration(cluster.get("lost_after")) or sched.DEFAULT_LOST_AFTER
             if track["misses"] >= 5 and time.time() - track["first_miss"] > grace:
-                why = "job vanished from squeue and sacct without an exit record"
-                if obs.get("missing_dir"):
-                    why = "job directory is gone and Slurm has no record"
-                elif obs.get("started"):
-                    why = "job started but died without writing its exit code (node failure or hard kill)"
-                tr.run(f"{_cmds(cluster)['scancel']} {shlex.quote(jid)} >/dev/null 2>&1 || true", timeout=60)
+                if sched.NAME == "none":
+                    why = "process died without writing its exit code (killed hard or the machine rebooted)"
+                    if obs.get("missing_dir"):
+                        why = "attempt directory is gone"
+                else:
+                    why = "job vanished from squeue and sacct without an exit record"
+                    if obs.get("missing_dir"):
+                        why = "job directory is gone and Slurm has no record"
+                    elif obs.get("started"):
+                        why = "job started but died without writing its exit code (node failure or hard kill)"
+                tr.run(sched.kill_command(jid, _cmds(cluster)), timeout=60)
                 ctx.emit("job.lost", {"why": why, "misses": track["misses"]})
                 return Outcome.fail("lost", f"job {jid} lost: {why}", retryable=True)
             return None
@@ -343,7 +410,7 @@ class JobExecutor(Executor):
             return None
         ctx.emit("job.exited", {"ec": obs.get("ec"), "final": obs.get("final"), "exit": obs.get("exit"),
                                 "elapsed": obs.get("elapsed")}, key=f"job.exited:{ctx.node['id']}#a{ctx.attempt}")
-        status, cls, msg, retry = slurm.verdict(obs)
+        status, cls, msg, retry = sched.verdict(obs)
         return self._collect(ctx, cluster, tr, obs, status, cls, msg, retry)
 
     def _collect(self, ctx: NodeCtx, cluster: dict, tr, obs: dict, status: str, cls, msg, retry) -> Outcome | None:
@@ -352,7 +419,8 @@ class JobExecutor(Executor):
             local = Path(job_dir)
         else:
             local = ctx.attempt_dir / "job"
-            pats = ["outputs.json", "slurm-*.out", "slurm-*.err", ".flower/*"] + list(ctx.node.get("retrieve") or []) \
+            pats = ["outputs.json", *scheduler_for(cluster).retrieve_patterns(), ".flower/*"] \
+                + list(ctx.node.get("retrieve") or []) \
                 + [str(v) for v in (ctx.node.get("files") or {}).values()]
             r = tr.get(job_dir, local, pats)
             if r.rc != 0:
@@ -367,8 +435,10 @@ class JobExecutor(Executor):
                 return None  # the job's results are safe on the cluster; try the download again later
             ctx.emit("job.retrieved", {"to": str(local)}, key=f"job.retrieved:{ctx.node['id']}#a{ctx.attempt}")
         jid = ctx.job["job_id"]
-        out_tail = tail_text(local / f"slurm-{jid}.out", 1500).strip()
-        err_tail = tail_text(local / f"slurm-{jid}.err", 1500).strip()
+        sched = scheduler_for(cluster)
+        out_name, err_name = sched.log_names(jid)
+        out_tail = tail_text(local / out_name, 1500).strip()
+        err_tail = tail_text(local / err_name, 1500).strip()
         outputs = {}
         if (local / "outputs.json").exists():
             try:
@@ -381,16 +451,17 @@ class JobExecutor(Executor):
             return Outcome.fail("contract", "outputs.json must contain a JSON object", retryable=False)
         outputs.setdefault("job_id", jid)
         outputs.setdefault("job_dir", job_dir)
+        outputs.setdefault("local_dir", str(local))  # where this machine sees its files (= job_dir when local)
         details = {"job_id": jid, "sched": obs.get("final"), "ec": obs.get("ec"), "elapsed": obs.get("elapsed"),
                    "stdout_tail": out_tail[-600:], "stderr_tail": err_tail[-600:]}
         if status == "cancelled":
             return Outcome(status="cancelled", error_class="cancelled", message=msg, details=details)
         if status != "succeeded":
             last = (err_tail or out_tail).splitlines()[-1:] if (err_tail or out_tail) else []
-            return Outcome.fail(cls or "job_failed", f"job {jid}: {msg}" + (f" — {last[0][:200]}" if last else ""),
+            return Outcome.fail(cls or "job_failed", f"{sched.LABEL} {jid}: {msg}" + (f" — {last[0][:200]}" if last else ""),
                                 outputs=outputs, retryable=retry, details=details)
         files, missing = collect_files(ctx.node.get("files") or {}, local)
-        problems = check_outputs({k: v for k, v in outputs.items() if k not in ("job_id", "job_dir")},
+        problems = check_outputs({k: v for k, v in outputs.items() if k not in ("job_id", "job_dir", "local_dir")},
                                  ctx.node.get("outputs") or {}) + [f"missing declared file {m}" for m in missing]
         if problems:
             return Outcome.fail("contract", "job finished but violates its output contract: " + "; ".join(problems[:5]),
@@ -398,30 +469,16 @@ class JobExecutor(Executor):
         summary = outputs.get("summary") if isinstance(outputs.get("summary"), str) else None
         if not summary:
             lines = [l for l in out_tail.splitlines() if l.strip()]
-            summary = f"Slurm job {jid} completed" + (f": {lines[-1].strip()}" if lines else "")
+            summary = f"{sched.LABEL} {jid} completed" + (f": {lines[-1].strip()}" if lines else "")
         return Outcome(status="succeeded", outputs=outputs, files=files, summary=first_line(summary, 240),
                        rationale=outputs.get("rationale") if isinstance(outputs.get("rationale"), str) else None,
                        details=details)
 
     # ------------------------------------------------------------ cancel
     def _cancel_remote(self, ctx: NodeCtx, cluster: dict, tr) -> None:
-        """Mark the attempt cancelled on the cluster and scancel whatever job may exist for it."""
-        job_dir = ctx.job.get("job_dir")
-        q = shlex.quote
-        sc, sq = _cmds(cluster)["scancel"], _cmds(cluster)["squeue"]
-        parts = []
-        if job_dir:
-            parts.append(f"mkdir -p {q(job_dir)}/.flower && touch {q(job_dir)}/.flower/cancelled")
-        ids = [ctx.job["job_id"]] if ctx.job.get("job_id") else []
-        for jid in ids:
-            parts.append(f"{sc} {q(jid)} 2>&1 || true")
-        if not ids:  # crash window: the job may exist although we never recorded its id
-            if job_dir:
-                parts.append(f"for f in {q(job_dir)}/.flower/jobid {q(job_dir)}/.flower/jobid.tmp "
-                             f"{q(job_dir)}/.flower/owner/id; do [ -s \"$f\" ] && {sc} \"$(cut -d';' -f1 \"$f\")\" 2>&1; done; true")
-            if ctx.job.get("submit_key"):
-                parts.append(f"for j in $({sq} -h -u \"$USER\" -o '%i|%j' 2>/dev/null | awk -F'|' "
-                             f"-v k={q(ctx.job['submit_key'])} '$2==k {{print $1}}'); do {sc} \"$j\"; done; true")
+        """Mark the attempt cancelled on the cluster and stop whatever may be running for it."""
+        parts = scheduler_for(cluster).cancel_command(ctx.job.get("job_dir"), ctx.job.get("job_id"),
+                                                      ctx.job.get("submit_key"), _cmds(cluster))
         if parts:
             tr.run("; ".join(parts), timeout=60)
 

@@ -85,12 +85,13 @@ Every command takes `RUN` as a full id, a unique fragment, or nothing (meaning t
 * Typical failure classes: `auth` (log the harness in), `quota_retry` (retried after the reset time),
   `config` (bad model or flag), `schema_invalid`, `budget`, `timeout`, `idle_timeout`.
 
-## 5. HPC clusters
+## 5. HPC clusters and remote machines
 
 ```yaml
 clusters:
   hpc:
     transport: ssh            # or local, when flower runs on the login node
+    scheduler: slurm          # default; `none` runs the payload directly on the host (no batch system)
     host: myhpc               # an ~/.ssh/config alias; key-based, non-interactive (BatchMode)
     remote_root: ~/flower-runs
     max_jobs: 20              # concurrent jobs from this run
@@ -111,13 +112,42 @@ clusters:
 * Hand files from one job to the next on the cluster with
   `stage_in: [{from: "remote:${prev.outputs.job_dir}/charge-density", to: charge-density, mode: link}]`.
 
+### A machine without a batch system (`scheduler: none`)
+
+For a workstation or server you can `ssh` into:
+
+```yaml
+clusters:
+  box: {transport: ssh, host: mybox, scheduler: none, remote_root: ~/flower-runs,
+        prelude: ["conda activate abacus"]}
+nodes:
+  - {id: scf, kind: job, cluster: box, script: "mpirun -np 16 abacus > abacus.out"}
+  - {id: parse, kind: shell, cluster: box, run: "python parse.py > \"$FLOWER_OUTPUTS\""}
+  - {id: fermi, kind: function, cluster: box, call: "abacus_si:fermi_from_dos", python: python3,
+     args: {out_dir: "${scf.outputs.job_dir}/OUT.si"}}
+```
+
+* The payload starts as a detached process (`nohup setsid`) from the host's login shell, so it sees that
+  machine's own environment: `PATH`, conda, modules, plus `prelude`. Nothing stays connected while it
+  runs; each tick checks it in one `ssh` call (`min_poll`, default 10 s).
+* `job_id` is the process id. Logs are `job.out` / `job.err` in the attempt directory.
+* `resources.time` (or the node's `timeout.total`) is enforced with `timeout`: class `timeout`.
+* A process that disappears without an exit code (killed, machine rebooted) becomes `lost` after
+  `lost_after` (default 60 s) and is retried per the node's retry policy.
+* `flower cancel` sends TERM, then KILL, to the payload's whole process group (mpirun and its ranks).
+* Any `shell` or `function` node can run there too: give it `cluster: box`. A `function` node's local
+  module (next to the plan or on `pythonpath`) is copied along and run with the remote `python:`.
+* A path in one node's outputs is a path on the machine where that node ran. A local node reading
+  `${scf.outputs.job_dir}` from a remote node gets a remote path: keep the consumer on the same cluster,
+  or fetch the files with `retrieve:` / `files:`.
+
 ## 6. When something goes wrong
 
 | You see | Meaning | Do |
 |---|---|---|
 | `contract` | finished but outputs or files don't match the declaration | `flower show RUN NODE`, then fix the script or the declaration |
 | `exit_nonzero` | the payload failed | `flower logs RUN NODE`, fix it, `flower rerun RUN NODE` |
-| `timeout` / `oom` | Slurm limit hit | raise `resources.time` / `mem` via an amendment, then rerun |
+| `timeout` / `oom` | Slurm (or `scheduler: none` time) limit hit | raise `resources.time` / `mem` via an amendment, then rerun |
 | `node_fail` / `preempted` / `lost` | infrastructure; retried automatically | nothing, unless retries run out |
 | `remote` | the cluster was unreachable for a long time | check `ssh host`; `flower rerun` |
 | `auth` | harness not logged in | log the CLI in (`claude /login`, `codex login`), then rerun |

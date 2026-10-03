@@ -27,6 +27,41 @@ cd benchmark
 Everything except `review` takes about 1 minute, running 8 MPI ranks per ABACUS step. The paths to the
 ABACUS conda env and the `PP_ORB` directory are plan inputs.
 
+### Remote calculation, local analysis
+
+[`plan-remote.yaml`](plan-remote.yaml) splits the same study across two machines:
+
+| step | where | how |
+|---|---|---|
+| `prepare` | this machine | `function`: writes STRU and counts electrons |
+| `scf`, `dos[i]` | **remote**, over `ssh` | `shell` + `cluster: remote` (`scheduler: none`): a detached ABACUS process in the remote machine's own environment |
+| `fermi[i]`, `converge` | this machine | `function`: reads the DOS files fetched back to `${item.local_dir}` |
+| `review` | this machine | agent |
+
+The structure, pseudopotential, orbital and the input helper are uploaded with `stage_in`. The remote
+side needs only ABACUS and `python3`, and nothing stays connected while ABACUS runs. To run it, put the
+connection settings in an inputs file:
+
+```json
+{"host": "<ssh alias>", "remote_prelude": "source ~/miniconda3/bin/activate abacus",
+ "ssh_options": ["-F", "/path/to/ssh_config"]}
+```
+
+```bash
+../.venv/bin/flower run si-dos-fermi/plan-remote.yaml --inputs remote-inputs.json
+```
+
+`ssh_options` is optional; leave it out when the alias is in `~/.ssh/config`.
+
+**Run on a real remote machine** (`si-dos-fermi-remote-20261003-141020-e58e`, 2026-10-03,
+`-i agent_review=false`): it **succeeded in 1 min 06 s**.
+- **The remote machine:** a 32-core Linux workstation reached over the internet (ssh on a custom port),
+  without a batch system, running ABACUS 3.9.0 from a conda-forge env created for this test
+  (`cpu_mpi_mpich`).
+- **Where the time goes:** ABACUS itself takes about 5 s per nscf run. Each remote step takes 14–20 s
+  in total, which includes uploading the inputs, the 3 s poll interval and fetching the DOS files back.
+- **Results:** every number matches the fully local run in the table below (E_F = 6.8301 eV at 24³).
+
 ## Numerics (`abacus_si.py`)
 
 * **DOS.** The main DOS is the unbroadened histogram ABACUS writes to `OUT.si/DOS1` (states per

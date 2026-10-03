@@ -16,10 +16,12 @@ defaults:
   timeout: {total: 2h, idle: 30m}          # killed if exceeded (idle = no output)
   retry:   {max_attempts: 2, backoff: 30s} # retries infrastructure failures (lost, node_fail, …)
   concurrency: 4                           # max local processes (shell/function/agent) at once
-clusters:                    # for job nodes
+clusters:                    # for job nodes, and shell/function nodes with `cluster:`
   hpc:  {transport: ssh, host: myhpc, remote_root: ~/flower-runs, max_jobs: 20, min_poll: 60s,
          modules: [vasp/6.4], prelude: ["source ~/env.sh"], resources: {partition: cpu, account: abc}}
   here: {transport: local}   # flower runs on the login node itself
+  box:  {transport: ssh, host: mybox, scheduler: none,     # no batch system: run directly on the host,
+         prelude: ["conda activate abacus"]}               # in its own login environment
 nodes:
   - id: name                 # unique; letters, digits, - _
     kind: shell|function|agent|job|gate|wait
@@ -41,20 +43,30 @@ nodes:
 
 ## Node kinds
 * **shell** — `run: |` bash script (`set -euo pipefail`). Write outputs as JSON to `$FLOWER_OUTPUTS`.
+  Add `cluster: name` to run it on that cluster instead (as a Slurm job, or directly on the host with
+  `scheduler: none`), in its own attempt directory there; `stage_in`, `retrieve`, `resources`, `modules`,
+  `prelude` work as for `job`.
 * **function** — `call: package.module:function`; kwargs = `args:` (or `inputs:`); returns a dict.
   `python: /path/to/python` to use another environment; `pythonpath: [dir]`. The cache key includes the
   source of the called module (its whole top-level package) when it lives on `pythonpath` or next to the
   plan, so editing the code invalidates cached and forked results; installed libraries are not tracked.
+  With `cluster: name` the call runs on that cluster: the local module (or package) is shipped with it,
+  `python:` is the interpreter *there* (default `python3`), and `ctx["workdir"]` is the remote attempt
+  directory. A module that is not local must already be importable in the remote environment.
 * **agent** — `prompt: |` (or `prompt_file:`), `harness: {name: claude|codex|pi|script, model, effort,
   permission: bypass|edits, tools: {allow: [...], deny: [...]}, budget_usd, command: [...]}`, `system:`.
   The agent must end with a JSON object matching `outputs` + `summary` + `rationale`; invalid answers
   get `repair_attempts` (default 2) correction turns. `effects: {amend: {auto_approve: true, max_nodes: 3,
   kinds: [shell, job], ops: [add, detour]}}` lets it propose plan changes (otherwise not allowed).
-* **job** — Slurm batch job: `cluster:`, `script: |` (payload, `set -eo pipefail`), `resources: {nodes,
+* **job** — batch job on a cluster: `cluster:`, `script: |` (payload, `set -eo pipefail`), `resources: {nodes,
   ntasks, ntasks_per_node, cpus_per_task, mem, time, partition, account, qos, gpus, extra: [...]}`,
   `stage_in: [{from: local/path, to: name}, {from: "remote:${relax.outputs.job_dir}/CHGCAR", to: CHGCAR, mode: link}]`,
   `retrieve: [glob, ...]`. Write `outputs.json` (`$FLOWER_OUTPUTS`) in the job dir. Outputs always include
-  `job_id` and `job_dir`. Parks while queued/running — no process is held.
+  `job_id`, `job_dir` (on the cluster) and `local_dir` (where the declared `files:` / `retrieve:` were fetched
+  on this machine — what a local analysis node should read). Parks while queued/running — no process is held. On a `scheduler: none`
+  cluster the payload is a detached process on the host (`job_id` is its PID, logs are `job.out` /
+  `job.err`); `resources.time` (else the node's `timeout.total`) is enforced; a process that dies without
+  an exit code is `lost`; cancel stops its whole process tree.
 * **gate** — human decision: `message:` (templated), `decisions: [approve, reject]`,
   `on_reject: {rerun: [node, ...], max_attempts: 3}` — a rework loop: the re-run nodes see the
   reviewer's text as `${feedback}` (empty on the first pass).

@@ -1,0 +1,146 @@
+flower: 1
+id: si-dos-fermi-remote
+title: Silicon DOS (ABACUS on a remote machine) and Fermi level (analysed locally)
+description: |
+  The same study as plan.yaml, split across two machines:
+  * the ABACUS calculations (SCF + nscf DOS on several k-meshes) run on a remote machine reached
+    over ssh that has no batch system (`scheduler: none`): each one is a detached process there, in
+    that machine's own environment; the structure, pseudopotential, orbital and input helper are
+    uploaded with `stage_in`, so the remote side only needs ABACUS and python3;
+  * the setup (structure, electron count) and the analysis (Fermi-Dirac integration of the DOS,
+    k-mesh convergence, agent review) run on this machine, on the DOS files fetched back with `files:`.
+
+inputs:
+  host: {type: string, required: true, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, default: [], description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+  remote_root: {type: string, default: ~/flower-runs, description: where attempt directories live on the remote}
+  remote_prelude: {type: string, default: "", description: 'shell line run first on the remote, e.g. "source ~/miniconda3/bin/activate abacus"'}
+  remote_abacus: {type: string, default: abacus}
+  remote_mpirun: {type: string, default: mpirun}
+  remote_python: {type: string, default: python3}
+  np: {type: integer, default: 8, description: MPI ranks per ABACUS run on the remote}
+  max_parallel: {type: integer, default: 2, description: ABACUS runs at once on the remote}
+  analysis_python: {type: string, default: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python,
+                    description: local Python with numpy/scipy/matplotlib for the analysis}
+  pp_dir: {type: string, default: /homes/nessa/zhanghao/abacus-develop/tests/PP_ORB,
+           description: local directory with the pseudopotential and the numerical orbital (uploaded)}
+  pseudo: {type: string, default: Si_ONCV_PBE-1.0.upf}
+  orbital: {type: string, default: Si_gga_8au_100Ry_2s2p1d.orb}
+  alat_bohr: {type: number, default: 10.26}
+  scf_kmesh: {type: integer, default: 8}
+  dos_kmeshes: {type: array, default: [8, 12, 16, 24]}
+  temperature_K: {type: number, default: 300}
+  ef_tol_meV: {type: number, default: 5}
+  agent_review: {type: boolean, default: true}
+
+defaults:
+  harness: {name: claude, model: sonnet}
+  timeout: {total: 30m, idle: 15m}
+  retry: {max_attempts: 2, on: [lost, remote]}
+
+clusters:
+  remote:
+    transport: ssh
+    host: ${inputs.host}
+    ssh_options: ${inputs.ssh_options}
+    scheduler: none
+    remote_root: ${inputs.remote_root}
+    prelude: ["${inputs.remote_prelude}"]
+    max_jobs: ${inputs.max_parallel}
+    min_poll: 3s
+    env: {OMP_NUM_THREADS: "1"}
+
+results: [converge, review]
+
+nodes:
+  # ---------------------------------------------------------------- local: setup
+  - id: prepare
+    kind: function
+    title: Build Si structure, count electrons (local)
+    python: ${inputs.analysis_python}
+    call: abacus_si:prepare
+    args: {pp_dir: "${inputs.pp_dir}", pseudo: "${inputs.pseudo}", orbital: "${inputs.orbital}",
+           alat_bohr: "${inputs.alat_bohr}"}
+    outputs: {stru: path, nelec: number, alat_angstrom: number}
+    files: {stru: STRU}
+
+  # ---------------------------------------------------------------- remote: ABACUS
+  - id: scf
+    kind: shell
+    cluster: remote
+    title: ABACUS SCF (remote)
+    stage_in: ["${prepare.files.stru}", "${inputs.pp_dir}/${inputs.pseudo}", "${inputs.pp_dir}/${inputs.orbital}",
+               "${plan.dir}/abacus_si.py"]
+    run: |
+      ${inputs.remote_python} abacus_si.py write-input scf ${inputs.scf_kmesh} "$PWD"
+      ${inputs.remote_mpirun} -np ${inputs.np} ${inputs.remote_abacus} > abacus.out 2>&1
+      ${inputs.remote_python} abacus_si.py parse OUT.si scf > "$FLOWER_OUTPUTS"
+    outputs: {out_dir: string, ef_abacus_eV: number, etot_eV: number, converged: boolean, nelec_abacus: number}
+    files: {log: OUT.si/running_scf.log}
+
+  - id: dos
+    kind: shell
+    cluster: remote
+    title: ABACUS nscf DOS (remote)
+    foreach: "${inputs.dos_kmeshes}"
+    when: "${scf.outputs.converged}"
+    stage_in: ["${prepare.files.stru}", "${inputs.pp_dir}/${inputs.pseudo}", "${inputs.pp_dir}/${inputs.orbital}",
+               "${plan.dir}/abacus_si.py"]
+    run: |
+      ${inputs.remote_python} abacus_si.py write-input nscf ${item} "$PWD" ${scf.outputs.out_dir}
+      ${inputs.remote_mpirun} -np ${inputs.np} ${inputs.remote_abacus} > abacus.out 2>&1
+      ${inputs.remote_python} abacus_si.py parse OUT.si nscf > out.json
+      ${inputs.remote_python} -c "import json,sys; d=json.load(open('out.json')); d['kmesh']=${item}; json.dump(d, open(sys.argv[1],'w'))" "$FLOWER_OUTPUTS"
+    outputs: {kmesh: integer, out_dir: string, ef_abacus_eV: number, nk_ibz: integer}
+    files: {dos: OUT.si/DOS1_smearing.dat, dos_raw: OUT.si/DOS1, log: OUT.si/running_nscf.log}
+
+  # ---------------------------------------------------------------- local: analysis
+  - id: fermi
+    kind: function
+    title: E_F by Fermi-Dirac integration of the DOS (local)
+    foreach: "${dos.outputs.items}"
+    python: ${inputs.analysis_python}
+    call: abacus_si:fermi_from_dos
+    args: {out_dir: "${item.local_dir}/OUT.si", kmesh: "${item.kmesh}", ef_abacus_eV: "${item.ef_abacus_eV}",
+           nelec: "${prepare.outputs.nelec}", temperature_K: "${inputs.temperature_K}"}
+    outputs: {kmesh: integer, ef_fd_eV: number, ef_fd_smeared_dos_eV: number, ef_abacus_eV: number,
+              vbm_eV: number, cbm_eV: number, gap_eV: number, midgap_eV: number,
+              ef_minus_midgap_meV: number, insulator: boolean, plot: path}
+
+  - id: converge
+    kind: function
+    title: k-point convergence of E_F (local)
+    python: ${inputs.analysis_python}
+    call: abacus_si:converge
+    args: {results: "${fermi.outputs.items}", tol_meV: "${inputs.ef_tol_meV}"}
+    outputs: {table: array, ef_eV: number, gap_eV: number, kmesh: integer, delta_last_meV: number,
+              converged: boolean, plot: path}
+    files: {plot: convergence.png}
+
+  - id: review
+    kind: agent
+    title: Physical sanity review (local)
+    when: "${inputs.agent_review}"
+    needs: [converge]
+    harness: {name: claude, model: sonnet, budget_usd: 1}
+    prompt: |
+      You are reviewing a small DFT workflow result. Do not run any new calculations; you may read files.
+      System: bulk diamond Si, a = ${prepare.outputs.alat_angstrom} Å, PBE, ABACUS LCAO basis
+      (${inputs.orbital}), ${prepare.outputs.nelec} valence electrons per cell.
+      SCF (k=${inputs.scf_kmesh}^3): ${scf.summary}.
+      The Fermi level was obtained by solving ∫ g(E) f_FD(E; E_F, T=${inputs.temperature_K} K) dE = N_e on the
+      unbroadened nscf DOS histogram, for several k-meshes:
+      ${converge.outputs.table}
+      Convergence verdict: ${converge.summary}
+      Convergence plot: ${converge.files.plot}
+
+      Judge, briefly and concretely:
+      1. Is E_F where it should be for an intrinsic semiconductor (relative to VBM/CBM/midgap)?
+      2. Why does the ABACUS-reported E_F differ, and which number should be quoted as "the Fermi level"?
+      3. Is the DOS gap plausible for PBE Si with this LCAO basis (vs ~0.6 eV plane-wave PBE, 1.17 eV expt)?
+      4. Is E_F converged with k-mesh? Anything suspicious in the numbers?
+    outputs:
+      ok: {type: boolean, description: "true if the result is physically sensible"}
+      ef_to_quote_eV: number
+      concerns: {type: array, items: {type: string}}
+    timeout: {total: 15m}

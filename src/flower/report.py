@@ -11,6 +11,7 @@ import json
 from pathlib import Path
 
 from . import __version__
+from .plan import on_cluster
 from .render import ICON, describe_event, kind_label, what
 from .state import NodeState, RunState
 from .util import atomic_write_text, fmt_duration, oneline, parse_iso, seconds_since, short, truncate
@@ -43,7 +44,7 @@ def mermaid(st: RunState) -> str:
         ns = st.nodes.get(nid) or NodeState(nid)
         label = f"{ICON.get(ns.status, '')} {nid}<br/><small>{kind_label(spec)}</small>".replace('"', "'")
         shape = ("{{", "}}") if spec.get("kind") == "gate" else ("([", "])") if spec.get("kind") == "agent" else \
-            ("[[", "]]") if spec.get("kind") == "job" else ("[", "]")
+            ("[[", "]]") if on_cluster(spec) else ("[", "]")
         lines.append(f'  {ids[nid]}{shape[0]}"{label}"{shape[1]}:::{ns.status}')
     for nid in g.order:
         for d in g.needs[nid]:

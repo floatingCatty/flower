@@ -31,6 +31,11 @@ from .util import (FlowerError, atomic_write_json, atomic_write_text, default_ac
 LOCAL_KINDS = ("shell", "function", "agent")
 
 
+def _executor_kind(spec: dict) -> str:
+    """Which executor runs a node: ``job`` for anything on a cluster, else the node's own kind."""
+    return "job" if planmod.on_cluster(spec) else str(spec.get("kind"))
+
+
 def _executors() -> dict:
     from .executors.agent import AgentExecutor
     from .executors.job import JobExecutor
@@ -270,7 +275,7 @@ class Engine:
             ns = st.nodes[node]
             if ns.status in ("running", "waiting") and ns.last:
                 spec = self._attempt_spec(node, ns.last)
-                ex = self.executors.get(spec.get("kind"))
+                ex = self.executors.get(_executor_kind(spec))
                 if ex and ns.last.status == "running" and spec.get("kind") not in ("gate", "wait"):
                     ex.cancel(self._ctx(st, spec, ns.last))
                     self.emit("node.progress", {"phase": "cancelling", "by": by}, node=node, attempt=ns.last.n)
@@ -424,7 +429,7 @@ class Engine:
                 continue
             if kind == "gate":
                 continue
-            by_kind.setdefault(kind, []).append((nid, ns, spec))
+            by_kind.setdefault(_executor_kind(spec), []).append((nid, ns, spec))
         for kind, items in by_kind.items():
             ex = self.executors[kind]
             ctxs = [self._ctx(st, spec, ns.last) for nid, ns, spec in items]
@@ -609,7 +614,7 @@ class Engine:
         defaults = st.plan.get("defaults") or {}
         limit = int(defaults.get("concurrency") or 4)
         active_local = sum(1 for nid, ns in st.nodes.items() if ns.status == "running" and nid in g.nodes
-                           and g.nodes[nid].get("kind") in LOCAL_KINDS)
+                           and _executor_kind(g.nodes[nid]) in LOCAL_KINDS)
         changed = True
         while changed:  # skipping a node can unblock others in the same tick
             changed = False
@@ -647,7 +652,7 @@ class Engine:
                         changed = True
                         break  # the plan changed: re-fold before scheduling anything else
                     continue
-                kind = spec.get("kind")
+                kind = _executor_kind(spec)  # a shell/function node with a `cluster:` runs like a job
                 if kind in LOCAL_KINDS and active_local >= limit:
                     rep.waiting_on.append(f"{nid}: concurrency limit {limit}")
                     continue
@@ -655,7 +660,7 @@ class Engine:
                     cl = spec.get("cluster")
                     cap = int(((st.plan.get("clusters") or {}).get(cl) or {}).get("max_jobs") or 50)
                     busy = sum(1 for x, xs in st.nodes.items() if xs.status == "running" and x in g.nodes
-                               and g.nodes[x].get("kind") == "job" and g.nodes[x].get("cluster") == cl)
+                               and _executor_kind(g.nodes[x]) == "job" and g.nodes[x].get("cluster") == cl)
                     if busy >= cap:
                         rep.waiting_on.append(f"{nid}: cluster {cl} at max_jobs={cap}")
                         continue
@@ -759,7 +764,7 @@ class Engine:
         attempt = st2.nodes[nid].last
         ctx = self._ctx(st2, rendered, attempt)
         try:
-            handle = self.executors[kind].start(ctx)
+            handle = self.executors[_executor_kind(rendered)].start(ctx)
         except Exception as exc:  # noqa: BLE001 - recorded as an attempt failure, retried per policy
             if isinstance(exc, FlowerError):
                 oc = Outcome.fail(exc.code, exc.message, retryable=exc.code in RETRYABLE_DEFAULT,
@@ -1143,7 +1148,7 @@ class Engine:
                 try:
                     spec = self._attempt_spec(nid, ns.last)
                     if spec.get("kind") not in ("gate", "wait"):
-                        self.executors[spec["kind"]].cancel(self._ctx(st, spec, ns.last))
+                        self.executors[_executor_kind(spec)].cancel(self._ctx(st, spec, ns.last))
                 except Exception:  # noqa: BLE001 - best effort, still record cancellation
                     pass
                 self.emit("node.cancelled", {"reason": "run cancelled"}, node=nid, attempt=ns.last.n)
@@ -1174,8 +1179,8 @@ class Engine:
                 rep.waiting_on.append(f"{ns.id}: waiting for signal/timer")
         if rep.running:
             rep.status = "running"
-            has_job = any(g.nodes[n].get("kind") == "job" for n in rep.running if n in g.nodes)
-            has_local = any(g.nodes[n].get("kind") in LOCAL_KINDS for n in rep.running if n in g.nodes)
+            has_job = any(_executor_kind(g.nodes[n]) == "job" for n in rep.running if n in g.nodes)
+            has_local = any(_executor_kind(g.nodes[n]) in LOCAL_KINDS for n in rep.running if n in g.nodes)
             rep.next_poll_s = 1.0 if has_local else (15.0 if has_job else 2.0)
             if st.status == "parked":
                 self.emit("run.started", {"reason": "work resumed"})

@@ -13,6 +13,11 @@ import shlex
 
 from ..rundir import fs_name
 
+NAME = "slurm"
+LABEL = "Slurm job"
+DEFAULT_MIN_POLL = 30.0
+DEFAULT_LOST_AFTER = 600.0
+
 # scheduler state -> flower job state
 QUEUED_STATES = {"PENDING", "CONFIGURING", "REQUEUED", "REQUEUE_HOLD", "REQUEUE_FED", "RESV_DEL_HOLD",
                  "SPECIAL_EXIT", "PD", "CF", "RQ", "RH", "RD", "RF", "SE"}
@@ -274,3 +279,38 @@ def verdict(obs: dict) -> tuple[str, str | None, str, bool]:
     if final == "COMPLETED" and ec is None:
         return "failed", "missing_ec", "Slurm says COMPLETED but the payload never recorded its exit code", True
     return "failed", "unknown", f"job ended in state {final or 'unknown'} without an exit code", True
+
+
+def log_names(job_id: str | None) -> tuple[str, str]:
+    return f"slurm-{job_id}.out", f"slurm-{job_id}.err"
+
+
+def retrieve_patterns() -> list[str]:
+    return ["slurm-*.out", "slurm-*.err"]
+
+
+def validate_resources(resources: dict) -> None:
+    sbatch_directives(resources)  # raises ValueError on newline injection / bad extra flags
+
+
+def cancel_command(job_dir: str | None, job_id: str | None, submit_key: str | None, cmds: dict) -> list[str]:
+    """Mark the attempt cancelled on the cluster and scancel whatever job may exist for it."""
+    q = shlex.quote
+    sc, sq = cmds.get("scancel", "scancel"), cmds.get("squeue", "squeue")
+    parts = []
+    if job_dir:
+        parts.append(f"mkdir -p {q(job_dir)}/.flower && touch {q(job_dir)}/.flower/cancelled")
+    if job_id:
+        parts.append(f"{sc} {q(job_id)} 2>&1 || true")
+    else:  # crash window: the job may exist although we never recorded its id
+        if job_dir:
+            parts.append(f"for f in {q(job_dir)}/.flower/jobid {q(job_dir)}/.flower/jobid.tmp "
+                         f"{q(job_dir)}/.flower/owner/id; do [ -s \"$f\" ] && {sc} \"$(cut -d';' -f1 \"$f\")\" 2>&1; done; true")
+        if submit_key:
+            parts.append(f"for j in $({sq} -h -u \"$USER\" -o '%i|%j' 2>/dev/null | awk -F'|' "
+                         f"-v k={q(submit_key)} '$2==k {{print $1}}'); do {sc} \"$j\"; done; true")
+    return parts
+
+
+def kill_command(job_id: str, cmds: dict) -> str:
+    return f"{cmds.get('scancel', 'scancel')} {shlex.quote(job_id)} >/dev/null 2>&1 || true"

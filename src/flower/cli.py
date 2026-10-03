@@ -439,12 +439,13 @@ def cmd_logs(args, out: Out) -> int:
     spec = st.node_spec(args.node)
     if spec.get("kind") == "agent" and not args.raw:
         text = render_transcript(adir, (spec.get("harness") or {}).get("name", "claude"))
-    elif spec.get("kind") == "job":
+    elif planmod.on_cluster(spec):
+        from .hpc import log_files
         jd = Path(a.job.get("job_dir") or "")
         local = jd if jd.exists() else adir / "job"
         jid = a.job.get("job_id")
         parts = []
-        for name in ([f"slurm-{jid}.out", f"slurm-{jid}.err"] if jid else []):
+        for name in (log_files((st.plan.get("clusters") or {}).get(spec.get("cluster")) or {}, jid) if jid else []):
             p = local / name
             if p.exists():
                 parts.append(f"==> {p} <==\n" + p.read_text(errors="replace")[-20000:])

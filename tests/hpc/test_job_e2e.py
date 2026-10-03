@@ -84,7 +84,7 @@ def test_job_without_outputs_json_succeeds_with_ids(ff):
     st = ff.drive(eng)
     assert st.status == "succeeded"
     out = st.nodes["a"].result.outputs
-    assert set(out) == {"job_id", "job_dir"}
+    assert set(out) == {"job_id", "job_dir", "local_dir"}
     assert "just-stdout" in st.nodes["a"].result.summary
 
 

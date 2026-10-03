@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any
 
-from .plan import Graph
+from .plan import Graph, on_cluster
 from .rundir import RunPaths
 from .state import TERMINAL_RUN, NodeState, RunState
 from .util import first_line, fmt_duration, parse_iso, read_json, seconds_since, short, tail_text, truncate
@@ -43,6 +43,8 @@ def kind_label(spec: dict) -> str:
         return f"agent:{h.get('name', '?')}" + (f"/{h['model']}" if h.get("model") else "")
     if k == "job":
         return f"job@{spec.get('cluster')}"
+    if on_cluster(spec):  # a shell / function node sent to a cluster
+        return f"{k}@{spec.get('cluster')}"
     if k == "function":
         return "function"
     return k
@@ -159,11 +161,16 @@ def node_activity(st: RunState, paths: RunPaths, ns: NodeState, spec: dict) -> s
         w = (a.progress or {}).get("wait") if a else {}
         return f"waiting for signal {w.get('signal')!r}" if w and w.get("signal") else "waiting for timer"
     if ns.status == "running" and a:
-        if spec.get("kind") == "job":
+        if on_cluster(spec):
+            from .hpc import scheduler_for
             j = a.job or {}
+            sched = scheduler_for((st.plan.get("clusters") or {}).get(spec.get("cluster")) or {})
             if not j.get("job_id"):
                 e = j.get("last_remote_error")
-                return "submitting…" + (f" (retrying after error: {first_line(e.get('error'), 60)})" if e else "")
+                return ("submitting…" if sched.NAME == "slurm" else "starting…") + \
+                    (f" (retrying after error: {first_line(e.get('error'), 60)})" if e else "")
+            if sched.NAME == "none":
+                return f"{j.get('state') or 'RUNNING'} · pid {j['job_id']} on {spec.get('cluster')}"
             return f"{j.get('state') or 'QUEUED'} · slurm job {j['job_id']}" + (f" ({j.get('sched')})" if j.get("sched") else "")
         if spec.get("kind") == "agent":
             live = read_json(paths.attempt_dir(ns.id, a.n) / "live.json") or {}

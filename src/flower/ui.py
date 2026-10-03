@@ -23,7 +23,7 @@ from pathlib import Path
 
 from . import __version__
 from .engine import Engine, driver_alive
-from .plan import Graph, diff_plans
+from .plan import Graph, diff_plans, on_cluster
 from .render import describe_event, kind_label, node_activity, node_time, what
 from .rundir import RunPaths, list_runs
 from .state import TERMINAL_RUN, NodeState, RunState
@@ -132,13 +132,17 @@ class UIState:
                     logs["transcript"] = render_transcript(adir, (spec.get("harness") or {}).get("name", "claude"))[-MAX_TEXT:]
                 except OSError:
                     pass
-            elif spec.get("kind") == "job":
+            elif on_cluster(spec):
+                from .hpc import log_files, scheduler_for
                 jd = Path(a.job.get("job_dir") or "")
                 local = jd if jd.is_dir() else adir / "job"
                 jid = a.job.get("job_id")
                 if jid:
-                    logs["slurm stdout"] = tail_text(local / f"slurm-{jid}.out", 20000)
-                    logs["slurm stderr"] = tail_text(local / f"slurm-{jid}.err", 20000)
+                    cl = (st.plan.get("clusters") or {}).get(spec.get("cluster")) or {}
+                    out_name, err_name = log_files(cl, jid)
+                    tag = "slurm" if scheduler_for(cl).NAME == "slurm" else "remote"
+                    logs[f"{tag} stdout"] = tail_text(local / out_name, 20000)
+                    logs[f"{tag} stderr"] = tail_text(local / err_name, 20000)
             else:
                 logs["stdout"] = tail_text(adir / "proc" / "stdout.log", 20000)
                 logs["stderr"] = tail_text(adir / "proc" / "stderr.log", 20000)

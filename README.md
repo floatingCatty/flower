@@ -192,7 +192,7 @@ dedicated work directory. flower records the exact argv, the session id, the tra
 cost. It validates the agent's final JSON against the declared outputs and uses up to N repair turns on
 the same session if it doesn't match.
 
-## HPC
+## HPC and remote machines
 
 `job` nodes submit with `sbatch` (locally or over `ssh` with your `~/.ssh/config` aliases; automation never
 opens a ControlMaster). Submission is idempotent: a write-ahead intent, a deterministic job name, a remote
@@ -200,6 +200,13 @@ job-id file and an in-job duplicate guard mean a crash at any point re-attaches 
 twice. Polling batches `squeue` → `sacct` → evidence files, tolerates sacct lag and MinJobAge, and
 reports typed failures (`timeout`, `oom`, `node_fail`, `preempted`, `exit_nonzero`, `lost`). Try it without
 a cluster: `flower fake-slurm ./fs` installs a local fake Slurm.
+
+A machine without a batch system works too: `scheduler: none` runs the payload as a detached process
+straight on the host (over `ssh`, in that machine's own login environment), with the same idempotent
+launch, batched checks, time limit, cancel of the whole process tree and `lost` detection. Any `shell`
+or `function` node can run on a cluster or remote machine by adding `cluster: <name>`. A function's
+local module is shipped with it and runs in the remote Python. See the
+[guide](docs/GUIDE.md#a-machine-without-a-batch-system-scheduler-none).
 
 ## Example: an end-to-end study, run for real
 
