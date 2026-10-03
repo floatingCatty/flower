@@ -284,9 +284,27 @@ forgeflow to flower, so these files and screenshots still show the old name (`fo
 - [`agent-REPORT.md`](docs/demo/agent-REPORT.md)
 - [`ro-crate-metadata.json`](docs/demo/ro-crate-metadata.json)
 
+## Tested by reproducing papers
+
+Each reproduction runs inside one flower run, from fetching the paper to the claims table, on a shared 96-core
+workstation and a remote machine over ssh ([`benchmark/`](benchmark/README.md)):
+
+| paper | field, codes | outcome |
+|---|---|---|
+| Turkel *et al.*, Science 376, 193 (2022) | moiré graphene: continuum model, Hartree–Fock, the authors' Julia relaxation | 10/15 claims; the authors' own HF code reproduces their numbers, an independent HF does not |
+| Rignanese, Michenaud & Gonze, PRB 53, 4488 (1996) | QE DFPT + quasi-harmonic Si | 16/18; re-run with another pseudopotential via `--reuse` |
+| Jurečka *et al.*, PCCP 8, 1985 (2006) | PySCF MP2/CCSD(T) interaction energies, 66+ jobs | campaign with memory and scratch-space failures handled mid-run |
+| Tazi *et al.*, JPCM 24, 284117 (2012) | OpenMM water MD, finite-size extrapolation | TIP4P/2005 reproduced; a hard-killed job resumed from its checkpoint |
+
+What they found in flower (each now a regression test, `tests/core/BUGS.md` #21–#40): agents drifting outside
+the run (hence `flower start` / `add`), cancel missing a time-limited payload, caches ignoring edited scripts,
+reruns not re-running, oversubscription across runs, concurrent environment installs, drivers dying silently,
+environments hanging on a bigger machine, checkpoints lost between retries, and every plan naming a private
+interpreter (hence environments for local steps).
+
 ## Quality
 
-`pytest tests` runs 664 tests:
+`pytest tests` runs 742 tests:
 - **core:** journal, plan, template, engine, crash injection, CLI;
 - **hpc:** a fake Slurm with injected faults, plus crash windows during submit, poll and retrieve;
 - **agents:** fake Claude, Codex and pi streams; repair turns; amendment policies; MCP; reports.
