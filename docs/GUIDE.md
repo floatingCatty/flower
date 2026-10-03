@@ -36,6 +36,7 @@ flower rerun RUN NODE                         # redo a node (a foreach: all its 
 flower amend RUN change.yaml                  # propose a plan change (needs approval)
 flower cancel RUN [--node NODE]
 flower fork RUN --from NODE -y                # new run, reusing all still-valid recorded results
+flower compare RUN_A RUN_B --rtol 1e-6        # same results? (a rerun, a fork, a fresh clone: a run dir path works)
 flower report RUN                             # report.md + report.html
 flower ui                                     # web UI (background, one per project): prints its links
 flower open me@host:/path/to/project          # on your laptop: remote project's UI in your browser, one command

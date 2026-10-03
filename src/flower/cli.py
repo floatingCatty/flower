@@ -845,6 +845,71 @@ def cmd_export(args, out: Out) -> int:
                     f"the run directory {eng.paths.dir} is now a self-describing research object")
 
 
+def _engine_at(ref: str) -> Engine:
+    """A run by id (this project) or by the path of its directory (another project, e.g. a fresh clone)."""
+    p = Path(ref).expanduser()
+    if p.is_dir() and (p / "events.jsonl").is_file():
+        return Engine(RunPaths(p.parent.parent.parent, p.name))
+    return Engine(resolve_run(find_root(), ref))
+
+
+def _diff_values(a, b, rtol: float, atol: float, path: str, out: list) -> None:
+    if isinstance(a, bool) or isinstance(b, bool) or not (isinstance(a, (int, float)) and isinstance(b, (int, float))):
+        if isinstance(a, dict) and isinstance(b, dict):
+            for k in sorted(set(a) | set(b)):
+                if k not in COMPARE_SKIP:
+                    _diff_values(a.get(k), b.get(k), rtol, atol, f"{path}.{k}", out)
+        elif isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
+            for i, (x, y) in enumerate(zip(a, b)):
+                _diff_values(x, y, rtol, atol, f"{path}[{i}]", out)
+        elif a != b:
+            out.append({"key": path, "a": a, "b": b, "rel": None})
+        return
+    rel = abs(a - b) / max(abs(a), abs(b), 1e-300)
+    if abs(a - b) > atol and rel > rtol:
+        out.append({"key": path, "a": a, "b": b, "rel": rel})
+
+
+# outputs that name places or processes, not results
+COMPARE_SKIP = {"job_id", "job_dir", "local_dir", "dir", "prefix", "seconds", "seconds_opt", "summary", "rationale"}
+
+
+def cmd_compare(args, out: Out) -> int:
+    """Do two runs of a workflow (a rerun, a fork, a fresh clone on another machine) give the same results?
+    Compares the outputs of every step both have, numbers within --rtol, everything else exactly."""
+    ea, eb = _engine_at(args.a), _engine_at(args.b)
+    sa, sb = ea.state(), eb.state()
+    rows, same, missing = [], 0, []
+    for nid in sorted(set(sa.nodes) | set(sb.nodes)):
+        ra = sa.nodes[nid].result if nid in sa.nodes and sa.nodes[nid].status == "succeeded" else None
+        rb = sb.nodes[nid].result if nid in sb.nodes and sb.nodes[nid].status == "succeeded" else None
+        if ra is None or rb is None:
+            missing.append(nid)
+            continue
+        g = sa.graph().nodes.get(nid) or {}
+        if g.get("foreach") is not None:   # a collector repeats its items' outputs: compare the items themselves
+            continue
+        oa = {k: v for k, v in (ra.outputs or {}).items() if k not in COMPARE_SKIP and k not in set(args.ignore or [])}
+        ob = {k: v for k, v in (rb.outputs or {}).items() if k not in COMPARE_SKIP and k not in set(args.ignore or [])}
+        diffs: list = []
+        _diff_values(oa, ob, args.rtol, args.atol, "", diffs)
+        if diffs:
+            rows.append({"node": nid, "diffs": diffs})
+        else:
+            same += 1
+    lines = [f"{sa.run_id}  vs  {sb.run_id}: {same} step(s) agree within rtol {args.rtol:g}, "
+             f"{len(rows)} differ, {len(missing)} not succeeded in both"]
+    for r in rows:
+        for d in r["diffs"][:6]:
+            rel = f"  (rel {d['rel']:.2e})" if d["rel"] is not None else ""
+            lines.append(f"  {r['node']}{d['key']}: {json.dumps(d['a'], default=str)[:40]}  vs  "
+                         f"{json.dumps(d['b'], default=str)[:40]}{rel}")
+    if missing:
+        lines.append(f"  not compared: {', '.join(missing[:12])}" + (" ..." if len(missing) > 12 else ""))
+    return out.done({"same": same, "differ": rows, "not_compared": missing}, "\n".join(lines),
+                    code=0 if not rows else 1)
+
+
 def cmd_skill(args, out: Out) -> int:
     from .skill import install_skill
     root = find_root(create=True) if args.target == "project" else Path.cwd()
@@ -1385,6 +1450,13 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("node")
     s.add_argument("--attempt", type=int)
     s.add_argument("--raw", action="store_true", help="agent: raw JSON stream instead of the readable transcript")
+
+    s = add("compare", cmd_compare, "do two runs give the same results? (a rerun, a fork, a fresh clone)")
+    s.add_argument("a", help="run id, or the path of a run directory (another project)")
+    s.add_argument("b")
+    s.add_argument("--rtol", type=float, default=1e-6, help="relative tolerance for numbers (default 1e-6)")
+    s.add_argument("--atol", type=float, default=0.0, help="absolute tolerance for numbers")
+    s.add_argument("--ignore", action="append", help="an output key not to compare (repeatable)")
 
     s = add("output", cmd_output, "print a node's outputs (or one key / file path)")
     s.add_argument("run")

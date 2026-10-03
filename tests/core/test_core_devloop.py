@@ -398,3 +398,23 @@ def test_partial_results_of_a_running_foreach(cli, home, tmp_path):
     assert st.nodes["peek"].status == "succeeded", "peek waited for the whole foreach"
     assert st.nodes["peek"].result.outputs["n"] < 3          # it ran before the 3 s item finished
     assert "f" not in st.graph().needs["peek"]
+
+
+def test_compare_two_runs(cli, home, tmp_path):
+    """`flower compare`: two runs of one workflow give the same results (exit 0), a changed input does not (exit 1);
+    a run can also be named by its directory (another project, e.g. a fresh clone)."""
+    p = tmp_path / "plan.yaml"
+    p.write_text("""flower: 1
+id: cmp
+inputs: {n: {type: integer, default: 2}}
+nodes:
+  - {id: a, kind: shell, run: 'echo "{\\"x\\": ${inputs.n}}" > "$FLOWER_OUTPUTS"', outputs: {x: integer}}
+""")
+    cli("run", str(p), "--yes")
+    cli("run", str(p), "--yes")
+    cli("run", str(p), "--yes", "-i", "n=3")
+    r1, r2, r3 = list_runs(Path(os.environ["FLOWER_HOME"]))[-3:]
+    code, res = cli("compare", r1, r2)
+    assert code == 0 and res["data"]["same"] == 1, res
+    code, res = cli("compare", r1, str(_eng(home, r3).paths.dir))
+    assert code == 1 and res["data"]["differ"][0]["diffs"][0]["key"] == ".x", res
