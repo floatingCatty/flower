@@ -375,3 +375,26 @@ def test_editing_tmpdir_keeps_finished_results(cli, home, tmp_path):
     st = _eng(home, rid).state()
     assert st.nodes["a"].result.outputs["v"] == 1
     assert counter.read_text().count("x") == 1, "a was executed again for a tmpdir edit"
+
+
+def test_partial_results_of_a_running_foreach(cli, home, tmp_path):
+    """`${step.partial}` gives a foreach's finished items without waiting for the rest (a preview of a campaign)."""
+    plan = _plan(tmp_path, """\
+  - {id: f, kind: shell, foreach: [1, 2, 30], run: 'sleep $(( ${item} / 10 )); echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
+  - {id: peek, kind: shell, inputs: {sofar: "${f.partial}"}, run: 'python3 -c "import json, os; d = json.load(open(os.environ[\\"FLOWER_INPUTS\\"]))[\\"sofar\\"]; print(json.dumps({\\"n\\": sum(x is not None for x in d)}))" > "$FLOWER_OUTPUTS"', outputs: {n: integer}}
+""", policy="unfinished")
+    code, res = cli("run", str(plan), "--yes", "--detach")
+    rid = list_runs(Path(os.environ["FLOWER_HOME"]))[-1]
+    eng = _eng(home, rid)
+    import time
+    t0 = time.time()
+    while time.time() - t0 < 20:
+        eng.tick()
+        st = eng.state()
+        if st.nodes.get("peek") and st.nodes["peek"].status == "succeeded":
+            break
+        time.sleep(0.2)
+    st = eng.state()
+    assert st.nodes["peek"].status == "succeeded", "peek waited for the whole foreach"
+    assert st.nodes["peek"].result.outputs["n"] < 3          # it ran before the 3 s item finished
+    assert "f" not in st.graph().needs["peek"]

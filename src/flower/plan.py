@@ -412,7 +412,8 @@ def validate(plan: dict) -> list[Issue]:
                     or [a for a in sorted(allowed) if a[:3] == str(k)[:3]]
                 issues.append(Issue("unknown_field", f"{p}.{k}", f"field {k!r} is not valid for kind {kind}",
                                     f"did you mean {close[0]!r}?" if close else f"valid fields: {', '.join(sorted(KIND_KEYS[kind]))}"))
-        for dep in effective_needs(n):
+        soft = tpl.soft_refs({k: v for k, v in n.items() if k not in ("needs", "id", "title", "description")})
+        for dep in effective_needs(n) + sorted(soft):
             if dep not in ids:
                 issues.append(Issue("unknown_ref", p, f"refers to unknown node {dep!r}",
                                     f"known nodes: {', '.join(sorted(ids)) or '(none)'}"))

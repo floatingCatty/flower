@@ -94,7 +94,8 @@ step starts a new, empty one · `FLOWER_JOB_DIR` (cluster steps: this attempt's 
 ## References
 `${inputs.x}` · `${node.outputs.key.sub}` · `${node.files.name}` · `${node.dir}` · `${node.summary}` ·
 `${feedback}` (rework text from a gate) · `${plan.dir}` · `${run.id}` · `${run.dir}` ·
-`${item}` / `${index}` (foreach) · `${env.VAR}`.
+`${item}` / `${index}` (foreach) · `${env.VAR}` · `${step.partial}`: a foreach's items finished so far (null for
+the others) *without* waiting for the step, for a preview of a long campaign (rerun the preview to refresh it).
 A value that is exactly one reference keeps its type (list, number…). `$${` is a literal `${`.
 
 ## Amendments (change a running plan)

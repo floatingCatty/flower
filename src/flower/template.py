@@ -56,7 +56,13 @@ def find_refs(value: Any) -> list[tuple[str, list[str]]]:
 
 
 def node_refs(value: Any) -> set[str]:
-    return {root for root, _ in find_refs(value) if root not in RESERVED_ROOTS}
+    """Steps a value depends on. `${step.partial}` (a foreach's items finished so far) is a soft reference: it does
+    not wait for the step, so a preview can look at a long campaign while it runs."""
+    return {root for root, path in find_refs(value) if root not in RESERVED_ROOTS and path[:1] != ["partial"]}
+
+
+def soft_refs(value: Any) -> set[str]:
+    return {root for root, path in find_refs(value) if root not in RESERVED_ROOTS and path[:1] == ["partial"]}
 
 
 def _dig(value: Any, path: list[str], full: str) -> Any:

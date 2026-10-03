@@ -199,6 +199,17 @@ class RunState:
             if r is not None:
                 nodes[nid] = {"outputs": r.outputs, "files": {k: v.get("path") for k, v in r.files.items()},
                               "dir": r.workdir, "summary": r.summary or "", "attempt": r.n}
+        # ${step.partial}: for a foreach step, its items' outputs so far (null where an item has not succeeded yet)
+        kids: dict[str, list] = {}
+        for n in self.plan.get("nodes") or []:
+            if isinstance(n, dict) and n.get("expanded_from"):
+                kids.setdefault(n["expanded_from"], []).append(((n.get("bind") or {}).get("index", 0), n["id"]))
+        for parent, ks in kids.items():
+            part = []
+            for _, k in sorted(ks):
+                r = self.nodes[k].result if k in self.nodes and self.nodes[k].status == "succeeded" else None
+                part.append(r.outputs if r is not None else None)
+            nodes.setdefault(parent, {})["partial"] = part
         # gate feedback is referenceable even while the gate itself is pending again (on_reject loops)
         for g in sorted(self.gates.values(), key=lambda g: g.answered_at or ""):
             if g.node and g.status == "answered":

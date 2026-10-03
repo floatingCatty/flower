@@ -178,3 +178,18 @@ nodes:
       md: ${md.outputs.items}
     environment: analysis    # numpy/scipy/matplotlib from envs/analysis (no interpreter paths)
     run: python3 ${plan.dir}/yh_fit.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: yh-preview
+    kind: shell
+    title: Yeh-Hummer fit on the MD runs finished so far (preview)
+    environment: analysis
+    outputs:
+      n_runs: integer
+      n_reproduced: integer
+    files:
+      report: report.md
+      result: yh.json
+      figure: yh.png
+    inputs:
+      md: ${md.partial}
+    run: python3 ${plan.dir}/yh_fit.py | tail -n 1 > "$FLOWER_OUTPUTS"
