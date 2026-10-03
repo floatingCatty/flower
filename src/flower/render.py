@@ -148,6 +148,12 @@ def node_activity(st: RunState, paths: RunPaths, ns: NodeState, spec: dict) -> s
         return tag + (r.summary or "done")
     if ns.status == "skipped":
         return f"skipped: {ns.skipped_reason or ''}"
+    if ns.status == "pending" and spec.get("foreach") is not None:   # a collector waits for its items
+        kids = [n for n, s in st.graph().nodes.items() if s.get("expanded_from") == spec.get("id")]
+        if kids:
+            done = sum(1 for k in kids if (st.nodes.get(k) or NodeState(k)).status in ("succeeded", "failed",
+                                                                                    "skipped", "cancelled"))
+            return f"waiting for its items: {done}/{len(kids)} finished"
     if ns.status == "failed" and a and a.error:
         return f"{a.error.get('error_class')}: {first_line(a.error.get('message'), 120)}"
     if ns.status == "retrying":
@@ -197,7 +203,11 @@ def node_time(ns: NodeState) -> str:
     return fmt_duration(seconds_since(a.started_at))
 
 
-def status_view(st: RunState, paths: RunPaths, color: bool = False, width: int | None = None) -> str:
+COLLAPSE_ITEMS = 12   # a foreach with more items is summarised; running / failed items stay listed
+
+
+def status_view(st: RunState, paths: RunPaths, color: bool = False, width: int | None = None,
+                all_items: bool = False) -> str:
     g = st.graph()
     depth = g.depth()
     width = width or 140
@@ -224,9 +234,21 @@ def status_view(st: RunState, paths: RunPaths, color: bool = False, width: int |
     lines.append("")
     name_w = min(34, max(12, max((len(n) + 2 * depth.get(n, 0) for n in g.order), default=12) + 1))
     lines.append(f"     {'NODE':<{name_w}} {'KIND':<20} {'TIME':>7}  RESULT / ACTIVITY")
+    kids: dict[str, list[str]] = {}
+    for nid in g.order:
+        p = g.nodes[nid].get("expanded_from")
+        if p:
+            kids.setdefault(p, []).append(nid)
+    big = {p for p, ks in kids.items() if len(ks) > COLLAPSE_ITEMS and not all_items}
+    shown: dict[str, int] = {}
     for nid in g.topo():
         spec = g.nodes[nid]
         ns = st.nodes.get(nid) or NodeState(nid)
+        parent = spec.get("expanded_from")
+        if parent in big:
+            if ns.status not in ("running", "failed", "retrying", "waiting") or shown.get(parent, 0) >= 8:
+                continue
+            shown[parent] = shown.get(parent, 0) + 1
         name = ("  " * depth.get(nid, 0) + nid)[:name_w]
         att = f"#{ns.last.n}" if ns.last and ns.last.n > 1 else ""
         act = node_activity(st, paths, ns, spec)
@@ -236,6 +258,15 @@ def status_view(st: RunState, paths: RunPaths, color: bool = False, width: int |
                      (paint(row, "skipped", color) if ns.status in ("pending", "skipped") else row))
         if att:
             lines[-1] += f"  ({att})"
+        if nid in big:
+            c: dict[str, int] = {}
+            for k in kids[nid]:
+                ks = (st.nodes.get(k) or NodeState(k)).status
+                c[ks] = c.get(ks, 0) + 1
+            order = ("succeeded", "running", "retrying", "waiting", "failed", "cancelled", "skipped", "pending")
+            parts = [f"{c[k]} {k}" for k in order if c.get(k)]
+            lines.append(f"       {'':<{name_w}} {len(kids[nid])} items: " + ", ".join(parts)
+                         + f"   (all: flower status {st.run_id} --items)")
     lines += next_steps(st)
     return "\n".join(lines)
 
@@ -318,7 +349,8 @@ def node_detail(st: RunState, paths: RunPaths, nid: str, color: bool = False) ->
             out.append(f"  agent session: {a.session}" + (f"  (repair turns: {a.repairs})" if a.repairs else ""))
         if a.job:
             j = a.job
-            out.append(f"  slurm: job {j.get('job_id', '-')} on {j.get('cluster')}  state={j.get('state')}"
+            what = "process" if j.get("scheduler") == "none" else f"{j.get('scheduler') or 'slurm'} job"
+            out.append(f"  {what} {j.get('job_id', '-')} on {j.get('cluster')}  state={j.get('state')}"
                        f"  dir={j.get('job_dir')}" + (f"  remote errors={j['remote_errors']}" if j.get("remote_errors") else ""))
         if a.summary:
             out.append(f"  summary: {a.summary}")

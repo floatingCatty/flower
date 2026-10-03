@@ -43,7 +43,8 @@ def _finish(ctx: NodeCtx, label: str) -> Outcome | None:
     if err:
         return Outcome.fail("contract", err, retryable=False)
     summary = outputs.get("summary") if isinstance(outputs.get("summary"), str) else None
-    if not summary:
+    declared = bool((ctx.node.get("outputs") or {}) if isinstance(ctx.node, dict) else False)
+    if not summary and not (declared and outputs):   # declared outputs are the contract: show them, not stray stdout
         lines = [l for l in tail_text(ctx.proc_dir / "stdout.log", 2000).splitlines() if l.strip()]
         summary = lines[-1].strip() if lines else ""
     if not summary and outputs:

@@ -9,7 +9,7 @@ A recipe is a directory ``envs/<name>/`` next to the plan (or in a parent direct
     setup.sh      installs into $FLOWER_ENV_PREFIX         (bash -e, cwd = the recipe directory)
     activate.sh   sourced before every step that uses it    (make the tools available, nothing else)
     check.sh      exit 0 iff the environment works          (runs after activate; print versions)
-    env.yaml      optional notes: description, setup_timeout
+    env.yaml      optional notes: description, setup_timeout, check_timeout
     FROZEN.json   written by `flower env freeze`: hash of the three scripts, who, when, replays
     sessions/     `flower remote exec --env <name>` logs: how the recipe was found (provenance)
     history/      earlier frozen versions
@@ -26,10 +26,11 @@ import os
 import shutil
 from pathlib import Path
 
-from .util import FlowerError, atomic_write_json, now_iso, read_json
+from .util import FlowerError, atomic_write_json, now_iso, parse_duration, read_json
 
 ENVS_DIR = "envs"
 SCRIPTS = ("setup.sh", "activate.sh", "check.sh")
+DEFAULT_CHECK_TIMEOUT = 600
 DEFAULT_SETUP_TIMEOUT = "2h"
 
 TEMPLATES = {
@@ -114,7 +115,7 @@ def node_id(name: str, cluster: str) -> str:
 
 
 def setup_script(name: str, h: str, *, recipe_dir: str, allow_install: bool, fresh: bool = False,
-                 env_prefix: str | None = None) -> str:
+                 env_prefix: str | None = None, check_timeout: float | None = None) -> str:
     """The shell that makes an environment ready on a target: check; if that fails, setup then check.
 
     ``recipe_dir`` is where the recipe's files are on the target (relative to the cwd or absolute).
@@ -126,7 +127,13 @@ def setup_script(name: str, h: str, *, recipe_dir: str, allow_install: bool, fre
         'mkdir -p "$FLOWER_ENV_DIR"',
         f'(cd "{recipe_dir}" && tar cf - --exclude=./sessions --exclude=./history --exclude=./FROZEN.json .) '
         '| (cd "$FLOWER_ENV_DIR" && tar xf -)',
-        'chk() { ( cd "$FLOWER_ENV_DIR" && set +eu && source ./activate.sh && bash ./check.sh ) > check.log 2>&1; }',
+        # check.sh is bounded on its own (env.yaml check_timeout, default 10 min): a check that hangs on a new
+        # host (an MPI/OpenMP program started without its settings, say) must fail fast and say so
+        f'CT={int(check_timeout or DEFAULT_CHECK_TIMEOUT)}',
+        'if command -v timeout >/dev/null 2>&1; then TO="timeout -k 10 $CT"; else TO=""; fi',
+        'chk() { ( cd "$FLOWER_ENV_DIR" && set +eu && source ./activate.sh && $TO bash ./check.sh ) > check.log 2>&1; '
+        'r=$?; if [ $r -eq 124 ] || [ $r -eq 137 ]; then printf "check.sh did not finish within %ss (env.yaml '
+        'check_timeout); a program it runs may hang on this host\\n" "$CT" >> check.log; fi; return $r; }',
         'how=""',
     ]
     if fresh:
@@ -172,7 +179,8 @@ def env_node(name: str, cluster: str, d: Path, h: str, allow_install: bool) -> d
         "description": (f"check.sh, and if it fails setup.sh then check.sh again (recipe {short(h)}, "
                         f"from {d})" if allow_install else f"check.sh only (recipe {short(h)})"),
         "stage_in": [{"from": str(d), "to": "recipe"}],
-        "run": setup_script(name, h, recipe_dir="recipe", allow_install=allow_install),
+        "run": setup_script(name, h, recipe_dir="recipe", allow_install=allow_install,
+                            check_timeout=parse_duration(st.get("check_timeout")) if st.get("check_timeout") else None),
         "outputs": {"env": "string", "recipe": "string", "prefix": "string", "how": "string"},
         "files": {"check": "check.log"},
         "timeout": {"total": st.get("setup_timeout") or DEFAULT_SETUP_TIMEOUT},
@@ -191,6 +199,20 @@ def new(d: Path) -> list[str]:
             (d / f).write_text(text)
             made.append(f)
     return made
+
+
+def last_check(d: Path) -> dict | None:
+    """The most recent logged exploration command that ran check.sh (None if there was none)."""
+    best = None
+    for f in sorted((d / "sessions").glob("*.jsonl")):
+        for ln in f.read_text().splitlines():
+            try:
+                e = json.loads(ln)
+            except ValueError:
+                continue
+            if "check.sh" in str(e.get("cmd", "")) and (best is None or str(e.get("at")) >= str(best.get("at"))):
+                best = e
+    return best
 
 
 def log_session(d: Path, entry: dict) -> Path:

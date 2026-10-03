@@ -220,3 +220,21 @@ def test_cli_explore_freeze_replay(tmp_path, home_dir):
     r = _cli(["env", "replay", "hello", "--plan", "plan.yaml", "--cluster", "box"], proj, env)
     assert r.returncode == 0 and "installed" in r.stdout
     assert _cli(["env", "check", "hello", "--plan", "plan.yaml", "--cluster", "box"], proj, env).returncode == 0
+
+
+def test_a_hanging_check_fails_fast_and_says_so(tmp_path):
+    """BUGS #27: check.sh ran unbounded inside the env step's whole budget; a program that hangs on a new host
+    (QE's ld1.x with 96 OpenMP threads) blocked the step for its full timeout with an empty log."""
+    from flower import envs as envmod
+    d = tmp_path / "recipe"
+    d.mkdir()
+    (d / "activate.sh").write_text("true\n")
+    (d / "check.sh").write_text("sleep 30\n")
+    (d / "setup.sh").write_text("mkdir -p \"$FLOWER_ENV_PREFIX\"\n")
+    script = envmod.setup_script("slow", "sha256:" + "0" * 64, recipe_dir=str(d), allow_install=False,
+                                 env_prefix=str(tmp_path / "pfx"), check_timeout=2)
+    import subprocess, time
+    t0 = time.time()
+    r = subprocess.run(["bash", "-c", script], cwd=tmp_path, capture_output=True, text=True, timeout=60)
+    assert r.returncode != 0 and time.time() - t0 < 20
+    assert "did not finish within 2s" in (tmp_path / "check.log").read_text()

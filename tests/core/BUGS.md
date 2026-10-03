@@ -270,6 +270,74 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** each existing child is compared with what the current step definition would produce for its item
   (ignoring id/title/needs/bind); children that differ are replaced (superseded) like changed items.
 
+## Found by the Si thermal-expansion reproduction (`benchmark/si-nte`, 2026-10-03)
+
+### 24. `flower cancel` left a time-limited payload running (`scheduler: none`)
+- **Test:** `tests/hpc/test_direct.py::test_direct_cancel_reaches_a_payload_under_a_time_limit`
+- **Observed:** cancelling a hung environment step: the step was marked cancelled, `ld1.x` kept running.
+- **Root cause:** with a time limit the payload runs under coreutils `timeout`, which puts it in a process group
+  of its own; cancel signalled only the session leader's group.
+- **Fix:** cancel and kill signal the whole session (`pkill -s`), then the group, then the PID.
+
+### 25. A shell step's cache key ignored the script it runs
+- **Test:** `test_core_devloop.py::test_an_edited_script_is_not_served_from_cache`
+- **Observed:** after editing `ttg_hf.py`, a rerun returned the old results for the unchanged items.
+- **Root cause:** for shell/job steps only the command text was hashed (function steps already hashed their
+  module). Also affected `fork`/`--reuse`: results from an older script were reused.
+- **Fix:** the decl hash includes a fingerprint of the plan-directory files the step references in
+  run/script/stage_in/env (a `.py` brings its sibling modules; a directory such as PYTHONPATH its `.py` files).
+
+### 26. `rerun` after a plan edit did not re-run unchanged foreach items
+- **Test:** `test_core_devloop.py::test_rerun_after_an_edit_still_reruns_unchanged_items`
+- **Root cause:** when the edit had already queued the step, `rerun` reported "already pending" and skipped
+  forcing it, so its unchanged items were re-collected from cache.
+- **Fix:** `rerun` always forces, unless the step is actually running.
+
+### 27. An environment check that hangs blocked its step for the whole setup budget
+- **Test:** `tests/hpc/test_envs.py::test_a_hanging_check_fails_fast_and_says_so`
+- **Observed:** the frozen QE recipe, valid on a 32-core host, hung in `check.sh` on a 96-core host (`ld1.x`
+  started one OpenMP thread per core); the step sat silent for 10+ minutes of its 30.
+- **Fix:** `check.sh` runs under its own limit (`env.yaml: check_timeout`, default 10 min) and the log says so
+  when it is hit; the QE recipe's `activate.sh` defaults `OMP_NUM_THREADS=1`.
+
+## Found while preparing the water-diffusion benchmark (2026-10-03)
+
+### 28. `retry: {on: [exit_nonzero]}` was ignored on `scheduler: none` clusters
+- **Test:** `tests/hpc/test_direct.py::test_state_dir_survives_retries_and_a_rerun_starts_fresh`
+- **Root cause:** the direct backend reports a nonzero exit as explicitly non-retryable, and an explicit verdict
+  overrode the step's own list of retryable classes.
+- **Fix:** a class the step lists in `retry.on` is retried (its author decided).
+
+### 29. No way to resume a long job after a retry (feature gap)
+- **Test:** same test.
+- **Observed:** every attempt has a fresh directory; a lost or timed-out MD run restarted from zero.
+- **Fix:** `$FLOWER_STATE_DIR`, kept across the retries of one start, new on a deliberate rerun or an edit.
+
+### 30. A lost job's retry lost its slot to fresh work
+- **Test:** `tests/hpc/test_direct.py::test_a_retry_keeps_its_slot_and_goes_first`
+- **Observed:** water MD, `max_jobs: 3`: a crashed 2-ns run (checkpointed at 150 ps) waited behind new items.
+- **Fix:** due retries are scheduled before pending steps, and a retry in its backoff keeps its cluster slot.
+
+## Found running the S22 and water campaigns side by side (2026-10-03)
+
+### 31. A driver died on half-written flower code, and `--follow` then waited forever
+- **Observed:** while flower's source was being edited, a background driver crashed importing a half-written
+  module (`driver.stopped`, status still running); the follower in `flower add` hung with nobody driving.
+- **Fix:** the driver logs an exception, pauses and carries on (gives up after 20 in a row), and re-executes
+  itself when flower's code changes; `--follow` restarts a driver that is not alive.
+
+### 32. Items not started yet ran with the old definition after an edit of their step
+- **Observed:** S22, `tmpdir: job` added while 6 items ran: pending items kept starting with `/tmp`.
+- **Root cause:** `_item_outdated` compared only the item value, not the step's definition.
+- **Fix:** a pending item whose step was edited waits for the re-expansion.
+
+### 33. `rerun --cached` refused to apply an edit while items were running
+- **Fix:** with `--cached`, the edit is applied and running work continues (no forced rerun).
+
+### 34. A setting that does not change results forced every finished item to be recomputed (feature gap)
+- **Fix:** `tmpdir` joins `resources`/`timeout`/`retry` outside the cache key; `FLOWER_MEM_MB` and `FLOWER_CPUS`
+  are exported from `resources` so a payload can size itself without changing its definition.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

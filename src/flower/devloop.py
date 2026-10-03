@@ -97,10 +97,24 @@ def node_from_args(a, command: list[str]) -> dict:
         n["env"] = dict(x.split("=", 1) for x in a.setenv)
     if a.timeout_total:
         n["timeout"] = {"total": a.timeout_total}
+    if getattr(a, "foreach", None):
+        f = a.foreach.strip()
+        try:   # a JSON list (or object), else a reference like ${scan.outputs.items}
+            n["foreach"] = json.loads(f)
+        except ValueError:
+            n["foreach"] = f
     if a.outs:
         n["outputs"] = {o.split(":", 1)[0]: (o.split(":", 1)[1] if ":" in o else "any") for o in a.outs}
     if a.files:
         n["files"] = dict(x.split("=", 1) for x in a.files)
+    if getattr(a, "retry", None):
+        n["retry"] = {"max_attempts": int(a.retry)}
+    if getattr(a, "on_failure", None):
+        n["on_failure"] = a.on_failure
+    if getattr(a, "trigger", None):
+        n["trigger"] = a.trigger
+    if getattr(a, "ins", None):   # step inputs (references keep their type), given to the command as $FLOWER_INPUTS
+        n["inputs"] = dict(x.split("=", 1) for x in a.ins)
     n["run"] = run
     return n
 

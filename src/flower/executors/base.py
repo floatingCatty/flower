@@ -43,6 +43,39 @@ class Outcome:
         return cls(status="failed", error_class=error_class, message=message, **kw)
 
 
+def mem_mb(v) -> int | None:
+    """Slurm-style memory ("16G", "500M", 2048) in MB."""
+    if v is None:
+        return None
+    m = __import__("re").fullmatch(r"\s*(\d+(?:\.\d+)?)\s*([KMGT]?)B?\s*", str(v), __import__("re").I)
+    if not m:
+        return None
+    return int(float(m.group(1)) * {"K": 1 / 1024, "": 1, "M": 1, "G": 1024, "T": 1024 ** 2}[m.group(2).upper()])
+
+
+def scratch_env(node: dict, job_dir: str | None = None) -> dict:
+    """What a payload may size itself with, from settings that are not part of the cache key:
+    TMPDIR (`tmpdir: job` = a tmp/ inside the attempt's directory, or a path), FLOWER_MEM_MB and FLOWER_CPUS
+    (from `resources`)."""
+    env = {}
+    res = node.get("resources") or {}
+    mb = mem_mb(res.get("mem"))
+    if mb:
+        env["FLOWER_MEM_MB"] = str(mb)
+    cpus = res.get("cpus_per_task") or res.get("cpus")
+    if cpus:
+        env["FLOWER_CPUS"] = str(cpus)
+    t = node.get("tmpdir")
+    if t and job_dir is not None and t == "job":
+        import os
+        d = os.path.join(job_dir, "tmp")
+        os.makedirs(d, exist_ok=True)
+        env["TMPDIR"] = d
+    elif t and t != "job":
+        env["TMPDIR"] = str(t)
+    return env
+
+
 @dataclass
 class NodeCtx:
     run_id: str
@@ -59,6 +92,13 @@ class NodeCtx:
     job: dict = field(default_factory=dict)
     session: str | None = None
     repairs: int = 0
+    series: int = 0            # attempts of one "series" (a start and its retries) share FLOWER_STATE_DIR
+
+    @property
+    def state_dir(self) -> Path:
+        d = self.attempt_dir.parent / f"state-{self.series}"
+        d.mkdir(parents=True, exist_ok=True)
+        return d
 
     @property
     def proc_dir(self) -> Path:
@@ -72,11 +112,14 @@ class NodeCtx:
             "FLOWER_NODE_ID": self.node["id"],
             "FLOWER_ATTEMPT": str(self.attempt),
             "FLOWER_NODE_DIR": str(self.workdir),
+            # kept across the retries of one start (checkpoints to restart from); a rerun or an edit starts a new one
+            "FLOWER_STATE_DIR": str(self.state_dir),
             "FLOWER_OUTPUTS": str(self.attempt_dir / "outputs.json"),
             "FLOWER_INPUTS": str(self.attempt_dir / "inputs.json"),
             # anything a node does is attributed to the node, never to the human who launched the run
             "FLOWER_ACTOR": f"agent:{self.run_id}/{self.node['id']}",
         }
+        env.update(scratch_env(self.node, str(self.workdir)))
         for k, v in (self.inputs or {}).items():
             if isinstance(v, (str, int, float, bool)) and k.replace("_", "").isalnum():
                 env[f"FLOWER_IN_{k.upper()}"] = str(v)

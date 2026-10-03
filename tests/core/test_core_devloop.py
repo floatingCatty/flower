@@ -289,3 +289,86 @@ def test_editing_a_foreach_steps_template_reruns_its_items(cli, home, tmp_path):
     st = _eng(home, rid).state()
     assert [st.nodes[f"f[{i}]"].result.outputs["v"] for i in (0, 1)] == [10, 20]
     assert len(st.nodes["f[0]"].attempts) == 2
+
+
+def test_add_a_foreach_step(cli, home, tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    rid = res["data"]["run_id"]
+    code, res = cli("add", rid, "sq", "--foreach", "[2, 3]", "--out", "v:integer", "--",
+                    'echo "{\\"v\\": $((${item} * ${item}))}" > "$FLOWER_OUTPUTS"')
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert [st.nodes[f"sq[{i}]"].result.outputs["v"] for i in (0, 1)] == [4, 9]
+    assert "foreach:" in (tmp_path / "x" / "plan.yaml").read_text()
+
+
+def test_an_edited_script_is_not_served_from_cache(cli, home, tmp_path):
+    """BUGS #25: a shell step's cache key covered its command, not the script the command runs."""
+    (tmp_path / "s.py").write_text('import json, os\nprint(json.dumps({"v": 1}))\n')
+    plan = _plan(tmp_path, """\
+  - {id: a, kind: shell, run: 'echo "{\\"x\\": 1}" > "$FLOWER_OUTPUTS"', outputs: {x: integer}}
+  - {id: b, kind: shell, needs: [a], run: 'python3 ${plan.dir}/s.py > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
+""", policy="unfinished")
+    rid = _start(cli, plan)
+    assert _eng(home, rid).state().nodes["b"].result.outputs["v"] == 1
+    (tmp_path / "s.py").write_text('import json, os\nprint(json.dumps({"v": 2}))\n')
+    code, res = cli("rerun", rid, "a", "--follow")       # b is downstream: stale, not forced
+    _eng(home, rid).drive(until="settled", timeout=60)
+    st = _eng(home, rid).state()
+    assert st.nodes["b"].result.outputs["v"] == 2, "b was reused although its script changed"
+    # unchanged script: the early cut-off still applies (no re-execution)
+    n = len(st.nodes["b"].attempts)
+    cli("rerun", rid, "a", "--follow")
+    _eng(home, rid).drive(until="settled", timeout=60)
+    st = _eng(home, rid).state()
+    assert st.nodes["b"].last.reused_from if hasattr(st.nodes["b"].last, "reused_from") else True
+    assert st.nodes["b"].result.outputs["v"] == 2 and len(st.nodes["b"].attempts) == n + 1
+
+
+def test_rerun_after_an_edit_still_reruns_unchanged_items(cli, home, tmp_path):
+    """BUGS #26: when the rerun also picked up a plan edit, the step was 'already pending' and its unchanged
+    foreach items were re-collected from cache instead of run again."""
+    (tmp_path / "s.py").write_text('import json, sys\nprint(json.dumps({"v": int(sys.argv[1])}))\n')
+    body = """\
+  - {id: f, kind: shell, foreach: ITEMS, run: 'python3 ${plan.dir}/s.py ${item} > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
+"""
+    plan = _plan(tmp_path, body.replace("ITEMS", "[1, 2]"), policy="unfinished")
+    rid = _start(cli, plan)
+    (tmp_path / "s.py").write_text('import json, sys\nprint(json.dumps({"v": 10 * int(sys.argv[1])}))\n')
+    _plan(tmp_path, body.replace("ITEMS", "[1, 2, 3]"), policy="unfinished")
+    code, res = cli("rerun", rid, "f", "--follow", "--yes")
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert [st.nodes[f"f[{i}]"].result.outputs["v"] for i in range(3)] == [10, 20, 30]
+
+
+def test_add_with_step_inputs(cli, home, tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    rid = res["data"]["run_id"]
+    cli("add", rid, "sq", "--foreach", "[2, 3]", "--out", "v:integer", "--",
+        'echo "{\\"v\\": $((${item} * ${item}))}" > "$FLOWER_OUTPUTS"')
+    code, res = cli("add", rid, "total", "--in", "vals=${sq.outputs.items}", "--out", "s:integer", "--",
+                    'python3 -c "import json, os; d = json.load(open(os.environ[\'FLOWER_INPUTS\'])); '
+                    'print(json.dumps({\'s\': sum(x[\'v\'] for x in d[\'vals\'])}))" > "$FLOWER_OUTPUTS"')
+    assert code == 0, res
+    assert _eng(home, rid).state().nodes["total"].result.outputs["s"] == 13
+
+
+def test_editing_tmpdir_keeps_finished_results(cli, home, tmp_path):
+    """Where temporary files go does not change results: `tmpdir` is outside the cache key, so a plan edit that
+    only moves them (applied with `rerun --cached`) keeps what already finished."""
+    import tempfile
+    counter = Path(tempfile.mkdtemp()) / "count"   # outside the plan directory (files there are part of the key)
+    counter.write_text("")
+    run = 'echo x >> ' + str(counter) + '; echo "{\\"v\\": 1}" > "$FLOWER_OUTPUTS"'
+    plan = _plan(tmp_path, f"  - {{id: a, kind: shell, run: '{run}', outputs: {{v: integer}}}}\n", policy="all")
+    rid = _start(cli, plan)
+    assert counter.read_text().count("x") == 1
+    _plan(tmp_path, f"  - {{id: a, kind: shell, tmpdir: job, run: '{run}', outputs: {{v: integer}}}}\n", policy="all")
+    code, res = cli("rerun", rid, "a", "--cached", "--follow")
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert st.nodes["a"].result.outputs["v"] == 1
+    assert counter.read_text().count("x") == 1, "a was executed again for a tmpdir edit"

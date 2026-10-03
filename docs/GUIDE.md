@@ -94,6 +94,34 @@ the command was not recorded, and the reminder names the `flower add` line to us
 stays quiet for `python -c`, tests and flower's own commands, and speaks at most once per 15 minutes per
 session.
 
+### Long jobs: checkpoints that survive retries
+
+Each attempt of a step runs in a directory of its own, so a retried simulation would start from zero. Write
+checkpoints to `$FLOWER_STATE_DIR` instead: it is shared by the retries of one start (a lost process, a
+timeout, a listed `retry: {on: [...]}` class) and new for a deliberate `flower rerun` or an edited step. A
+restartable step looks like `if [ -f "$FLOWER_STATE_DIR/state.chk" ]; then resume; else start; fi`.
+
+### Changing a running campaign without redoing finished work
+
+Some settings do not change what a step computes: `resources`, `timeout`, `retry`, and `tmpdir` (where temporary
+files go: `tmpdir: job` puts `TMPDIR` in the attempt's own directory, useful when codes write GB-sized scratch
+files and `/tmp` is small or shared). They are outside the cache key. Edit them in plan.yaml and apply with
+`flower rerun RUN STEP --cached`: running items finish as they are, items not started yet use the new definition,
+and finished items keep their results. (`--cached` also applies while items are still running.) A step can
+size itself from `$FLOWER_MEM_MB` and `$FLOWER_CPUS`, exported from its `resources`.
+
+For a few heavy items that need a different setup (more memory, one at a time), add a separate step for just
+those items on a new cluster entry (e.g. the same host with `max_jobs: 1`) and merge both in the analysis:
+the failures stay in the record, the reruns are explicit.
+
+### Large campaigns
+
+`flower status` summarises a foreach with more than 12 items on one line (running and failed items stay listed;
+`--items` lists all), and a waiting foreach step shows how many items have finished. `flower remote exec --env
+NAME --installed` runs in an environment's installed prefix, to try an API before writing a step. The
+background driver restarts itself when flower's own code changes, survives transient errors, and `--follow`
+restarts a driver that has died.
+
 ## 4. Writing good plans
 
 * **Use deterministic nodes for computation and agents for judgement.** Calculations, parsing and

@@ -42,12 +42,13 @@ COMMON_KEYS = {"id", "kind", "title", "description", "needs", "when", "trigger",
                "files", "retry", "timeout", "cache", "foreach", "tags", "env", "cwd", "on_failure",
                "bind", "expanded_from", "generated"}
 KIND_KEYS = {
-    "shell": {"run", "shell", "cluster", "stage_in", "retrieve", "resources", "modules", "prelude", "environment"},
+    "shell": {"run", "shell", "cluster", "stage_in", "retrieve", "resources", "modules", "prelude", "environment",
+              "tmpdir"},
     "function": {"call", "python", "pythonpath", "args", "cluster", "stage_in", "retrieve", "resources", "modules",
-                 "prelude", "environment"},
+                 "prelude", "environment", "tmpdir"},
     "agent": {"prompt", "prompt_file", "harness", "system", "repair_attempts", "effects", "context"},
     "job": {"cluster", "script", "resources", "stage_in", "retrieve", "poll", "deadline", "modules", "prelude",
-            "environment"},
+            "environment", "tmpdir"},
     "gate": {"message", "decisions", "on_reject", "approve_value"},
     "wait": {"signal", "deadline", "timer", "token"},
 }
@@ -557,7 +558,8 @@ def plan_digest(plan: dict) -> str:
     return digest(contract_view(plan))
 
 
-DECL_EXCLUDE = {"title", "description", "tags", "retry", "timeout", "resources", "poll", "deadline", "cache"}
+# keys that do not change what a step computes: editing them keeps cached results
+DECL_EXCLUDE = {"title", "description", "tags", "retry", "timeout", "resources", "poll", "deadline", "cache", "tmpdir"}
 
 
 def decl_hash(node: dict) -> str:

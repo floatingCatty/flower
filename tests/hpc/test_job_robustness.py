@@ -461,7 +461,8 @@ def test_transport_poll_failure_never_changes_verdict(ff, monkeypatch, clock):
 
 
 def test_squeue_down_sacct_up_keeps_tracking(ff, monkeypatch, clock):
-    eng = ff.run(ff.plan([ff.job("a", "sleep 1\n" + OUT)], clusters={"c": ff.cluster(lost_after="0.1s")}))
+    # long enough to still be running after the ticks below on a loaded machine (a 1 s job raced them)
+    eng = ff.run(ff.plan([ff.job("a", "sleep 5\n" + OUT)], clusters={"c": ff.cluster(lost_after="0.1s")}))
     _wait_running(ff, eng)
     ff.replace_cmd("squeue", SLURMCTLD_DOWN)
     _ticks(eng, clock, 6)

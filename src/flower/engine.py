@@ -25,7 +25,7 @@ from .journal import Journal
 from .rundir import RunPaths, find_root, followers, fs_name, list_runs
 from .state import TERMINAL_NODE, TERMINAL_RUN, Attempt, NodeState, RunState, fold
 from .util import (FlowerError, atomic_write_json, atomic_write_text, default_actor, digest, hostname,
-                   new_id, new_run_id, now, now_iso, parse_duration, parse_iso, read_json, source_fingerprint,
+                   files_fingerprint, new_id, new_run_id, now, now_iso, parse_duration, parse_iso, read_json, source_fingerprint,
                    username)
 
 LOCAL_KINDS = ("shell", "function", "agent")
@@ -60,6 +60,9 @@ class TickReport:
 
 
 # ====================================================================== run creation
+
+NEVER_RETRY = {"auth", "contract", "template"}
+
 
 def coerce_inputs(spec: dict, given: dict, base_dir: Path) -> dict:
     out: dict[str, Any] = {}
@@ -623,7 +626,8 @@ class Engine:
         return NodeCtx(run_id=st.run_id, run_dir=self.paths.dir, node=spec, attempt=attempt.n, attempt_dir=adir,
                        workdir=Path(attempt.workdir or adir / "work"), inputs=attempt.inputs, plan=st.plan,
                        emit=emit, handle=attempt.handle, progress=attempt.progress, job=attempt.job,
-                       session=attempt.session, repairs=attempt.repairs)
+                       session=attempt.session, repairs=attempt.repairs,
+                       series=(st.nodes[nid].retry_base if nid in st.nodes else 0) or 0)
 
     def _resolver(self, st: RunState, spec: dict):
         ctx = st.template_context()
@@ -720,7 +724,11 @@ class Engine:
             changed = False
             st = self.state()
             g = st.graph()
-            for nid in g.topo():
+            topo = g.topo()
+            # retries first: they resume work already under way (with $FLOWER_STATE_DIR, partial progress)
+            order = [n for n in topo if (st.nodes.get(n) or NodeState(n)).status == "retrying"] + \
+                    [n for n in topo if (st.nodes.get(n) or NodeState(n)).status != "retrying"]
+            for nid in order:
                 ns = st.nodes.get(nid) or NodeState(nid)
                 spec = g.nodes[nid]
                 if ns.status not in ("pending", "retrying"):
@@ -759,7 +767,9 @@ class Engine:
                 if kind == "job":
                     cl = spec.get("cluster")
                     cap = int(((st.plan.get("clusters") or {}).get(cl) or {}).get("max_jobs") or 50)
-                    busy = sum(1 for x, xs in st.nodes.items() if xs.status == "running" and x in g.nodes
+                    # a retry waiting out its backoff keeps its slot: fresh work must not take it meanwhile
+                    busy = sum(1 for x, xs in st.nodes.items()
+                               if (xs.status == "running" or (xs.status == "retrying" and x != nid)) and x in g.nodes
                                and _executor_kind(g.nodes[x]) == "job" and g.nodes[x].get("cluster") == cl)
                     if busy >= cap:
                         rep.waiting_on.append(f"{nid}: cluster {cl} at max_jobs={cap}")
@@ -798,6 +808,12 @@ class Engine:
             code = source_fingerprint(str(rendered.get("call") or "").partition(":")[0], dirs)
             if code:
                 dh = digest({"decl": dh, "code": code})
+        if spec.get("kind") in ("shell", "job", "function"):  # ... and the plan-directory files it runs
+            used = files_fingerprint({k: rendered.get(k) for k in ("run", "script", "stage_in", "env", "args",
+                                                                   "inputs", "pythonpath")},
+                                     (st.plan.get("_source") or {}).get("dir") or st.meta.get("plan_dir"))
+            if used:
+                dh = digest({"decl": dh, "files": used})
         ih = digest({"inputs": inputs, "upstream": upstream, "bind": spec.get("bind"),
                      "prompt": rendered.get("prompt"), "script": rendered.get("script"), "run": rendered.get("run"),
                      "args": rendered.get("args")})
@@ -929,7 +945,13 @@ class Engine:
             return False
         bind = spec.get("bind") or {}
         i = bind.get("index", 0)
-        return i >= len(items) or items[i] != bind.get("item")
+        if i >= len(items) or items[i] != bind.get("item"):
+            return True
+        # the step itself was edited (env, tmpdir, run, ...): wait for the re-expansion instead of running the old one
+        def canon(n: dict) -> dict:
+            return {k: v for k, v in n.items() if k not in ("id", "title", "description", "needs", "bind",
+                                                            "expanded_from", "foreach")}
+        return canon(pspec) != canon(spec)
 
     def _handle_foreach(self, st: RunState, nid: str, ns: NodeState, spec: dict) -> bool:
         g = st.graph()
@@ -1050,6 +1072,10 @@ class Engine:
         classes = set(retry.get("on") or RETRYABLE_DEFAULT)
         retryable = oc.retryable if oc.retryable is not None else oc.error_class in classes
         if oc.retryable is None and oc.error_class in classes:
+            retryable = True
+        # a class the step lists itself is retried (its author decided), except failures that repeating can
+        # never fix: bad credentials, a broken output contract, an unresolvable template
+        if oc.error_class in set(retry.get("on") or []) and oc.error_class not in NEVER_RETRY:
             retryable = True
         budget = int(retry.get("max_attempts", 1))
         quota_failures = sum(1 for a in ns.attempts[ns.retry_base:] if (a.error or {}).get("error_class") == "quota_retry")

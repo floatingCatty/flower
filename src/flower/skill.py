@@ -46,6 +46,7 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
     foreach: "${scan.outputs.items}"        # fan-out: one child per item; ${item}, ${index}
     env: {OMP_NUM_THREADS: "4"}
     cwd: some/dir            # default: a fresh per-attempt work dir
+    tmpdir: job              # TMPDIR in the attempt's directory (or a path); not part of the cache key
 ```
 
 ## Node kinds
@@ -84,6 +85,13 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
   Outputs `{decision, text, by}`.
 * **wait** — `signal: name` (send with `flower signal RUN name --data '{...}'` or a file in
   `signals/`), `timer: 10m`, `deadline: 2d` (expiry succeeds with `expired: true`).
+
+## In a step's environment
+`FLOWER_OUTPUTS` (write the outputs JSON here) · `FLOWER_INPUTS` (the resolved `inputs:` as JSON) ·
+`FLOWER_IN_<NAME>` (scalar inputs) · `FLOWER_STATE_DIR`: a directory kept across the *retries* of one start of the
+step (write checkpoints here and resume from them when present); a deliberate `flower rerun` or an edit of the
+step starts a new, empty one · `FLOWER_JOB_DIR` (cluster steps: this attempt's directory there) ·
+`FLOWER_RUN_ID`, `FLOWER_NODE_ID`, `FLOWER_ATTEMPT`.
 
 ## References
 `${inputs.x}` · `${node.outputs.key.sub}` · `${node.files.name}` · `${node.dir}` · `${node.summary}` ·

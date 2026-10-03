@@ -76,6 +76,12 @@ def test_summary_is_last_stdout_line(mkplan, start):
     assert eng.state().nodes["a"].result.summary == "the last line"
 
 
+def test_summary_shows_declared_outputs_not_stray_stdout(mkplan, start):
+    eng = start(mkplan([sh("a", 'ls /; echo "{\\"x\\": 3}" > "$FLOWER_OUTPUTS"', outputs={"x": "integer"})]))
+    drive(eng)
+    assert eng.state().nodes["a"].result.summary == "outputs: x=3"
+
+
 def test_nonzero_exit_fails_run_and_skips_downstream(mkplan, start):
     eng = start(mkplan([sh("a", "echo boom >&2; exit 3"), sh("b", "true", needs=["a"])]))
     rep = drive(eng)

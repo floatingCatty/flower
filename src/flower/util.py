@@ -95,6 +95,64 @@ def source_fingerprint(module: str, search_dirs: list[str], max_files: int = 200
     return digest({str(p.relative_to(src.parent)): sha256_file(p) for p in files})
 
 
+_PATH_RE = re.compile(r"(?<![\w$])(/[^\s'\"`;|&<>(){}$,]+)")
+
+
+def files_fingerprint(values, root: str | None, max_files: int = 2000, max_bytes: int = 64 << 20) -> str | None:
+    """Content digest of the local files a step uses: every absolute path under ``root`` (the plan's directory)
+    that appears in ``values`` (its rendered run/script/stage_in/env strings). A referenced ``.py`` script brings
+    its sibling ``.py`` modules (what it can import); a referenced directory (e.g. PYTHONPATH) brings its ``.py``
+    files. So editing a script invalidates cached and forked results, as for function nodes."""
+    if not root:
+        return None
+    try:
+        base = Path(root).resolve()
+    except OSError:
+        return None
+    seen: dict[str, str] = {}
+
+    def add(p: Path):
+        if len(seen) >= max_files or str(p) in seen:
+            return
+        try:
+            stt = p.stat()
+            seen[str(p)] = sha256_file(p) if stt.st_size <= max_bytes else f"size:{stt.st_size}:mtime:{stt.st_mtime_ns}"
+        except OSError:
+            pass
+
+    def walk(v):
+        if isinstance(v, str):
+            for m in _PATH_RE.findall(v):
+                for part in m.split(":"):          # PATH-like lists
+                    if not part.startswith("/"):
+                        continue
+                    try:
+                        p = Path(part).resolve()
+                    except OSError:
+                        continue
+                    if p != base and base not in p.parents:
+                        continue
+                    if p.is_file():
+                        add(p)
+                        if p.suffix == ".py":
+                            for q in sorted(p.parent.glob("*.py")):
+                                add(q)
+                    elif p.is_dir():
+                        for q in sorted(p.glob("*.py")):
+                            add(q)
+        elif isinstance(v, dict):
+            for x in v.values():
+                walk(x)
+        elif isinstance(v, (list, tuple)):
+            for x in v:
+                walk(x)
+
+    walk(values)
+    if not seen:
+        return None
+    return digest({str(Path(k).relative_to(base)): v for k, v in sorted(seen.items())})
+
+
 def short(d: str | None, n: int = 12) -> str:
     if not d:
         return ""

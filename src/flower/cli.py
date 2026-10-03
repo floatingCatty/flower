@@ -23,7 +23,7 @@ from . import plan as planmod
 from .engine import Engine, create_run, driver_alive
 from .rundir import RunPaths, find_root, list_runs, resolve_run
 from .state import TERMINAL_RUN
-from .util import FlowerError, atomic_write_json, default_actor, hostname, local_clock, now_iso, read_json
+from .util import FlowerError, atomic_write_json, default_actor, hostname, local_clock, now_iso, parse_duration, read_json
 
 EXIT = {"succeeded": 0, "failed": 1, "cancelled": 1, "rejected": 1, "parked": 3, "awaiting_approval": 3,
         "running": 3}
@@ -405,7 +405,8 @@ def cmd_status(args, out: Out) -> int:
     if not args.no_tick and st.status not in TERMINAL_RUN and st.status != "awaiting_approval" and not driver_alive(eng.paths):
         eng.tick()
         st = eng.state()
-    return out.done(summary_data(eng, st), status_view(st, eng.paths, color=out.color), next_for(st, st.run_id) if out.json else None,
+    return out.done(summary_data(eng, st), status_view(st, eng.paths, color=out.color, all_items=getattr(args, "items", False)),
+                    next_for(st, st.run_id) if out.json else None,
                     code=0)
 
 
@@ -667,11 +668,18 @@ def cmd_rerun(args, out: Out) -> int:
             notes.append(f"plan edits applied as amendment {aid} (generation {st.generation}): {what}")
     st = eng.state()
     ns = st.nodes.get(args.node)
-    if ns is not None and ns.status in ("pending", "running", "waiting", "retrying"):
-        notes.append(f"{args.node} is already {ns.status} (e.g. queued by an approved edit)")
+    if ns is not None and ns.status in ("running", "waiting", "retrying"):
+        notes.append(f"{args.node} is already {ns.status}")
     elif ns is not None:
-        targets = eng.rerun(args.node, downstream=not args.only, force=not args.cached, by=by, reason=args.reason)
-        notes.append(f"queued again: {', '.join(targets)}")
+        try:
+            targets = eng.rerun(args.node, downstream=not args.only, force=not args.cached, by=by, reason=args.reason)
+            notes.append(f"queued again: {', '.join(targets)}")
+        except FlowerError as exc:
+            if not (args.cached and exc.code == "node_running" and notes):
+                raise
+            # --cached with an edit while items run: the edit applies, running items finish as they are, items not
+            # started yet use the new definition, finished ones keep their results unless the change affects them
+            notes.append(f"edit applied without interrupting running work ({exc.message})")
     elif args.node in st.graph().nodes:
         notes.append(f"{args.node} is new: it runs when its dependencies are done")
     else:
@@ -714,6 +722,8 @@ def _follow(eng: Engine, node: str, out: Out, timeout: float | None = None) -> i
             seen = len(evs)
             st = eng.state()
             ns = st.nodes.get(node)
+            if st.status not in TERMINAL_RUN and not driver_alive(eng.paths):
+                spawn_driver(eng)   # never wait on a run that nobody drives (a driver that died, or exited idle)
             if not out.json and ns and ns.last and ns.last.status == "running":
                 a = ns.last
                 adir = eng.paths.attempt_dir(node, a.n)
@@ -853,6 +863,13 @@ def cmd_doctor(args, out: Out) -> int:
     return out.done(checks, text)
 
 
+def _code_stamp() -> tuple:
+    """Newest modification time and file count of flower's own source (cheap: a few dozen stats)."""
+    pkg = Path(__file__).resolve().parent
+    files = [p for p in pkg.rglob("*.py") if "__pycache__" not in p.parts]
+    return (max((p.stat().st_mtime_ns for p in files), default=0), len(files))
+
+
 def cmd_driver(args, out: Out) -> int:  # internal: background driver loop
     root = Path(args.root)
     eng = Engine(RunPaths(root, args.run))
@@ -862,9 +879,30 @@ def cmd_driver(args, out: Out) -> int:  # internal: background driver loop
     signal.signal(signal.SIGTERM, lambda *a: stop.update(flag=True))
     idle_limit = float(os.environ.get("FLOWER_DRIVER_IDLE_EXIT", 6 * 3600))
     idle = 0.0
+    code = _code_stamp()
+    errors = 0
     try:
         while not stop["flag"]:
-            rep = eng.drive(until="settled", timeout=60)
+            try:
+                rep = eng.drive(until="settled", timeout=60)
+                errors = 0
+            except Exception as exc:  # noqa: BLE001
+                # e.g. flower's code half-written by an edit while we import it: log, pause, carry on (the state is
+                # in the journal); a persistent failure still ends the driver after a while
+                errors += 1
+                import traceback
+                traceback.print_exc()
+                if errors >= 20:
+                    raise
+                eng.emit("driver.error", {"pid": os.getpid(), "error": f"{type(exc).__name__}: {exc}"[:300],
+                                          "consecutive": errors})
+                time.sleep(min(30, 2 * errors))
+                continue
+            if _code_stamp() != code:
+                # flower itself was updated (an agent improving it mid-campaign): continue with the new code.
+                # Nothing is lost: the state is in the journal and jobs are detached processes.
+                eng.emit("driver.reloaded", {"pid": os.getpid(), "reason": "flower's code changed"})
+                os.execv(sys.executable, [sys.executable, "-m", "flower", "_driver", args.run, "--root", str(root)])
             if rep.status in TERMINAL_RUN:
                 break
             if rep.status in ("parked", "awaiting_approval") and not rep.next_poll_s:
@@ -1090,7 +1128,20 @@ def cmd_remote(args, out: Out) -> int:
     text = " ".join(cmd) if len(cmd) > 1 else cmd[0]
     pre = _prelude(c)
     d = None
-    if args.env:  # explore with what a real setup gets: a prefix to install into, and the activation so far
+    if args.env and getattr(args, "installed", False):
+        # use the frozen recipe's own installation there (what steps get), e.g. to try an API before writing a step
+        d = envmod.find(args.env, src)
+        state, fz = envmod.status(d) if d is not None else ("missing", None)
+        if state != "frozen":
+            raise FlowerError("env_not_frozen", f"--installed needs a frozen recipe; {args.env} is {state}",
+                              f"flower env freeze {args.env}")
+        pfx = envmod.prefix(args.env, fz["hash"])
+        pre += (f'export FLOWER_ENV_PREFIX="{pfx}"; export FLOWER_ENV_DIR="$FLOWER_ENV_PREFIX.recipe"\n'
+                'if [ ! -d "$FLOWER_ENV_PREFIX" ]; then echo "not installed on this cluster: $FLOWER_ENV_PREFIX '
+                '(a step using it, or flower env replay, installs it)" >&2; exit 3; fi\n'
+                'set +u; source "$FLOWER_ENV_DIR/activate.sh"\n')
+        args.probe = True
+    elif args.env:  # explore with what a real setup gets: a prefix to install into, and the activation so far
         d = envmod.find(args.env, src) or (src / envmod.ENVS_DIR / args.env)
         pre += (f'export FLOWER_ENV_PREFIX="$HOME/.flower/envs/{args.env}-explore"\n'
                 'export FLOWER_ENV_DIR="$FLOWER_ENV_PREFIX.recipe"; mkdir -p "$FLOWER_ENV_DIR"\n')
@@ -1144,6 +1195,11 @@ def cmd_env(args, out: Out) -> int:
         msg = (f"recipe {d.name} unchanged (frozen {envmod.short(fz['hash'])})" if fz.get("unchanged") else
                f"froze {d.name} as {envmod.short(fz['hash'])}" + (" (setup.sh drafted from the logged commands: "
                                                                      "review it)" if fz.get("drafted_setup") else ""))
+        lc = envmod.last_check(d)
+        if lc is not None and lc.get("rc") != 0:
+            msg += (f"\nwarning: the last check.sh run while exploring ({lc.get('at')}) failed (exit {lc.get('rc')}); "
+                    "frozen anyway: `flower env replay --fresh` will show whether it works")
+            fz = {**fz, "warning": "last exploration check failed"}
         return out.done(fz, msg, [f"flower env replay {d.name} --plan PLAN --cluster C --fresh   # prove it repeats"])
     if act == "show":
         from .util import read_json
@@ -1180,8 +1236,9 @@ def cmd_env(args, out: Out) -> int:
         raise FlowerError("remote", f"could not upload the recipe: {(r.err or '').strip()[-300:]}")
     fresh = act == "replay" and args.fresh
     pfx = f"{home}/.flower/envs/{args.name}-{envmod.short(h)}" + (f"-replay-{time.strftime('%Y%m%d-%H%M%S')}-{os.urandom(2).hex()}" if fresh else "")
+    ct = envmod.settings(d).get("check_timeout")
     script = envmod.setup_script(args.name, h, recipe_dir=staging, allow_install=(act == "replay"), fresh=fresh,
-                                 env_prefix=pfx)
+                                 env_prefix=pfx, check_timeout=parse_duration(ct) if ct else None)
     t0 = time.time()
     r = tr.run(_prelude(c) + f"cd {shlex.quote(staging)} && {{\n{script}}}",
                timeout=args.timeout)
@@ -1280,6 +1337,7 @@ def build_parser() -> argparse.ArgumentParser:
     s = add("status", cmd_status, "where is the run, and what needs you")
     s.add_argument("run", nargs="?")
     s.add_argument("--no-tick", action="store_true", help="pure read; do not advance the run")
+    s.add_argument("--items", action="store_true", help="list every item of large foreach steps")
 
     s = add("watch", cmd_watch, "live view (drives the run unless a background driver does)")
     s.add_argument("run", nargs="?")
@@ -1387,7 +1445,15 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--out", dest="outs", action="append", default=[],
                    help="NAME[:TYPE] output read from the JSON the command writes to $FLOWER_OUTPUTS (repeatable)")
     s.add_argument("--setenv", action="append", default=[], help="VAR=VALUE for the command (repeatable)")
+    s.add_argument("--in", dest="ins", action="append", default=[],
+                   help="NAME=VALUE step input, e.g. --in results='${scan.outputs.items}' (a JSON file at $FLOWER_INPUTS)")
     s.add_argument("--timeout-total", help="e.g. 2h")
+    s.add_argument("--retry", type=int, help="max attempts (retries infrastructure failures: lost, node_fail, ...)")
+    s.add_argument("--on-failure", choices=["continue"], help="continue: downstream proceeds if this step fails")
+    s.add_argument("--trigger", choices=["all_success", "all_done", "any_success"],
+                   help="when the step may start (all_done: also after upstream failures, for partial results)")
+    s.add_argument("--foreach", help="fan out: a JSON list (use ${item} / ${index} in the command) or a reference "
+                                     "such as '${scan.outputs.items}'")
     s.add_argument("-i", "--input", action="append", help="NAME=VALUE for an input newly declared in the plan file")
     s.add_argument("--no-follow", action="store_true", help="do not watch it; return once it is queued")
     s.add_argument("-y", "--yes", action="store_true", help="approve the plan-file edit (you are the approver)")
@@ -1464,6 +1530,8 @@ def build_parser() -> argparse.ArgumentParser:
     plan_cluster_args(e)
     e.add_argument("--env", help="log the command in envs/<env>/sessions/ (exploration of that environment)")
     e.add_argument("--probe", action="store_true", help="a look-only command: not drafted into setup.sh")
+    e.add_argument("--installed", action="store_true",
+                   help="with --env: run in the frozen recipe's installed prefix (as steps do), not the exploration one")
     e.add_argument("command", nargs="+", help="the command, after --")
 
     s = add("env", cmd_env, "environment recipes: new, freeze, replay, check, show")

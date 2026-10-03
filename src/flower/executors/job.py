@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import json
 import os
+import posixpath
 import shlex
 import time
 from pathlib import Path
@@ -35,7 +36,7 @@ from ..hpc.transport import CmdResult, make_transport
 from ..rundir import fs_name
 from ..util import (FlowerError, atomic_write_json, atomic_write_text, digest, find_local_source, first_line,
                     parse_duration, read_json, tail_text)
-from .base import RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, check_outputs, collect_files
+from .base import scratch_env, RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, check_outputs, collect_files
 
 MAX_REMOTE_ERRORS = 8
 POLL_BACKOFF = (30.0, 300.0, 1200.0)
@@ -144,6 +145,13 @@ class JobExecutor(Executor):
             root = home + root[1:]
         return f"{root.rstrip('/')}/{ctx.run_id}/{fs_name(ctx.node['id'])}/a{ctx.attempt}"
 
+    @staticmethod
+    def _state_dir(ctx: NodeCtx, job_dir: str) -> str:
+        """FLOWER_STATE_DIR on the cluster: next to the attempt directories, one per series of retries."""
+        if job_dir == str(ctx.attempt_dir / "job"):   # local cluster without remote_root: in the run directory
+            return str(ctx.state_dir)
+        return f"{posixpath.dirname(job_dir.rstrip('/'))}/state-{ctx.series}"
+
     def _render(self, ctx: NodeCtx, cluster: dict, job_dir: str) -> None:
         stage = ctx.attempt_dir / "stage"
         stage.mkdir(parents=True, exist_ok=True)
@@ -153,12 +161,17 @@ class JobExecutor(Executor):
                 env[f"FLOWER_IN_{k.upper()}"] = v
         for k, v in (ctx.node.get("env") or {}).items():
             env[str(k)] = v if isinstance(v, str) else json.dumps(v)
+        res = {**(ctx.node.get("resources") or {}), **(ctx.job.get("resources") or {})}
+        for k, v in scratch_env({**ctx.node, "resources": res, "tmpdir": None}).items():
+            env.setdefault(k, v)
         np = ctx.node.get("prelude")
         prelude = list(cluster.get("prelude") or []) + (list(np) if isinstance(np, list) else ([np] if np else []))
         modules = list(cluster.get("modules") or []) + list(ctx.node.get("modules") or [])
         script = scheduler_for(cluster).render_job_script(key=ctx.job["submit_key"], job_dir=job_dir,
                                                           resources=ctx.job.get("resources") or {}, env=env,
-                                                          prelude=prelude, modules=modules)
+                                                          prelude=prelude, modules=modules,
+                                                          state_dir=self._state_dir(ctx, job_dir),
+                                                          tmpdir=ctx.node.get("tmpdir"))
         atomic_write_text(stage / "job.sh", script)
         atomic_write_text(stage / "user.sh", _payload(ctx.node))
         if ctx.node.get("kind") == "function":

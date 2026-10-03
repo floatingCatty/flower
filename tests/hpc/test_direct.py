@@ -104,6 +104,22 @@ def test_direct_cancel_kills_the_whole_process_tree(ff):
     assert _wait(lambda: not _alive(child) and not _alive(leader), 15), "payload survived the cancel"
 
 
+def test_direct_cancel_reaches_a_payload_under_a_time_limit(ff):
+    """BUGS #24: with a time limit the payload runs under coreutils `timeout`, which puts it in a process group of
+    its own; cancel used to signal only the leader's group and left the computation running."""
+    eng = ff.run(ff.plan([ff.job("a", "sleep 300 &\necho $! > child.pid\nwait", timeout={"total": "10m"})],
+                         clusters=_direct(ff)))
+    st = ff.drive(eng, until=lambda s: _job_id(s, "a"))
+    jd = Path(st.nodes["a"].last.job["job_dir"])
+    assert _wait(lambda: (jd / "child.pid").exists() and (jd / "child.pid").read_text().strip())
+    child = int((jd / "child.pid").read_text())
+    assert os.getpgid(child) != int(_job_id(st, "a"))   # really in another process group
+    eng.cancel(node="a", by="test:x")
+    st = ff.drive(eng, timeout=30)
+    assert st.nodes["a"].status == "cancelled", ff.why(eng)
+    assert _wait(lambda: not _alive(child), 15), "the payload under `timeout` survived the cancel"
+
+
 def test_direct_hard_killed_process_is_lost(ff):
     eng = ff.run(ff.plan([ff.job("a", "sleep 300", retry={"max_attempts": 1})], clusters=_direct(ff)))
     st = ff.drive(eng, until=lambda s: _job_id(s, "a"))
@@ -237,3 +253,61 @@ def test_cluster_node_validation():
                                                               "stage_in": ["x"]}]))
     assert any(p.endswith(".cwd") for p, _ in _issues([{"id": "s", "kind": "shell", "cluster": "c", "run": "true",
                                                          "cwd": "elsewhere"}]))
+
+
+RESUME = """\
+if [ -f "$FLOWER_STATE_DIR/ckpt" ]; then
+  echo "{\\"resumed_from\\": $(cat "$FLOWER_STATE_DIR/ckpt")}" > "$FLOWER_OUTPUTS"
+else
+  echo 41 > "$FLOWER_STATE_DIR/ckpt"; exit 7     # a crash after writing a checkpoint
+fi
+"""
+
+
+def _resume_plan(ff, kind):
+    retry = {"max_attempts": 3, "on": ["exit_nonzero"], "backoff": "0s"}
+    if kind == "cluster":
+        node = ff.job("a", RESUME, retry=retry, outputs={"resumed_from": "integer"})
+        return ff.plan([node], clusters=_direct(ff))
+    return ff.plan([{"id": "a", "kind": "shell", "run": RESUME, "retry": retry, "outputs": {"resumed_from": "integer"}}])
+
+
+def test_state_dir_survives_retries_and_a_rerun_starts_fresh(ff):
+    """FLOWER_STATE_DIR: a retried attempt resumes from its predecessor's checkpoint (cluster and local steps);
+    a deliberate rerun starts a new, empty state directory."""
+    for kind in ("cluster", "local"):
+        eng = ff.run(_resume_plan(ff, kind))
+        st = ff.drive(eng, timeout=60)
+        a = st.nodes["a"]
+        assert a.status == "succeeded" and a.result.outputs["resumed_from"] == 41, (kind, ff.why(eng))
+        assert len(a.attempts) == 2, kind
+        eng.rerun("a", by="test:x")
+        st = ff.drive(eng, timeout=60)
+        a = st.nodes["a"]
+        assert a.status == "succeeded" and len(a.attempts) == 4, (kind, ff.why(eng))   # fresh: failed once again
+
+
+def test_a_retry_keeps_its_slot_and_goes_first(ff):
+    """With max_jobs = 1, a lost job's retry must run before the next fresh item (it resumes work under way)."""
+    nodes = [ff.job("a", 'if [ ! -f "$FLOWER_STATE_DIR/once" ]; then touch "$FLOWER_STATE_DIR/once"; sleep 300; fi; '
+                         'date +%s%N > "$FLOWER_STATE_DIR/../done_at"',
+                    retry={"max_attempts": 2, "backoff": "1s"}),
+             ff.job("b", "sleep 0.2")]
+    eng = ff.run(ff.plan(nodes, clusters=_direct(ff, max_jobs=1)))
+    st = ff.drive(eng, until=lambda s: _job_id(s, "a"))
+    os.killpg(int(_job_id(st, "a")), signal.SIGKILL)          # a crash: lost, then retried
+    st = ff.drive(eng, timeout=60)
+    a, b = st.nodes["a"], st.nodes["b"]
+    assert a.status == "succeeded" and b.status == "succeeded", ff.why(eng)
+    assert a.attempts[-1].started_at <= b.attempts[-1].started_at, "fresh work took the retry's slot"
+
+
+def test_tmpdir_and_resources_reach_the_payload(ff):
+    node = ff.job("a", 'echo "{\\"tmp\\": \\"$TMPDIR\\", \\"mb\\": \\"$FLOWER_MEM_MB\\", \\"cpus\\": \\"$FLOWER_CPUS\\"}" '
+                       '> "$FLOWER_OUTPUTS"', tmpdir="job", resources={"mem": "2G", "cpus_per_task": 4},
+                  outputs={"tmp": "string", "mb": "string", "cpus": "string"})
+    eng = ff.run(ff.plan([node], clusters=_direct(ff)))
+    st = ff.drive(eng, timeout=60)
+    o = st.nodes["a"].result.outputs
+    assert o["tmp"].endswith("/a1/tmp") and Path(o["tmp"]).is_dir(), o
+    assert o["mb"] == "2048" and o["cpus"] == "4"
