@@ -205,6 +205,8 @@ def test_cli_explore_freeze_replay(tmp_path, home_dir):
     (d / "check.sh").write_text('hello-tool | grep -q "hello v1"\n')
     r = _cli([*probe, "hello-tool"], proj, env)  # activate.sh is sourced while exploring
     assert r.stdout.strip() == "hello v1", r.stderr
+    r = _cli([*probe, 'bash "$FLOWER_ENV_DIR/check.sh" && echo checked'], proj, env)  # the recipe as written so far
+    assert r.returncode == 0 and "checked" in r.stdout, r.stdout + r.stderr
     r = _cli(["env", "freeze", "hello"], proj, env)
     assert r.returncode == 0 and "drafted" in r.stdout, r.stdout + r.stderr
     assert "hello-tool" in (d / "setup.sh").read_text() and "echo \"prefix" not in (d / "setup.sh").read_text()

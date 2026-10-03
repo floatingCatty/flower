@@ -56,7 +56,12 @@ flower doctor            # which harnesses and Slurm tools are available
 ## Quick start
 
 ```bash
-flower init                       # creates .flower/ in this directory
+flower init --hook                # .flower/ here, plus the agent instructions (skill, AGENTS.md, Claude Code hook)
+flower start "what the work is for"            # a run right away (empty draft plan), UI started
+flower add RUN first -- 'python3 step1.py'     # each step: written into the plan and run, one command
+```
+Or write the whole plan first:
+```bash
 flower plan new study.yaml        # a commented starter plan
 flower plan validate study.yaml   # lists every problem with a fix hint
 flower run study.yaml             # shows the plan, asks you to approve, then runs it live
@@ -223,10 +228,16 @@ local module is shipped with it and runs in the remote Python. See the
 
 ## Developing inside the run
 
-Start the run with a rough plan. Then fix steps where they fail:
+Start the run before anything else, and make every computation a step of it:
 ```bash
+flower start "goal"                # empty draft plan + run; nothing is too early to be a step
+flower add RUN STEP [--cluster C --env E] -- <command>   # writes the step into plan.yaml and runs it
 flower rerun RUN STEP --follow     # picks up edits to plan.yaml (a recorded amendment), reruns STEP, streams it
 ```
+New `inputs:` and `clusters:` added to plan.yaml are picked up the same way, so a draft can reach a remote
+machine later. `flower init` puts the instructions in the project (skill, `AGENTS.md`), so any agent opening
+it gets them; `--hook` adds a Claude Code hook that reminds an agent when it runs a computation beside the
+active run instead of in it.
 `policies: {edits: unfinished}` lets edits to steps that haven't succeeded apply at once; edits to
 finished results still ask for approval. The run's log records how the workflow was made to work, and
 the finished run is the result. See [the guide](docs/GUIDE.md#3-developing-a-workflow-inside-its-run).

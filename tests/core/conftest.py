@@ -98,7 +98,8 @@ def cli(home, capsys):
     def call(*argv, as_json=True):
         argv = list(argv)
         if as_json and "--json" not in argv:
-            argv.append("--json")
+            # before a `--` (whatever follows it is a command, e.g. `flower add RUN ID -- <command>`)
+            argv.insert(argv.index("--") if "--" in argv else len(argv), "--json")
         capsys.readouterr()
         code = main(argv)
         cap = capsys.readouterr()

@@ -317,25 +317,75 @@ class Engine:
                 self.emit("run.reopened", {"reason": f"rerun {node}", "by": by}, actor=by)
             return targets
 
-    def plan_edits(self, node: str) -> dict:
+    def plan_edits(self, node: str, new_inputs: dict | None = None) -> dict:
         """Edits to the plan file that a rerun of ``node`` should pick up, as amendment ops.
 
         Considered: ``node`` (or its foreach collector), everything downstream of it, the generated
         environment steps those depend on, and nodes that are new in the file. Returns
-        {"ops": [...], "changed": [...], "added": [...], "touches_finished": bool, "file": path}."""
+        {"ops": [...], "changed": [...], "added": [...], "touches_finished": bool, "file": path}.
+
+        New *inputs* (with a `default:`, or a value in ``new_inputs``) and new *clusters* in the file are picked
+        up too (ops add_inputs / add_clusters), so a run started as a draft can reach a remote machine later.
+        Existing inputs and clusters are fixed for the life of a run: changes to them are reported in
+        ``res["ignored"]``."""
         st = self.state()
         src = st.meta.get("plan_source")
-        res = {"ops": [], "changed": [], "added": [], "touches_finished": False, "file": src}
+        res = {"ops": [], "changed": [], "added": [], "touches_finished": False, "file": src, "ignored": [],
+               "new_inputs": [], "new_clusters": []}
         if not src or not Path(src).is_file():
             return res
         raw = planmod.load_plan_file(src)
+        # inputs: new declarations become add_inputs, with their value as the default
+        cur_in = st.plan.get("inputs") or {}
+        add_in = {}
+        for name, decl in (raw.get("inputs") or {}).items():
+            if name in cur_in:
+                continue
+            decl = dict(decl) if isinstance(decl, dict) else {"default": decl}
+            if new_inputs and name in new_inputs:
+                decl["default"] = coerce_inputs({name: {k: v for k, v in decl.items() if k != "default"}},
+                                                        {name: new_inputs[name]}, Path.cwd())[name]
+            if "default" not in decl:
+                raise FlowerError("input_value", f"the plan file declares a new input {name!r} without a value",
+                                  f"give it `default:` in {src}, or pass `-i {name}=VALUE`")
+            decl.pop("required", None)
+            add_in[name] = decl
+        # clusters: render new ones exactly as at run creation (inputs, env, plan.dir); existing ones are fixed
+        values = {k: d.get("default") for k, d in add_in.items()}
+        values.update(st.template_context()["inputs"])
+        resolver = tpl.make_resolver({"inputs": values, "env": dict(os.environ),
+                                      "plan": {"dir": str(Path(src).parent), "id": st.plan.get("id")}})
+        cur_cl = st.plan.get("clusters") or {}
+        add_cl = {}
+        for name, spec in (raw.get("clusters") or {}).items():
+            try:
+                rendered = tpl.render(spec, resolver)
+            except tpl.TemplateError as exc:
+                raise FlowerError("template", f"cluster {name!r} in {src}: {exc}",
+                                  "only ${inputs.*}, ${env.*} and ${plan.dir} are available in clusters") from None
+            if name not in cur_cl:
+                add_cl[name] = rendered
+            elif rendered != cur_cl[name]:
+                res["ignored"].append(f"cluster {name!r} changed in the plan file; a run's clusters are fixed "
+                                      "(use a new cluster name, or `flower fork`)")
+        if add_in:
+            res["ops"].append({"op": "add_inputs", "inputs": add_in})
+            res["new_inputs"] = sorted(add_in)
+        if add_cl:
+            res["ops"].append({"op": "add_clusters", "clusters": add_cl})
+            res["new_clusters"] = sorted(add_cl)
         # compare like with like: the run's plan has its defaults/clusters rendered at creation
-        raw["defaults"], raw["clusters"] = st.plan.get("defaults") or {}, st.plan.get("clusters") or {}
+        raw["defaults"], raw["clusters"] = st.plan.get("defaults") or {}, {**cur_cl, **add_cl}
+        raw["inputs"] = {**cur_in, **add_in}
         new = {n["id"]: n for n in planmod.normalize(raw).get("nodes") or [] if isinstance(n, dict) and "id" in n}
         g = st.graph()
         cur = g.nodes
         top = cur.get(node, {}).get("expanded_from") or node
         if top not in cur and top not in new:
+            if res["ops"]:   # only new inputs/clusters
+                res["added"] = [nid for nid in new if nid not in cur]
+                if res["added"]:
+                    res["ops"].append({"op": "add", "nodes": [new[nid] for nid in res["added"]]})
             return res
         cone = [top] + [d for d in g.descendants(top) if not cur[d].get("expanded_from")] if top in cur else []
 
@@ -1278,6 +1328,13 @@ class Engine:
             reason = "; ".join(rep.waiting_on[:4]) or "waiting"
             if st.status != "parked" or st.status_reason != reason:
                 self.emit("run.parked", {"reason": reason, "timed": bool(timed)})
+            return
+        if not nodes:   # a draft run (`flower start`) waits for its first step
+            rep.status = "parked"
+            rep.next_poll_s = 0
+            reason = "no steps yet: add one with `flower add RUN ID -- <command>`"
+            if st.status != "parked" or st.status_reason != reason:
+                self.emit("run.parked", {"reason": reason, "timed": False})
             return
         failed = [ns.id for ns in nodes if ns.status in ("failed", "cancelled")
                   and not (ns.status == "failed" and g.nodes[ns.id].get("on_failure") == "continue")]

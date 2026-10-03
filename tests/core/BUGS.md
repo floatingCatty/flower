@@ -240,6 +240,27 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** amendment gates are processed before the terminal-state return, except for rejected or
   cancelled runs. Applying the amendment reopens the run (existing behaviour of `_commit_amendment`).
 
+## Found by the TTG reproduction (`benchmark/ttg-twistons`, 2026-10-03)
+
+### 21. The agent worked beside the run instead of in it
+- **Test:** `test_core_devloop.py` (start / add / init / hook tests)
+- **Observed:** reproducing a paper, the coordinating agent (inside the flower repo, after building the
+  dev loop) read the paper, prototyped and validated code by hand for a while before writing a plan; the
+  user saw nothing in the UI.
+- **Root cause:** not a code defect but a design gap. (a) The instructions lived only in a skill that was
+  not installed in that session. (b) Nothing existed until a plan with steps did, so the early phase had
+  no home. (c) Running a command by hand was cheaper than recording it (write YAML, then rerun).
+- **Fix:** `flower start` (a run from minute one, empty draft plan, parked until it has steps);
+  `flower add RUN ID -- <command>` (writes the step and runs it); new `inputs:` / `clusters:` in the plan
+  file are picked up by add/rerun (amendment ops `add_inputs`, `add_clusters`); `flower init` installs
+  the skill and an `AGENTS.md` block in the project, `--hook` a Claude Code PostToolUse reminder.
+
+### 22. `flower remote exec --env` could not run the recipe being written
+- **Test:** `tests/hpc/test_envs.py::test_cli_explore_freeze_replay`
+- **Observed:** `bash "$FLOWER_ENV_DIR/check.sh"` during exploration: no such file.
+- **Root cause:** the exploration prefix's recipe directory was created but never filled.
+- **Fix:** the current recipe files are sent with every `remote exec --env` (base64 in the preamble).
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

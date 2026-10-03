@@ -208,7 +208,11 @@ class RunState:
         for nid, ns in self.nodes.items():
             if ns.status == "pending" and nid in nodes:
                 nodes[nid].setdefault("feedback", "")
-        return {"inputs": self.inputs, "run": {"id": self.run_id, "dir": self.meta.get("run_dir")}, "nodes": nodes}
+        # inputs added to a running plan (amendment add_inputs) carry their value as the declaration's default
+        ins = {k: d["default"] for k, d in (self.plan.get("inputs") or {}).items()
+               if isinstance(d, dict) and "default" in d and k not in self.inputs}
+        ins.update(self.inputs)
+        return {"inputs": ins, "run": {"id": self.run_id, "dir": self.meta.get("run_dir")}, "nodes": nodes}
 
 
 def _node(state: RunState, nid: str) -> NodeState:

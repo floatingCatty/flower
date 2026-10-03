@@ -29,7 +29,7 @@ clusters:                    # for job nodes, and shell/function nodes with `clu
   here: {transport: local}   # flower runs on the login node itself
   box:  {transport: ssh, host: mybox, scheduler: none}     # no batch system: run directly on the host
                              # install: never  -> environment steps only check, never run setup.sh
-nodes:
+nodes:                       # `nodes: []` is a valid draft (`flower start`): the run parks until steps are added
   - id: name                 # unique; letters, digits, - _
     kind: shell|function|agent|job|gate|wait
     title: optional label
@@ -103,6 +103,8 @@ ops:
   - {op: stop, nodes: [pending-node]}
   - {op: drop, nodes: [pending-node]}
   - {op: set_needs, node: n, needs: [a, b]}
+  - {op: add_clusters, clusters: {box: {transport: ssh, host: mybox, scheduler: none}}}   # new names only
+  - {op: add_inputs, inputs: {host: {type: string, default: mybox}}}                       # value as default
 ```
 History is immutable: finished nodes can only be superseded, never edited in place.
 """
@@ -164,12 +166,22 @@ Use flower when the work has several steps with dependencies, any step can take 
 long agent tasks), a human should approve the plan or key decisions, or the user wants a record of
 what was done and why. For a single quick command, just do it directly.
 
-## The loop
-**Develop inside the run.** Start the run as soon as there is a rough plan. Then make each step work
-with `flower rerun RUN STEP --follow`: fix the code or the step in plan.yaml, then rerun. Edits are
-picked up as recorded amendments, and new steps in plan.yaml are added the same way. Do not develop
-with raw ssh beside flower and then rerun everything: the run is the workspace, and its log is the
-record of the debugging.
+## The loop: the run first, then everything as steps
+**Start the run before you explore.** `flower start "<goal>"` creates an empty draft plan
+(`<id>/plan.yaml`) and a run that parks until it has steps, and starts the project's UI so the user can
+watch. Nothing is too early to be a step: downloading inputs, the first quick test, a parameter probe.
+- **One command per step:** `flower add RUN ID [--needs X] [--out NAME:TYPE] [--file NAME=PATH]
+  [--cluster C --env E --stage-in FILE --retrieve GLOB] -- <command>` writes the step into plan.yaml
+  and runs it, streaming its output. The command writes outputs as JSON to `$FLOWER_OUTPUTS`.
+- **Fix and repeat:** edit the code or the step in plan.yaml, then `flower rerun RUN ID --follow`. Edits are
+  picked up as recorded amendments (`policies: {edits: unfinished}` lets new/unfinished steps through).
+- **A new machine later:** add an `inputs:` entry (value with `-i NAME=VALUE` on add/rerun) and a
+  `clusters:` entry to plan.yaml; the next add/rerun picks them up. Existing clusters/inputs are fixed.
+- **Explore a remote host** with `flower remote exec` (logged), not raw ssh.
+- Reading papers, files and results directly is fine. *Running* computations beside the run is not: they
+  are unrecorded and invisible to the user. If a hook reminds you of that, move the work into a step.
+For a workflow that is already known end to end, writing the whole plan first (below) is fine too.
+
 1. **Draft the plan** with the user: `flower plan new plan.yaml` or write YAML
    (`flower plan reference` prints the full format). Prefer deterministic `shell`/`function`/`job`
    nodes for computation and `agent` nodes for judgement (analysis, choosing parameters, writing).

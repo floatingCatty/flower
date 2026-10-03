@@ -17,3 +17,6 @@ node_modules/
 
 # flower run directories (journals, node work dirs, ABACUS outputs)
 .flower/
+
+# Claude Code settings that name this machine (flower init --hook)
+**/.claude/settings.local.json

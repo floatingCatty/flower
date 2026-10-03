@@ -138,3 +138,136 @@ def test_followers_make_polling_fast(cli, home, tmp_path):
 def test_edits_policy_is_validated():
     raw = {"flower": 1, "id": "p", "policies": {"edits": "sometimes"}, "nodes": [{"id": "a", "kind": "shell", "run": "true"}]}
     assert any(i["path"] == "policies.edits" for i in validate(normalize(raw)))
+
+
+# ---------------------------------------------------------------------- the run first: start / add / init / hook
+import io  # noqa: E402
+
+from flower import devloop  # noqa: E402
+
+
+def _rid(home) -> str:
+    return list_runs(Path(os.environ["FLOWER_HOME"]))[-1]
+
+
+def test_start_creates_a_parked_draft_run(cli, home, tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    code, res = cli("start", "Find the answer", "--id", "ans", "--dir", str(tmp_path / "ans"))
+    assert code == 0, res
+    rid = res["data"]["run_id"]
+    st = _eng(home, rid).state()
+    assert st.status == "parked" and "no steps yet" in st.status_reason
+    plan = (tmp_path / "ans" / "plan.yaml").read_text()
+    assert "nodes: []" in plan and "edits: unfinished" in plan
+    code, res = cli("start", "Find the answer", "--id", "ans", "--dir", str(tmp_path / "ans"))
+    assert code != 0 and res["error"]["code"] == "exists"
+
+
+def test_add_writes_the_step_and_runs_it(cli, home, tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "Find the answer", "--id", "ans", "--dir", str(tmp_path / "ans"))
+    rid = res["data"]["run_id"]
+    code, res = cli("add", rid, "first", "--out", "x:integer", "--title", "first one", "--",
+                    'echo "{\\"x\\": 41}" > "$FLOWER_OUTPUTS"')
+    assert code == 0 and res["data"]["status"] == "succeeded", res
+    code, res = cli("add", rid, "second", "--needs", "first", "--out", "y:integer", "--",
+                    'echo "{\\"y\\": $((${first.outputs.x} + 1))}" > "$FLOWER_OUTPUTS"')
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert st.nodes["second"].result.outputs["y"] == 42
+    assert st.generation == 2 and st.status == "succeeded"
+    text = (tmp_path / "ans" / "plan.yaml").read_text()
+    assert "- id: first" in text and "title: first one" in text and "# A draft started" in text  # comments kept
+    code, res = cli("add", rid, "first", "--", "true")
+    assert code != 0 and res["error"]["code"] == "exists"
+
+
+def test_add_refuses_an_invalid_step_and_leaves_the_file(cli, home, tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    before = (tmp_path / "x" / "plan.yaml").read_text()
+    code, res = cli("add", res["data"]["run_id"], "bad", "--needs", "nope", "--", "true")
+    assert code != 0
+    assert (tmp_path / "x" / "plan.yaml").read_text() == before
+
+
+def test_new_inputs_and_clusters_reach_a_running_draft(cli, home, tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    rid = res["data"]["run_id"]
+    p = tmp_path / "x" / "plan.yaml"
+    p.write_text(p.read_text().replace("clusters: {}", (
+        "inputs:\n  scratch: {type: string}\n  greeting: {type: string, default: hello}\n\n"
+        "clusters:\n  box: {transport: local, scheduler: none, remote_root: \"${inputs.scratch}\"}")))
+    code, res = cli("add", rid, "s", "--cluster", "box", "-i", f"scratch={tmp_path / 'remote'}", "--out",
+                    "g:string", "--", 'echo "{\\"g\\": \\"${inputs.greeting}\\"}" > "$FLOWER_OUTPUTS"')
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert st.nodes["s"].result.outputs["g"] == "hello"
+    assert st.plan["clusters"]["box"]["remote_root"] == str(tmp_path / "remote")
+    assert (tmp_path / "remote").is_dir()
+    # an existing cluster is fixed: a change is reported, not applied
+    p.write_text(p.read_text().replace("scheduler: none,", "scheduler: none, max_jobs: 3,"))
+    ed = _eng(home, rid).plan_edits("s")
+    assert ed["ignored"] and "fixed" in ed["ignored"][0]
+
+
+def test_new_input_without_a_value_is_refused(cli, home, tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    p = tmp_path / "x" / "plan.yaml"
+    p.write_text(p.read_text().replace("clusters: {}", "inputs:\n  host: {type: string}\n\nclusters: {}"))
+    code, res = cli("add", res["data"]["run_id"], "s", "--", "true")
+    assert code != 0 and res["error"]["code"] == "input_value"
+
+
+def test_insert_node_keeps_the_rest_of_the_file():
+    text = "flower: 1\nid: p\nnodes:\n    - {id: a, kind: shell, run: 'true'}   # four-space list\n\nresults: [a]\n"
+    out = devloop.insert_node(text, {"id": "b", "kind": "shell", "run": "echo 1\necho 2"})
+    assert out.index("- id: b") < out.index("results: [a]")
+    assert "\n    - id: b\n" in out and "run: |" in out and "# four-space list" in out
+
+
+def test_init_ships_the_instructions_with_the_project(cli, home, tmp_path):
+    code, res = cli("init", str(tmp_path / "proj"), "--hook")
+    assert code == 0, res
+    root = tmp_path / "proj"
+    assert (root / ".claude" / "skills" / "flower" / "SKILL.md").is_file()
+    assert (root / ".agents" / "skills" / "flower" / "SKILL.md").is_file()
+    agents = (root / "AGENTS.md").read_text()
+    assert "flower start" in agents and devloop.AGENTS_BEGIN in agents
+    cfg = json.loads((root / ".claude" / "settings.local.json").read_text())
+    cmd = cfg["hooks"]["PostToolUse"][0]["hooks"][0]["command"]
+    assert cmd.endswith("-m flower hook bash")
+    (root / "AGENTS.md").write_text("# mine\n\n" + agents)
+    cli("init", str(root), "--hook")   # idempotent: one managed block, one hook, the user's text kept
+    agents = (root / "AGENTS.md").read_text()
+    assert agents.count(devloop.AGENTS_BEGIN) == 1 and agents.startswith("# mine")
+    assert len(json.loads((root / ".claude" / "settings.local.json").read_text())["hooks"]["PostToolUse"]) == 1
+
+
+def test_hook_reminds_only_about_compute_beside_an_active_run(cli, home, tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    root = Path(os.environ["FLOWER_HOME"]).parent if (Path(os.environ["FLOWER_HOME"]).name == ".flower") \
+        else Path(os.environ["FLOWER_HOME"])
+    cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    proj = devloop._project_root(Path.cwd()) or devloop._project_root(root)
+    assert proj is not None
+    cwd = proj
+    say = lambda c, s="s1": devloop.reminder(c, cwd, s)  # noqa: E731
+    assert say("ls -la") is None and say("python3 -c 'print(1)'") is None and say("flower status x") is None
+    msg = say("python3 analyse.py")
+    assert msg and "flower add" in msg
+    assert say("mpirun -np 4 pw.x") is None            # quiet for a while after a reminder in that session
+    assert say("ssh box 'mpirun -np 4 pw.x'", "s2")
+    monkeypatch.setenv("FLOWER_INSIDE_RUN", "1")
+    assert say("python3 analyse.py", "s3") is None       # inside a step: never
+    monkeypatch.delenv("FLOWER_INSIDE_RUN")
+    assert say("F=../.venv/bin/flower; $F remote exec -- 'python3 x.py'", "s4") is None   # flower, via a variable
+    assert say("cat > check.sh <<'EOF'\npython3 - <<'PY'\nprint(1)\nPY\nEOF\nls", "s5") is None   # writing a file
+
+
+def test_hook_command_never_fails(cli, home, monkeypatch):
+    monkeypatch.setattr("sys.stdin", io.StringIO("not json"))
+    code, text = cli("hook", "bash", as_json=False)
+    assert code == 0 and not text.strip()

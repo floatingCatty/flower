@@ -80,7 +80,7 @@ def test_plan_invalid_error_payload():
 @pytest.mark.parametrize("raw,code", [
     ({"flower": 2, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"}]}, "version"),
     ({"flower": 1, "nodes": [{"id": "a", "kind": "shell", "run": "x"}]}, "plan_id"),
-    ({"flower": 1, "id": "p", "nodes": []}, "nodes"),
+    ({"flower": 1, "id": "p", "nodes": {}}, "nodes"),
     ({"flower": 1, "id": "p", "nodes": [{"id": "1bad", "kind": "shell", "run": "x"}]}, "node_id"),
     ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"},
                                            {"id": "a", "kind": "shell", "run": "y"}]}, "duplicate_id"),

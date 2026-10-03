@@ -163,15 +163,112 @@ def live_drive(eng: Engine, out: Out, timeout: float | None = None) -> str:
 # ====================================================================== commands
 
 def cmd_init(args, out: Out) -> int:
+    """Make a directory a flower project, and ship the agent instructions *with the project*: the skill under
+    .claude/skills and .agents/skills, a managed block in AGENTS.md, and (with --hook) the Claude Code hook
+    that notices compute run beside an active run. An agent opening the project gets them whatever its
+    personal setup is."""
+    from . import devloop
     root = Path(args.dir or os.getcwd()).resolve()
     (root / ".flower" / "runs").mkdir(parents=True, exist_ok=True)
     msg = [f"initialised {root / '.flower'}"]
-    if args.skill:
+    files = []
+    if not args.no_skill:
         from .skill import install_skill
-        for p in install_skill(root, args.skill):
+        for p in install_skill(root, args.skill or "project"):
+            files.append(str(p))
             msg.append(f"installed skill → {p}")
-    return out.done({"root": str(root)}, "\n".join(msg), ["flower plan new my-plan.yaml",
-                                                          "flower run my-plan.yaml"])
+        p = devloop.write_agents_md(root)
+        files.append(str(p))
+        msg.append(f"agent instructions → {p}")
+    if args.hook:
+        p = devloop.install_hook(root, sys.executable)
+        files.append(str(p))
+        msg.append(f"Claude Code hook (reminds an agent that runs compute beside an active run) → {p}")
+    return out.done({"root": str(root), "files": files}, "\n".join(msg),
+                    ['flower start "<what the work is for>"', "flower add RUN ID -- <command>"])
+
+
+def cmd_start(args, out: Out) -> int:
+    """A run from minute one: an empty draft plan, approved by the person starting it, parked until steps are
+    added with `flower add` (or edits picked up by `flower rerun`)."""
+    from . import devloop
+    root = find_root(create=True)
+    pid = args.id or devloop.slug(args.goal)
+    d = Path(args.dir or pid)
+    p = d / "plan.yaml"
+    if p.exists():
+        raise FlowerError("exists", f"{p} already exists", f"run it: flower run {p}   (or choose --id / --dir)")
+    inputs = parse_kv(args.input)
+    if args.inputs:
+        inputs.update(json.loads(Path(args.inputs).read_text()))
+    d.mkdir(parents=True, exist_ok=True)
+    p.write_text(devloop.draft_plan_text(pid, args.goal, inputs, args.edits))
+    eng = create_run(planmod.load_plan_file(str(p)), inputs, actor=args.actor, approve=False,
+                     note="draft started with `flower start`")
+    by = args.actor or default_actor()
+    eng.answer("plan", "approve", text="draft started with `flower start` (empty plan; steps are added as "
+               f"amendments under policies.edits={args.edits})", by=by)
+    eng.tick()
+    rid = eng.paths.run_id
+    ui = ""
+    try:
+        if args.no_ui or os.environ.get("FLOWER_NO_UI"):
+            raise FlowerError("no_ui", "not requested")
+        from . import ui as uimod
+        info = uimod.ensure_background(root, actor=by)
+        ui = "\nwatch it in the project's UI:\n" + "\n".join(uimod.access_text(info))
+    except Exception as exc:  # noqa: BLE001  (the run does not depend on the UI)
+        ui = "" if isinstance(exc, FlowerError) and exc.code == "no_ui" else f"\n(UI not started: {exc}; `flower ui`)"
+    return out.done({"run_id": rid, "plan": str(p)},
+                    f"run {rid} started for: {args.goal}\nplan file: {p} (empty draft){ui}",
+                    [f"flower add {rid} <id> -- <command>", f"flower status {rid}"])
+
+
+def cmd_add(args, out: Out) -> int:
+    """Write a shell step into the run's plan file and run it (`flower rerun RUN ID --follow` semantics): the
+    recorded way costs one command, like running it by hand."""
+    from . import devloop
+    eng = get_engine(args)
+    st = eng.state()
+    src = st.meta.get("plan_source")
+    if not src or not Path(src).is_file():
+        raise FlowerError("no_plan_file", f"run {st.run_id} has no plan file to add to ({src})",
+                          "write the step into an amendment: flower amend RUN change.yaml")
+    node = devloop.node_from_args(args, args.command)
+    cur = planmod.load_plan_file(src)
+    if any(isinstance(n, dict) and n.get("id") == args.id for n in cur.get("nodes") or []):
+        raise FlowerError("exists", f"step {args.id!r} is already in {src}",
+                          f"edit it there, then: flower rerun {st.run_id} {args.id} --follow")
+    text = Path(src).read_text()
+    new_text = devloop.insert_node(text, node)
+    tmp = Path(src).with_name(f".{Path(src).name}.flower-add")
+    tmp.write_text(new_text)
+    try:
+        planmod.check(planmod.load_plan_file(str(tmp)))
+    except planmod.PlanInvalid:
+        tmp.unlink()
+        raise
+    os.replace(tmp, src)
+    ns = argparse.Namespace(run=args.run, node=args.id, only=False, cached=False, no_continue=False, wait=False,
+                            reason=f"added with `flower add`", follow=not args.no_follow, no_edits=False,
+                            yes=args.yes, input=args.input, timeout=args.timeout, json=args.json, actor=args.actor)
+    if not out.json:
+        print(f"added step {args.id} to {src}", flush=True)
+    return cmd_rerun(ns, out)
+
+
+def cmd_hook(args, out: Out) -> int:
+    """Harness hook (stdin: the harness's JSON). Never fails the tool call; prints a reminder at most."""
+    from . import devloop
+    try:
+        data = json.loads(sys.stdin.read() or "{}")
+        msg = devloop.reminder(str((data.get("tool_input") or {}).get("command") or ""),
+                               Path(data.get("cwd") or os.getcwd()), data.get("session_id"))
+        if msg:
+            print(json.dumps({"hookSpecificOutput": {"hookEventName": "PostToolUse", "additionalContext": msg}}))
+    except Exception:  # noqa: BLE001
+        pass
+    return 0
 
 
 def cmd_plan(args, out: Out) -> int:
@@ -541,13 +638,16 @@ def cmd_rerun(args, out: Out) -> int:
     notes = []
     if not args.no_edits:  # the development loop: edits to the plan file become a recorded amendment
         eng.tick()  # apply approvals answered since the last pass (e.g. of an earlier edit)
-        ed = eng.plan_edits(args.node)
+        ed = eng.plan_edits(args.node, new_inputs=parse_kv(getattr(args, "input", None)))
+        notes.extend(f"note: {x}" for x in ed.get("ignored") or [])
         if ed["ops"]:
             st = eng.state()
             policy = ((st.plan.get("policies") or {}).get("edits") or "ask")
             auto = bool(args.yes) or policy == "all" or (policy == "unfinished" and not ed["touches_finished"])
             what = ", ".join([f"changed {', '.join(ed['changed'])}"] * bool(ed["changed"])
-                             + [f"added {', '.join(ed['added'])}"] * bool(ed["added"]))
+                             + [f"added {', '.join(ed['added'])}"] * bool(ed["added"])
+                             + [f"new input {', '.join(ed['new_inputs'])}"] * bool(ed.get("new_inputs"))
+                             + [f"new cluster {', '.join(ed['new_clusters'])}"] * bool(ed.get("new_clusters")))
             waiting = next((a for a in st.amendments.values() if a.status == "proposed" and a.ops == ed["ops"]), None)
             if waiting is not None and not auto:  # the same edit is already waiting for a decision
                 aid = waiting.id
@@ -994,6 +1094,15 @@ def cmd_remote(args, out: Out) -> int:
         d = envmod.find(args.env, src) or (src / envmod.ENVS_DIR / args.env)
         pre += (f'export FLOWER_ENV_PREFIX="$HOME/.flower/envs/{args.env}-explore"\n'
                 'export FLOWER_ENV_DIR="$FLOWER_ENV_PREFIX.recipe"; mkdir -p "$FLOWER_ENV_DIR"\n')
+        # the recipe as written so far, so exploration can run its own check.sh / setup.sh there
+        import base64
+        import shlex
+        for rel in (envmod.recipe_files(d) if d.is_dir() else {}):
+            f = d / rel
+            if f.is_file() and f.stat().st_size <= 4 * 1024 * 1024:
+                q = shlex.quote(rel)
+                pre += (f'mkdir -p "$FLOWER_ENV_DIR/$(dirname {q})"; printf %s '
+                        f'{base64.b64encode(f.read_bytes()).decode()} | base64 -d > "$FLOWER_ENV_DIR/"{q}\n')
         act = d / "activate.sh"
         if act.is_file() and act.read_text() != envmod.TEMPLATES["activate.sh"]:
             pre += "set +u\n" + act.read_text() + "\n"
@@ -1117,9 +1226,13 @@ def build_parser() -> argparse.ArgumentParser:
         sp.set_defaults(fn=fn)
         return sp
 
-    s = add("init", cmd_init, "create .flower/ in this directory")
+    s = add("init", cmd_init, "make this directory a flower project (with the agent instructions)")
     s.add_argument("dir", nargs="?")
-    s.add_argument("--skill", choices=["claude", "codex", "agents", "project", "all"], help="also install the agent skill")
+    s.add_argument("--skill", choices=["claude", "codex", "agents", "project", "all"],
+                   help="where to install the agent skill (default: project = .claude/skills + .agents/skills)")
+    s.add_argument("--no-skill", action="store_true", help="do not install the skill or the AGENTS.md block")
+    s.add_argument("--hook", action="store_true",
+                   help="add a Claude Code hook that reminds an agent when it runs compute beside an active run")
 
     s = add("plan", cmd_plan, "write, validate and inspect plan files")
     ps = s.add_subparsers(dest="plan_cmd", metavar="SUBCOMMAND")
@@ -1247,7 +1360,41 @@ def build_parser() -> argparse.ArgumentParser:
                    help="watch this node until it finishes (its events, live output, result); exit 0 if it succeeded")
     s.add_argument("--no-edits", action="store_true", help="ignore edits to the plan file")
     s.add_argument("-y", "--yes", action="store_true", help="approve the plan-file edits it picks up (you are the approver)")
+    s.add_argument("-i", "--input", action="append", help="NAME=VALUE for an input newly declared in the plan file")
     s.add_argument("--timeout", type=float)
+
+    s = add("start", cmd_start, "start a run for a goal now, with an empty draft plan that grows step by step")
+    s.add_argument("goal", help="what the work is for, in a sentence")
+    s.add_argument("--id", help="plan/run id (default: from the goal)")
+    s.add_argument("--dir", help="directory for plan.yaml (default: ./<id>)")
+    s.add_argument("-i", "--input", action="append", help="NAME=VALUE (declared in the plan as a required input)")
+    s.add_argument("--inputs", help="JSON file with inputs (declared the same way; values stay in the run only)")
+    s.add_argument("--edits", choices=["unfinished", "all", "ask"], default="unfinished",
+                   help="which plan-file edits apply without asking (default: unfinished = new or unfinished steps)")
+    s.add_argument("--no-ui", action="store_true", help="do not start the project's UI")
+
+    s = add("add", cmd_add, "add a step to a run's plan file and run it: flower add RUN ID [options] -- <command>")
+    s.add_argument("run")
+    s.add_argument("id", help="step id")
+    s.add_argument("command", nargs="*", help="the shell command, after `--`")
+    s.add_argument("--title")
+    s.add_argument("--needs", action="append", default=[], help="a step this one depends on (repeatable)")
+    s.add_argument("--cluster", help="run it on this cluster of the plan (ssh / Slurm)")
+    s.add_argument("--env", dest="environment", help="environment recipe (envs/NAME) to activate there")
+    s.add_argument("--stage-in", action="append", default=[], help="file to send with it (cluster steps; repeatable)")
+    s.add_argument("--retrieve", action="append", default=[], help="glob to fetch back (cluster steps; repeatable)")
+    s.add_argument("--file", dest="files", action="append", default=[], help="NAME=PATH declared output file (repeatable)")
+    s.add_argument("--out", dest="outs", action="append", default=[],
+                   help="NAME[:TYPE] output read from the JSON the command writes to $FLOWER_OUTPUTS (repeatable)")
+    s.add_argument("--setenv", action="append", default=[], help="VAR=VALUE for the command (repeatable)")
+    s.add_argument("--timeout-total", help="e.g. 2h")
+    s.add_argument("-i", "--input", action="append", help="NAME=VALUE for an input newly declared in the plan file")
+    s.add_argument("--no-follow", action="store_true", help="do not watch it; return once it is queued")
+    s.add_argument("-y", "--yes", action="store_true", help="approve the plan-file edit (you are the approver)")
+    s.add_argument("--timeout", type=float, help="stop following after this many seconds")
+
+    s = add("hook", cmd_hook, "agent-harness hooks (installed by `flower init --hook`)")
+    s.add_argument("event", choices=["bash"], help="bash: remind an agent that ran compute outside an active run")
 
     s = add("amend", cmd_amend, "propose a change to a running plan (YAML: {rationale, ops})")
     s.add_argument("run")
@@ -1358,7 +1505,14 @@ def _is_decision(args) -> bool:
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
+    argv = list(sys.argv[1:] if argv is None else argv)
+    tail = None
+    if "add" in argv and "--" in argv and argv.index("add") < argv.index("--"):
+        k = argv.index("--")   # `flower add RUN ID [options] -- <command>`: the command is never parsed as options
+        argv, tail = argv[:k], argv[k + 1:]
     args = parser.parse_args(argv)
+    if tail is not None and getattr(args, "cmd", None) == "add":
+        args.command = tail
     if not getattr(args, "fn", None):
         parser.print_help()
         return 2

@@ -333,8 +333,9 @@ def validate(plan: dict) -> list[Issue]:
                                 "`slurm` (sbatch) or `none` (run the payload directly on the host)"))
 
     nodes = plan.get("nodes")
-    if not isinstance(nodes, list) or not nodes:
-        issues.append(Issue("nodes", "nodes", "a plan needs a non-empty `nodes` list"))
+    if not isinstance(nodes, list):
+        issues.append(Issue("nodes", "nodes", "a plan needs a `nodes` list",
+                            "`nodes: []` for a draft that grows step by step (`flower start`, `flower add`)"))
         return issues
     ids: dict[str, int] = {}
     for i, n in enumerate(nodes):
@@ -620,7 +621,7 @@ class Graph:
 
 # ====================================================================== amendments
 
-AMEND_OPS = ("add", "replace", "drop", "detour", "set_needs", "stop")
+AMEND_OPS = ("add", "replace", "drop", "detour", "set_needs", "stop", "add_clusters", "add_inputs")
 
 
 def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) -> tuple[dict, dict]:
@@ -631,6 +632,8 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
     ``supersede: true``, which marks it and its downstream cone stale (``effects['stale']``).
     """
     new = copy.deepcopy(contract_view(plan))
+    if plan.get("_source"):
+        new["_source"] = plan["_source"]   # new environment steps find their recipe next to the plan file
     defaults = new.get("defaults") or {}
     effects: dict[str, list] = {"stale": [], "stop": [], "added": [], "removed": [], "changed": []}
     issues: list[Issue] = []
@@ -730,6 +733,31 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
                 continue
             by_id[nid]["needs"] = [str(x) for x in _as_list(op.get("needs"))]
             effects["changed"].append(nid)
+        elif kind == "add_clusters":
+            cl = op.get("clusters")
+            if not isinstance(cl, dict) or not cl:
+                issues.append(Issue("amend_clusters", p, "add_clusters needs `clusters: {name: {...}}`"))
+                continue
+            for name, spec in cl.items():
+                if name in (new.get("clusters") or {}):
+                    issues.append(Issue("amend_clusters", p, f"cluster {name!r} already exists; a run's clusters "
+                                        "are fixed once defined", "use a new cluster name, or `flower fork` the run"))
+                    continue
+                new.setdefault("clusters", {})[name] = copy.deepcopy(spec)
+        elif kind == "add_inputs":
+            ins = op.get("inputs")
+            if not isinstance(ins, dict) or not ins:
+                issues.append(Issue("amend_inputs", p, "add_inputs needs `inputs: {name: {type, default}}`"))
+                continue
+            for name, decl in ins.items():
+                if name in (new.get("inputs") or {}):
+                    issues.append(Issue("amend_inputs", p, f"input {name!r} already exists; a run's inputs are fixed"))
+                    continue
+                if not isinstance(decl, dict) or "default" not in decl:
+                    issues.append(Issue("amend_inputs", p, f"new input {name!r} needs a value",
+                                        f"give it `default:` in the plan file, or pass `-i {name}=VALUE`"))
+                    continue
+                new.setdefault("inputs", {})[name] = copy.deepcopy(decl)
         elif kind == "stop":
             for nid in _as_list(op.get("nodes") or op.get("node")):
                 if nid in by_id and is_pending(nid):

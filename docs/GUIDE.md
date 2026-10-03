@@ -20,7 +20,9 @@ means "needs you, or still going".
 ## 2. Everyday use
 
 ```bash
-flower run study.yaml -i structure=Si.cif     # review the plan, approve, watch it run
+flower start "Si band gap with HSE"           # a run from minute one: empty draft plan, UI started
+flower add RUN scf --cluster hpc -- 'mpirun pw.x -in scf.in'   # write a step into the plan and run it
+flower run study.yaml -i structure=Si.cif     # or: review a whole plan, approve, watch it run
 flower run study.yaml --yes --detach          # approve and run in the background
 flower status                                 # latest run: table of nodes + what needs you
 flower watch RUN                              # live view
@@ -43,17 +45,28 @@ Every command takes `RUN` as a full id, a unique fragment, or nothing (meaning t
 
 ## 3. Developing a workflow inside its run
 
-You don't need a working plan before you start the run. Start it early and develop each step inside
-the run, so the run's log records the debugging and the finished run is the result. There is nothing
-to redo at the end.
+You don't need a working plan before you start the run. Start it first, then do every computation as a
+step of it, so the run's log records the exploration and the debugging, the user sees it in the UI from
+the beginning, and the finished run is the result. There is nothing to redo at the end.
 
 ```bash
-flower run plan.yaml --yes            # a rough plan; steps that don't work yet simply fail
+flower start "Reproduce Fig. 2 of the paper"  # empty draft plan (<id>/plan.yaml) + a run that waits for steps
+flower add RUN fetch --out n:integer -- 'python3 fetch.py > "$FLOWER_OUTPUTS"'   # write the step, run it, stream it
+flower add RUN fit --needs fetch --cluster box --env pyscf --stage-in fit.py -- 'python3 fit.py'
 # fix the code (staged scripts are read at run time) and/or the step in plan.yaml, then:
 flower rerun RUN STEP --follow        # applies the plan-file edit, reruns STEP, streams it, exit 0/1
-flower rerun RUN NEWSTEP --follow     # a step that is new in plan.yaml is added the same way
+flower rerun RUN NEWSTEP --follow     # a step written into plan.yaml by hand is added the same way
 ```
 
+Why this shape: agents (and people) drift outside a workflow tool when the early phase has nowhere to go
+and when running a command by hand is cheaper than recording it. `start` gives the work a home from the
+first minute; `add` makes a recorded step cost one command. A plan written in full up front
+(`flower run plan.yaml`) works the same way afterwards.
+
+* **A machine you only know about later.** Add an `inputs:` entry (with `default:`, or give the value
+  with `-i NAME=VALUE` on `add` / `rerun`) and a `clusters:` entry to plan.yaml. The next `add` or `rerun`
+  picks them up as part of its amendment (ops `add_inputs`, `add_clusters`). Existing inputs and clusters
+  stay fixed for the life of the run: a change to one is reported, not applied (`flower fork` for that).
 * **Plan-file edits.** `rerun` compares the plan file with the run's plan for STEP, its downstream
   steps (and the generated environment steps they use), and steps that are new in the file. It
   proposes the differences as one amendment, with a diff and a record of who made it. History stays
@@ -69,6 +82,17 @@ flower rerun RUN NEWSTEP --follow     # a step that is new in plan.yaml is added
   follows a step, polling drops to 0.5 s.
 * **Measured on a real remote machine.** Adding and debugging an ABACUS step this way took about
   27 s per attempt. ABACUS itself took 23 s of that; launch and collection about 1 s each.
+
+### Keeping agents inside the run
+
+`flower init` ships the instructions with the project rather than relying on someone's personal setup:
+the skill in `.claude/skills/flower/` and `.agents/skills/flower/`, and a managed block in `AGENTS.md`
+(read by Codex and other agents). `flower init --hook` also adds a Claude Code hook in
+`.claude/settings.local.json`. When an agent runs a computation (`python script.py`, `mpirun`,
+`ssh host cmd`, `julia`, `sbatch`) beside an active run, the hook adds a one-line reminder to its context:
+the command was not recorded, and the reminder names the `flower add` line to use instead. It never blocks,
+stays quiet for `python -c`, tests and flower's own commands, and speaks at most once per 15 minutes per
+session.
 
 ## 4. Writing good plans
 
