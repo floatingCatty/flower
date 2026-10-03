@@ -18,12 +18,12 @@ EXP = {"dso_meV": 44.1, "gamma1": G1, "gamma2": G2, "gamma3": G3,
        "m_hh_100": 1 / (G1 - 2 * G2), "m_lh_100": 1 / (G1 + 2 * G2), "m_so_100": 1 / G1,
        "m_hh_111": 1 / (G1 - 2 * G3), "m_lh_111": 1 / (G1 + 2 * G3)}
 
-ORDER = ["qe", "abacus", "pyscf", "dftb", "tb", "epm", "kp"]
-LABEL = {"qe": "QE (PBE, PW)", "abacus": "ABACUS (PBE, PW)", "pyscf": "PySCF (PBE, all-e X2C)",
+ORDER = ["qe", "abacus", "abacus_lcao", "pyscf", "dftb", "tb", "epm", "kp"]
+LABEL = {"qe": "QE (PBE, PW)", "abacus": "ABACUS (PBE, PW)", "abacus_lcao": "ABACUS (PBE, LCAO 6au)", "pyscf": "PySCF (PBE, all-e X2C)",
          "dftb": "DFTB+ (pbc-0-3)", "tb": "Tight binding sp3d5s*", "epm": "Empirical pseudopot.",
          "kp": "k·p 6-band (exp. par.)"}
 COLOR = {"qe": "#2a78d6", "abacus": "#eb6834", "pyscf": "#1baf7a", "dftb": "#eda100", "tb": "#e87ba4",
-         "epm": "#008300", "kp": "#4a3aa7"}  # categorical slots 1-7 in fixed order (validated, light mode)
+         "epm": "#008300", "kp": "#4a3aa7", "abacus_lcao": "#e34948"}  # slots 1-8, fixed (validated, light)
 INK, MUTED, GRID = "#1f1f1e", "#6b6a63", "#e6e5df"
 
 
@@ -67,6 +67,10 @@ def compare(eig_files: dict, ctx: dict) -> dict:
         if p and os.path.exists(p):
             res[key] = sv.analyse(json.loads(Path(p).read_text()))
     keys = [k for k in ORDER if k in res]
+    # a method whose HH band is not a hole band near Gamma (non-positive or huge mass) has no meaningful masses or
+    # strain splitting: kept in the table (flagged), left out of those two charts
+    sane = [k for k in keys if 0 < res[k]["m_hh_100"] < 3 and 0 < res[k]["m_hh_111"] < 3]
+    flagged = [k for k in keys if k not in sane]
 
     # ---- table (markdown) -- the accessible view of every chart
     cols = [("dso_meV", "Δso (meV)", "{:.1f}"), ("m_hh_100", "m_hh[100]", "{:.3f}"), ("m_lh_100", "m_lh[100]", "{:.3f}"),
@@ -75,13 +79,17 @@ def compare(eig_files: dict, ctx: dict) -> dict:
             ("strain_split12_meV", "HH–LH @1% (meV)", "{:.0f}"), ("strain_split13_meV", "E1–E3 @1% (meV)", "{:.0f}")]
     lines = ["| method | " + " | ".join(c[1] for c in cols) + " |", "|---|" + "---|" * len(cols)]
     for k in keys:
-        lines.append(f"| {LABEL[k]} | " + " | ".join(c[2].format(res[k][c[0]]) for c in cols) + " |")
+        mark = " ⚠" if k in flagged else ""
+        lines.append(f"| {LABEL[k]}{mark} | " + " | ".join(c[2].format(res[k][c[0]]) for c in cols) + " |")
     lines.append("| **experiment** | " + " | ".join(c[2].format(EXP[c[0]]) if c[0] in EXP else "—" for c in cols) + " |")
     notes = [f"- **{LABEL[k]}**: {res[k]['notes']}" for k in keys]
     md = ["# Si valence band at Γ: method comparison", "",
           "All with spin-orbit coupling, at a0 = 5.431 Å. Masses in m0 (holes, positive), from the band curvature at "
           "|k| = 0.005, 0.01, 0.02 (2π/a0) along [100] and [111]. Strain: biaxial (001), ε∥ = 1 %, ε⊥ = −2C12/C11 ε∥.",
-          "", *lines, "", "Method notes:", *notes, ""]
+          "", *lines, "",
+          *([f"⚠ {', '.join(LABEL[k] for k in flagged)}: the heavy-hole band is not hole-like near Γ (flat or "
+             "rising), so its masses, γ's and strain splitting are meaningless; left out of the mass and strain charts."]
+            if flagged else []), "", "Method notes:", *notes, ""]
     (wd / "comparison.md").write_text("\n".join(md))
 
     # ---- charts
@@ -95,19 +103,19 @@ def compare(eig_files: dict, ctx: dict) -> dict:
                  ("m_hh_111", "HH [111]"), ("m_lh_111", "LH [111]")]
     fig, axes = plt.subplots(1, 5, figsize=(14, 3.8), dpi=150, sharey=True)
     for ax, (c, t) in zip(axes, mass_cols):
-        _dots(ax, keys, [res[k][c] for k in keys], EXP[c], title=f"{t} mass (m0)")
+        _dots(ax, sane, [res[k][c] for k in sane], EXP[c], title=f"{t} mass (m0)")
         if ax is not axes[0]:
             ax.tick_params(axis="y", labelleft=False)
     fig.tight_layout(); fig.savefig(wd / "masses.png"); plt.close(fig)
 
     fig, ax = plt.subplots(figsize=(7.2, 3.6), dpi=150)
     kp_ref = res.get("kp", {}).get("strain_split12_meV")
-    _dots(ax, keys, [res[k]["strain_split12_meV"] for k in keys], kp_ref, ref_label="k·p (exp. b)", fmt="{:.0f}",
+    _dots(ax, sane, [res[k]["strain_split12_meV"] for k in sane], kp_ref, ref_label="k·p (exp. b)", fmt="{:.0f}",
           title="HH–LH splitting at Γ, 1 % biaxial (001) tension (meV)")
     fig.tight_layout(); fig.savefig(wd / "strain.png"); plt.close(fig)
 
     dft = [k for k in ("qe", "abacus", "pyscf") if k in res]
     head = (f"Δso: DFT {min(res[k]['dso_meV'] for k in dft):.1f}–{max(res[k]['dso_meV'] for k in dft):.1f} meV vs "
             f"exp 44.1; DFTB+ {res['dftb']['dso_meV']:.1f}" if dft and "dftb" in res else f"{len(keys)} methods compared")
-    return {"methods": keys, "results": {k: {c[0]: res[k][c[0]] for c in cols} for k in keys}, "experiment": EXP,
+    return {"methods": keys, "flagged": flagged, "results": {k: {c[0]: res[k][c[0]] for c in cols} for k in keys}, "experiment": EXP,
             "table_md": "\n".join(lines), "summary": head}

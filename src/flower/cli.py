@@ -537,9 +537,127 @@ def cmd_cancel(args, out: Out) -> int:
 
 def cmd_rerun(args, out: Out) -> int:
     eng = get_engine(args)
-    targets = eng.rerun(args.node, downstream=not args.only, force=not args.cached, by=args.actor or default_actor(),
-                        reason=args.reason)
-    return _record_and_continue(eng, args, out, f"queued again: {', '.join(targets)}")
+    by = args.actor or default_actor()
+    notes = []
+    if not args.no_edits:  # the development loop: edits to the plan file become a recorded amendment
+        eng.tick()  # apply approvals answered since the last pass (e.g. of an earlier edit)
+        ed = eng.plan_edits(args.node)
+        if ed["ops"]:
+            st = eng.state()
+            policy = ((st.plan.get("policies") or {}).get("edits") or "ask")
+            auto = bool(args.yes) or policy == "all" or (policy == "unfinished" and not ed["touches_finished"])
+            what = ", ".join([f"changed {', '.join(ed['changed'])}"] * bool(ed["changed"])
+                             + [f"added {', '.join(ed['added'])}"] * bool(ed["added"]))
+            waiting = next((a for a in st.amendments.values() if a.status == "proposed" and a.ops == ed["ops"]), None)
+            if waiting is not None and not auto:  # the same edit is already waiting for a decision
+                aid = waiting.id
+            else:
+                aid = eng.propose_amendment(ed["ops"], f"plan file edited ({what}); picked up by "
+                                            f"`flower rerun {args.node}`", by=by, auto_approve=auto)
+            st = eng.state()
+            am = st.amendments.get(aid)
+            if am is None or am.status != "approved":
+                return out.done({"amendment_id": aid, "gate": f"amend-{aid}", "changed": ed["changed"],
+                                 "added": ed["added"]},
+                                f"the plan file changed ({what}); that edit needs approval first:\n"
+                                f"  flower show {st.run_id} --gate amend-{aid}      # the diff\n"
+                                f"  flower approve {st.run_id} amend-{aid}\n"
+                                f"then run this rerun again (or allow such edits: `policies: {{edits: unfinished}}` "
+                                f"in the plan, or `--yes` when you are the approver)", code=3)
+            notes.append(f"plan edits applied as amendment {aid} (generation {st.generation}): {what}")
+    st = eng.state()
+    ns = st.nodes.get(args.node)
+    if ns is not None and ns.status in ("pending", "running", "waiting", "retrying"):
+        notes.append(f"{args.node} is already {ns.status} (e.g. queued by an approved edit)")
+    elif ns is not None:
+        targets = eng.rerun(args.node, downstream=not args.only, force=not args.cached, by=by, reason=args.reason)
+        notes.append(f"queued again: {', '.join(targets)}")
+    elif args.node in st.graph().nodes:
+        notes.append(f"{args.node} is new: it runs when its dependencies are done")
+    else:
+        raise FlowerError("node_not_found", f"no node {args.node!r} in the run or the plan file")
+    if args.follow:
+        if not out.json:
+            print("\n".join(notes), flush=True)
+        return _follow(eng, args.node, out, timeout=args.timeout)
+    return _record_and_continue(eng, args, out, "\n".join(notes))
+
+
+def _follow(eng: Engine, node: str, out: Out, timeout: float | None = None) -> int:
+    """Watch one node until it finishes: its events, its live output (local), then its result. The rest of the run
+    goes on in the background driver."""
+    from .render import describe_event
+    from .rundir import fs_name
+    from .state import TERMINAL_NODE
+    from .util import tail_text
+    st = eng.state()
+    g = st.graph()
+    watch = {node} | {c for c, s in g.nodes.items() if s.get("expanded_from") == node}
+    start_n = st.nodes[node].last.n if node in st.nodes and st.nodes[node].last else 0
+    eng.paths.follow.mkdir(parents=True, exist_ok=True)
+    marker = eng.paths.follow / f"{fs_name(node)}.json"
+    atomic_write_json(marker, {"node": node, "pid": os.getpid(), "host": hostname(), "at": now_iso()})
+    seen = len(eng.journal.read())
+    offsets: dict = {}
+    t0 = time.time()
+    try:
+        eng.tick()
+        spawn_driver(eng)
+        while True:
+            evs = eng.journal.read()
+            for ev in evs[seen:]:
+                nid = ev.get("nodeId")
+                if nid in watch or (nid and g.nodes.get(nid, {}).get("expanded_from") == node):
+                    d = describe_event(ev)
+                    if d and not out.json:
+                        print(f"{local_clock(ev['occurredAtIso'])}  {d}", flush=True)
+            seen = len(evs)
+            st = eng.state()
+            ns = st.nodes.get(node)
+            if not out.json and ns and ns.last and ns.last.status == "running":
+                a = ns.last
+                adir = eng.paths.attempt_dir(node, a.n)
+                jd = Path(a.job.get("job_dir") or "")
+                for p in [adir / "proc" / "stdout.log", adir / "proc" / "stderr.log", jd / "job.out", jd / "job.err"]:
+                    if str(jd) not in ("", ".") or p.parent.name == "proc":
+                        if p.is_file():
+                            off = offsets.get(p, 0)
+                            data = p.read_bytes()[off:]
+                            if data:
+                                sys.stdout.write(data.decode(errors="replace"))
+                                sys.stdout.flush()
+                                offsets[p] = off + len(data)
+            done = ns is not None and ns.status in TERMINAL_NODE and ns.last is not None and ns.last.n > start_n
+            if done or st.status in TERMINAL_RUN and (ns is None or ns.status in TERMINAL_NODE):
+                break
+            if timeout is not None and time.time() - t0 > timeout:
+                return out.done({"node": node, "status": ns.status if ns else None},
+                                f"{node} still {ns.status if ns else 'pending'} after {timeout:.0f}s (it keeps going)",
+                                code=3)
+            time.sleep(0.3)
+    except KeyboardInterrupt:
+        return out.done({"node": node}, f"stopped following {node}; it keeps going", code=130)
+    finally:
+        try:
+            marker.unlink()
+        except OSError:
+            pass
+    ns = eng.state().nodes.get(node)
+    r = ns.last if ns else None
+    ok = ns is not None and ns.status == "succeeded"
+    if ok:
+        text = f"✓ {node}: {r.summary or 'succeeded'}"
+    else:
+        err = (r.error or {}) if r else {}
+        text = f"✗ {node} {ns.status if ns else '?'}: {err.get('error_class', '')} {err.get('message', '')}".rstrip()
+        if r:
+            for p in (eng.paths.attempt_dir(node, r.n) / "proc" / "stderr.log",):
+                tail = tail_text(p, 1500).strip()
+                if tail:
+                    text += "\n--- stderr ---\n" + tail
+    return out.done({"node": node, "status": ns.status if ns else None, "outputs": r.outputs if r else None,
+                     "error": r.error if r else None}, text,
+                    [f"flower logs {eng.paths.run_id} {node}"] if not ok else None, code=0 if ok else 1)
 
 
 def cmd_amend(args, out: Out) -> int:
@@ -1125,6 +1243,10 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--reason")
     s.add_argument("--no-continue", action="store_true")
     s.add_argument("--wait", action="store_true", help="drive in the foreground afterwards")
+    s.add_argument("--follow", action="store_true",
+                   help="watch this node until it finishes (its events, live output, result); exit 0 if it succeeded")
+    s.add_argument("--no-edits", action="store_true", help="ignore edits to the plan file")
+    s.add_argument("-y", "--yes", action="store_true", help="approve the plan-file edits it picks up (you are the approver)")
     s.add_argument("--timeout", type=float)
 
     s = add("amend", cmd_amend, "propose a change to a running plan (YAML: {rationale, ops})")

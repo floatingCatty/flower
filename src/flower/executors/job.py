@@ -325,6 +325,9 @@ class JobExecutor(Executor):
         cache = read_json(cache_path, {}) or {}
         sched = scheduler_for(cluster)
         min_poll = parse_duration(cluster.get("min_poll")) or sched.DEFAULT_MIN_POLL
+        fdir = ctxs[0].run_dir / "follow"
+        if fdir.is_dir() and any(fdir.glob("*.json")):  # someone is watching (flower rerun --follow)
+            min_poll = min(min_poll, 0.5)
         nowt = time.time()
         if nowt - float(cache.get("last_poll", 0)) < min_poll or nowt < float(cache.get("retry_at", 0)):
             return

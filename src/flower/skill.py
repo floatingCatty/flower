@@ -16,6 +16,8 @@ description: |               # the goal, shown at approval and in the report
 inputs:                      # given at `flower run plan.yaml -i name=value`
   structure: {type: path, required: true, description: POSCAR file}
   strain:    {type: number, default: 0.01}
+policies:
+  edits: unfinished          # plan-file edits picked up by `flower rerun`: ask (default) | unfinished | all
 defaults:
   harness: {name: claude, model: sonnet}   # default for agent nodes
   timeout: {total: 2h, idle: 30m}          # killed if exceeded (idle = no output)
@@ -163,6 +165,11 @@ long agent tasks), a human should approve the plan or key decisions, or the user
 what was done and why. For a single quick command, just do it directly.
 
 ## The loop
+**Develop inside the run.** Start the run as soon as there is a rough plan. Then make each step work
+with `flower rerun RUN STEP --follow`: fix the code or the step in plan.yaml, then rerun. Edits are
+picked up as recorded amendments, and new steps in plan.yaml are added the same way. Do not develop
+with raw ssh beside flower and then rerun everything: the run is the workspace, and its log is the
+record of the debugging.
 1. **Draft the plan** with the user: `flower plan new plan.yaml` or write YAML
    (`flower plan reference` prints the full format). Prefer deterministic `shell`/`function`/`job`
    nodes for computation and `agent` nodes for judgement (analysis, choosing parameters, writing).

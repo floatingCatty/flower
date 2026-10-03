@@ -57,6 +57,7 @@ class RunPaths:
         self.nodes = self.dir / "nodes"
         self.tick_lock = self.dir / "tick.lock"
         self.driver_file = self.dir / "driver.json"
+        self.follow = self.dir / "follow"   # someone is watching these nodes: poll fast
         self.report_md = self.dir / "report.md"
         self.report_html = self.dir / "report.html"
 
@@ -65,6 +66,25 @@ class RunPaths:
 
     def exists(self) -> bool:
         return self.events.exists()
+
+
+def followers(paths: "RunPaths") -> list[str]:
+    """Nodes someone is following right now (`flower rerun --follow`); stale markers are removed."""
+    import json as _json
+    import socket as _socket
+    out = []
+    for p in sorted(paths.follow.glob("*.json")) if paths.follow.is_dir() else []:
+        try:
+            m = _json.loads(p.read_text())
+            if m.get("host") == _socket.gethostname():
+                os.kill(int(m["pid"]), 0)
+            out.append(m["node"])
+        except (OSError, ValueError, KeyError):
+            try:
+                p.unlink()
+            except OSError:
+                pass
+    return out
 
 
 def runs_dir(root: Path) -> Path:

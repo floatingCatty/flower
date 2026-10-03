@@ -17,6 +17,7 @@ environment recipe in [`../envs/`](../envs/). The comparison with experiment run
 |---|---|---|---|
 | Quantum ESPRESSO 7.5 | `qe` | `qe` | PBE, plane waves (60 Ry), PseudoDojo fully-relativistic pseudopotential `Si_dojo_soc.upf` |
 | ABACUS 3.9 | `abacus` | `abacus` | the same pseudopotential, plane-wave basis, `nspin 4` + `lspinorb` |
+| ABACUS 3.9 (LCAO) | `abacus-lcao` | `abacus` | the same pseudopotential with its 6 bohr DZP orbital basis `Si_dojo_6au.orb` (added later; see *Developed inside the run* below) |
 | PySCF 2.14 | `pyscf` | `pyscf` | PBE, all-electron cc-pVDZ, two-component GKS with X2C1E spin-orbit, 4³ k-mesh. Bands at arbitrary k are built by hand ([`run_pyscf.py`](run_pyscf.py)) and checked against the SCF at Γ |
 | DFTB+ 25.1 | `dftb` | `dftbplus` | SCC-DFTB with the pbc-0-3 Slater–Koster set, plus on-site spin-orbit ξp = 21.0 meV taken **from the `atom-soc` step**, an all-electron fully-relativistic Si atom computed with QE `ld1.x` |
 | tight binding sp3d5s* | `models[0]` | `pyscf` | Boykin, Klimeck & Oyafuso, PRB 69, 115201 (2004), Si parameters. It reproduces that paper's gap and masses exactly. Strain uses (d0/d)² scaling only |
@@ -47,6 +48,7 @@ On a 32-core workstation, steps ran in parallel (`max_jobs: 4`):
 |---|---|---|---|---|---|---|---|---|---|---|---|
 | QE (PBE, PW) | 47.8 | 0.260 | 0.189 | 0.225 | 0.660 | 0.131 | 4.57 | 0.36 | 1.53 | 109 | 145 |
 | ABACUS (PBE, PW) | 47.8 | 0.260 | 0.189 | 0.225 | 0.656 | 0.131 | 4.57 | 0.36 | 1.53 | 109 | 145 |
+| ABACUS (PBE, LCAO 6au) ⚠ | 46.2 | −11.0 | 0.106 | 0.223 | 11.1 | 0.108 | 4.69 | 2.39 | 2.30 | 195 | 228 |
 | PySCF (PBE, all-e X2C) | 49.3 | 0.246 | 0.179 | 0.213 | 0.617 | 0.124 | 4.83 | 0.39 | 1.61 | 116 | 152 |
 | DFTB+ (pbc-0-3) | 31.5 | 0.319 | 0.132 | 0.192 | 0.682 | 0.108 | 5.34 | 1.10 | 1.94 | 108 | 131 |
 | Tight binding sp3d5s* | 47.2 | 0.276 | 0.214 | 0.246 | 0.734 | 0.144 | 4.15 | 0.26 | 1.40 | 180 | 214 |
@@ -61,6 +63,14 @@ Notes on the experimental row:
   b = −2.10 eV, serves as the reference.
 
 ### What the comparison shows
+
+- **ABACUS LCAO with the 6 bohr DZP basis gets Δso right (46.2 meV) but the heavy hole wrong.** Its
+  HH band is flat near Γ, even rising slightly, so the HH mass is meaningless and the strain splitting
+  is inflated to 195 meV. Running the same LCAO calculation without spin-orbit gives the same flat HH
+  band. So the cause is the basis, not ABACUS's spin-orbit implementation: two s, two p and one d
+  orbital per atom, with a 6 bohr cutoff, cannot carry the remote-band couplings that set the HH
+  curvature. Δso, an on-site atomic-like quantity, is fine. The comparison flags this row and leaves it
+  out of the mass and strain charts.
 
 - **QE and ABACUS agree to 0.01 meV in Δso,** and to < 1 % in every mass. With the same
   pseudopotential and plane waves, two independent codes give the same physics.
@@ -84,11 +94,29 @@ Notes on the experimental row:
 Charts (in the run's `compare` step, and in the flower UI): `dso.png`, `masses.png`, `strain.png`;
 the table is also written to `comparison.md`.
 
+## Developed inside the run
+
+The LCAO step was added after the run had finished, using only flower:
+1. **Add the step.** I added it to `plan.yaml` and an LCAO mode to `si_valence.py`, then ran
+   `flower rerun RUN abacus-lcao --follow`. That picked the new step up as a recorded amendment
+   (generation 2), ran it on the remote machine, and streamed it back: 26 s, of which ABACUS took 23 s.
+2. **Fix the parser.** The first result was nonsense. The parser accepted the SCF's `istate.info`,
+   which has 512 k-points, because it only required "at least" the 7 requested ones. After the fix it
+   reads `BANDS_1.dat` and requires exactly 7. Rerun: 28 s.
+3. **Diagnose the physics.** `flower remote exec` (logged) reran the same LCAO calculation without
+   spin-orbit, in the step's own directory. The heavy-hole band was still flat, so the basis is the
+   cause.
+4. **Add it to the comparison.** I edited the `compare` step's inputs and `compare.py`, then ran
+   `flower rerun RUN compare --follow`: amendment generation 3, 2.6 s.
+
+All of this, failures included, is in the run's log (`flower log si-valence-20261003-161718-510f`).
+
 ## Files
 - [`plan.yaml`](plan.yaml): the workflow.
 - [`si_valence.py`](si_valence.py): geometry, k-points, the QE / ABACUS / DFTB+ / `ld1.x` drivers, and
   the analysis (standard library only).
 - [`run_pyscf.py`](run_pyscf.py), [`models.py`](models.py): PySCF; tight binding, EPM, k·p.
 - [`compare.py`](compare.py): the table and charts, run locally.
+- `Si_dojo_6au.orb`: the ABACUS numerical-orbital basis for it (6 bohr, 2s2p1d).
 - `Si_dojo_soc.upf`: PseudoDojo v0.4 fully-relativistic Si (M. J. van Setten et al., Comput. Phys.
   Commun. 226, 39 (2018); CC BY 4.0).

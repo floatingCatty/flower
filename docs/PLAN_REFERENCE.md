@@ -11,6 +11,8 @@ description: |               # the goal, shown at approval and in the report
 inputs:                      # given at `flower run plan.yaml -i name=value`
   structure: {type: path, required: true, description: POSCAR file}
   strain:    {type: number, default: 0.01}
+policies:
+  edits: unfinished          # plan-file edits picked up by `flower rerun`: ask (default) | unfinished | all
 defaults:
   harness: {name: claude, model: sonnet}   # default for agent nodes
   timeout: {total: 2h, idle: 30m}          # killed if exceeded (idle = no output)

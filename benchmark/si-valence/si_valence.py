@@ -137,15 +137,17 @@ def run_qe(pseudo, np_=4, kmesh=8):
 
 # ---------------------------------------------------------------------------- ABACUS (plane waves)
 
-def abacus_stru(vecs, frac, pseudo):
+def abacus_stru(vecs, frac, pseudo, orbital=None):
     v = "\n".join(" ".join(f"{x / A0:.10f}" for x in vec) for vec in vecs)
     at = "\n".join(f"{f[0]:.6f} {f[1]:.6f} {f[2]:.6f} 0 0 0" for f in frac)
-    return (f"ATOMIC_SPECIES\nSi 28.0855 {pseudo}\n\nLATTICE_CONSTANT\n{A0 / BOHR:.10f}\n\n"
+    orb = f"NUMERICAL_ORBITAL\n{orbital}\n\n" if orbital else ""
+    return (f"ATOMIC_SPECIES\nSi 28.0855 {pseudo}\n\n{orb}LATTICE_CONSTANT\n{A0 / BOHR:.10f}\n\n"
             f"LATTICE_VECTORS\n{v}\n\nATOMIC_POSITIONS\nDirect\n\nSi\n0.0\n2\n{at}\n")
 
 
-def abacus_input(calc, nbands=16):
-    lines = ["INPUT_PARAMETERS", "suffix si", f"calculation {calc}", "basis_type pw", "pseudo_dir ./",
+def abacus_input(calc, nbands=16, basis="pw"):
+    lines = ["INPUT_PARAMETERS", "suffix si", f"calculation {calc}", f"basis_type {basis}", "pseudo_dir ./",
+             "orbital_dir ./",
              "ecutwfc 60", "nspin 4", "lspinorb 1", "noncolin 0", "scf_thr 1e-10", "smearing_method fixed",
              f"nbands {nbands}", "symmetry 0"]
     if calc == "nscf":
@@ -156,47 +158,51 @@ def abacus_input(calc, nbands=16):
 
 
 def abacus_eigs(out_dir, nk):
-    """Eigenvalues per k: from eig_occ.txt / eig.txt / istate.info (whichever this version writes)."""
-    for name in ("eig.txt", "eig_occ.txt", "istate.info"):
-        p = Path(out_dir) / name
-        if p.exists():
-            blocks, cur = [], None
-            for line in p.read_text().splitlines():
-                if re.search(r"(?i)\bk(?:point)?\b.*=|^\s*\d+/\d+ kpoint", line) or "Kpoint" in line:
-                    cur = []
-                    blocks.append(cur)
-                    continue
-                f = line.split()
-                if cur is not None and len(f) >= 2 and re.fullmatch(r"\d+", f[0]):
-                    try:
-                        cur.append(float(f[1]))
-                    except ValueError:
-                        pass
-            blocks = [b for b in blocks if b]
-            if len(blocks) >= nk:
-                return blocks[:nk]
-    raise SystemExit(f"no eigenvalue file with {nk} k-points in {out_dir}: {os.listdir(out_dir)}")
+    """Eigenvalues (eV) per k of the nscf run. BANDS_1.dat (one row per k: index, path coordinate, energies) is
+    written by every nscf with out_band; istate.info may still be the SCF's (LCAO nscf does not rewrite it), so a
+    file is accepted only if it holds EXACTLY nk k-points: a mismatch must never pass silently."""
+    p = Path(out_dir) / "BANDS_1.dat"
+    if p.exists():
+        rows = [ln.split() for ln in p.read_text().splitlines() if ln.strip() and not ln.lstrip().startswith("#")]
+        if len(rows) == nk:
+            return [[float(x) for x in r[2:]] for r in rows]
+    p = Path(out_dir) / "istate.info"
+    if p.exists():
+        blocks, cur = [], None
+        for line in p.read_text().splitlines():
+            if "Kpoint" in line:
+                cur = []
+                blocks.append(cur)
+                continue
+            f = line.split()
+            if cur is not None and len(f) >= 2 and re.fullmatch(r"\d+", f[0]):
+                cur.append(float(f[1]))
+        if len(blocks) == nk:
+            return blocks
+    raise SystemExit(f"no eigenvalue file with exactly {nk} k-points in {out_dir}: {os.listdir(out_dir)}")
 
 
-def run_abacus(pseudo, np_=4, kmesh=8):
+def run_abacus(pseudo, np_=4, kmesh=8, orbital=None):
+    basis = "lcao" if orbital else "pw"
     sets = {}
     for name, ks in kpoint_sets().items():
         vecs, frac = lattice(name == "strained")
-        d = Path(f"abacus_{name}")
+        d = Path(f"abacus_{basis}_{name}")
         d.mkdir(exist_ok=True)
-        os.system(f"cp {pseudo} {d}/")
-        (d / "STRU").write_text(abacus_stru(vecs, frac, Path(pseudo).name))
-        (d / "INPUT").write_text(abacus_input("scf"))
+        os.system(f"cp {pseudo} {orbital or ''} {d}/")
+        (d / "STRU").write_text(abacus_stru(vecs, frac, Path(pseudo).name, Path(orbital).name if orbital else None))
+        (d / "INPUT").write_text(abacus_input("scf", basis=basis))
         (d / "KPT").write_text(f"K_POINTS\n0\nGamma\n{kmesh} {kmesh} {kmesh} 0 0 0\n")
         run(f"mpirun -np {np_} abacus", d / "scf.log", cwd=d)
-        (d / "INPUT").write_text(abacus_input("nscf"))
+        (d / "INPUT").write_text(abacus_input("nscf", basis=basis))
         kd = [cart_to_frac(k, vecs) for k in ks]
         (d / "KPT").write_text("K_POINTS\n" + str(len(kd)) + "\nDirect\n"
                                + "\n".join(f"{k[0]:.10f} {k[1]:.10f} {k[2]:.10f} 1" for k in kd) + "\n")
         run(f"mpirun -np {np_} abacus", d / "nscf.log", cwd=d)
         sets[name] = {"kpts": ks, "eig": abacus_eigs(d / "OUT.si", len(ks))}
-    write_eig("eig.json", "ABACUS 3.9 (PW, PBE, FR ONCV)", sets, nelec=8,
-              notes=f"basis_type pw, nspin 4 + lspinorb, ecutwfc 60 Ry, scf {kmesh}^3; pseudo {Path(pseudo).name}")
+    write_eig("eig.json", f"ABACUS 3.9 ({basis.upper()}, PBE, FR ONCV)", sets, nelec=8,
+              notes=f"basis_type {basis}, nspin 4 + lspinorb, ecutwfc 60 Ry, scf {kmesh}^3; pseudo {Path(pseudo).name}"
+                    + (f", orbitals {Path(orbital).name}" if orbital else ""))
 
 
 # ---------------------------------------------------------------------------- DFTB+
@@ -342,6 +348,8 @@ if __name__ == "__main__":
         run_qe(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 4)
     elif what == "abacus":
         run_abacus(sys.argv[2], int(sys.argv[3]) if len(sys.argv) > 3 else 4)
+    elif what == "abacus-lcao":
+        run_abacus(sys.argv[2], int(sys.argv[4]) if len(sys.argv) > 4 else 4, orbital=sys.argv[3])
     elif what == "dftb":
         run_dftb(sys.argv[2], float(sys.argv[3]))
     elif what == "atom":

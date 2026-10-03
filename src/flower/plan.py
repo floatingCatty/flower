@@ -310,6 +310,11 @@ def validate(plan: dict) -> list[Issue]:
         if not isinstance(spec, dict):
             issues.append(Issue("input", f"inputs.{name}", "input spec must be a mapping",
                                 "e.g. `structure: {type: path, required: true}`"))
+    pol = plan.get("policies") or {}
+    if isinstance(pol, dict) and pol.get("edits", "ask") not in ("ask", "unfinished", "all"):
+        issues.append(Issue("policies", "policies.edits", f"unknown edits policy {pol.get('edits')!r}",
+                            "`ask` (default), `unfinished` (auto-approve plan-file edits to nodes that have not "
+                            "succeeded), or `all`"))
     for name, c in (plan.get("clusters") or {}).items():
         if not isinstance(c, dict):
             issues.append(Issue("cluster", f"clusters.{name}", "cluster spec must be a mapping"))

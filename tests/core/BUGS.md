@@ -231,6 +231,15 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   - The timeline and report state the zone.
   - The UI shows browser-local time, with the UTC stamp in the tooltip.
 
+### 20. An approved amendment on a finished run was never applied
+- **Test:** `test_core_devloop.py::test_default_policy_asks_before_applying_an_edit`
+- **Observed:** `flower amend` (or `rerun` picking up a plan edit) on a failed run, followed by
+  `flower approve RUN amend-…`. The amendment stayed `proposed` forever.
+- **Root cause:** `_tick` returned early for runs in a terminal state, *before* processing answered
+  amendment gates. Auto-approved amendments worked only because they are applied immediately.
+- **Fix:** amendment gates are processed before the terminal-state return, except for rejected or
+  cancelled runs. Applying the amendment reopens the run (existing behaviour of `_commit_amendment`).
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

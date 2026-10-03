@@ -22,7 +22,7 @@ from . import plan as planmod
 from . import template as tpl
 from .executors.base import RETRYABLE_DEFAULT, NodeCtx, Outcome
 from .journal import Journal
-from .rundir import RunPaths, find_root, fs_name, list_runs
+from .rundir import RunPaths, find_root, followers, fs_name, list_runs
 from .state import TERMINAL_NODE, TERMINAL_RUN, Attempt, NodeState, RunState, fold
 from .util import (FlowerError, atomic_write_json, atomic_write_text, default_actor, digest, hostname,
                    new_id, new_run_id, now, now_iso, parse_duration, parse_iso, read_json, source_fingerprint,
@@ -317,6 +317,53 @@ class Engine:
                 self.emit("run.reopened", {"reason": f"rerun {node}", "by": by}, actor=by)
             return targets
 
+    def plan_edits(self, node: str) -> dict:
+        """Edits to the plan file that a rerun of ``node`` should pick up, as amendment ops.
+
+        Considered: ``node`` (or its foreach collector), everything downstream of it, the generated
+        environment steps those depend on, and nodes that are new in the file. Returns
+        {"ops": [...], "changed": [...], "added": [...], "touches_finished": bool, "file": path}."""
+        st = self.state()
+        src = st.meta.get("plan_source")
+        res = {"ops": [], "changed": [], "added": [], "touches_finished": False, "file": src}
+        if not src or not Path(src).is_file():
+            return res
+        raw = planmod.load_plan_file(src)
+        # compare like with like: the run's plan has its defaults/clusters rendered at creation
+        raw["defaults"], raw["clusters"] = st.plan.get("defaults") or {}, st.plan.get("clusters") or {}
+        new = {n["id"]: n for n in planmod.normalize(raw).get("nodes") or [] if isinstance(n, dict) and "id" in n}
+        g = st.graph()
+        cur = g.nodes
+        top = cur.get(node, {}).get("expanded_from") or node
+        if top not in cur and top not in new:
+            return res
+        cone = [top] + [d for d in g.descendants(top) if not cur[d].get("expanded_from")] if top in cur else []
+
+        def canon(n: dict) -> dict:
+            c = {k: v for k, v in n.items() if k not in ("needs", "bind", "expanded_from", "title", "description")}
+            kids = {x for x, s in cur.items() if s.get("expanded_from") == n.get("id")}
+            c["needs"] = sorted(d for d in (n.get("needs") or []) if d not in kids)
+            return c
+
+        changed = [nid for nid in cone if nid in new and canon(new[nid]) != canon(cur[nid])]
+        for nid in list(changed):  # a node's new environment version needs its env step updated too
+            for d in new[nid].get("needs") or []:
+                if str(cur.get(d, {}).get("generated", "")).startswith("env:") and d in new \
+                        and canon(new[d]) != canon(cur[d]) and d not in changed:
+                    changed.insert(0, d)
+        added = [nid for nid in new if nid not in cur]
+        status = {k: v.status for k, v in st.nodes.items()}
+        for nid in changed:
+            spec = {k: v for k, v in new[nid].items() if k != "id"}
+            pending = status.get(nid, "pending") == "pending"
+            res["ops"].append({"op": "replace", "node": nid, "with": spec, **({} if pending else {"supersede": True})})
+            if status.get(nid) == "succeeded":
+                res["touches_finished"] = True
+        if added:
+            res["ops"].append({"op": "add", "nodes": [new[nid] for nid in added]})
+        res["changed"], res["added"] = changed, added
+        return res
+
     def signal(self, name: str, data: Any = None, by: str | None = None, token: str | None = None) -> dict:
         by = by or default_actor()
         return self.emit("signal.received", {"name": name, "data": data, "by": by, "token": token}, actor=by)
@@ -373,6 +420,23 @@ class Engine:
                 rep.status = st.status
                 rep.waiting_on = ["plan approval (gate 'plan')"]
                 return rep
+        # --- amendment gates (also on a finished run: an approved change reopens it)
+        if st.status not in ("rejected", "cancelled"):
+            for g in st.gates.values():
+                if g.subject == "amendment" and g.status == "answered" and g.amendment_id:
+                    am = st.amendments.get(g.amendment_id)
+                    if am and am.status == "proposed":
+                        if g.decision == "approve":
+                            try:
+                                self._apply_amendment(am.id, by=g.by)
+                            except planmod.PlanInvalid as exc:
+                                self.emit("plan.amendment.rejected", {"amendment_id": am.id, "by": "flower",
+                                                                      "reason": f"no longer applies: {exc.message}"})
+                        else:
+                            self.emit("plan.amendment.rejected", {"amendment_id": am.id, "by": g.by, "reason": g.text})
+                        rep.changed = True
+        st = self.state()
+
         if st.status in TERMINAL_RUN:
             rep.status = st.status
             return rep
@@ -383,22 +447,6 @@ class Engine:
             rep.status = self.state().status
             rep.changed = True
             return rep
-
-        # --- amendment gates
-        for g in st.gates.values():
-            if g.subject == "amendment" and g.status == "answered" and g.amendment_id:
-                am = st.amendments.get(g.amendment_id)
-                if am and am.status == "proposed":
-                    if g.decision == "approve":
-                        try:
-                            self._apply_amendment(am.id, by=g.by)
-                        except planmod.PlanInvalid as exc:
-                            self.emit("plan.amendment.rejected", {"amendment_id": am.id, "by": "flower",
-                                                                  "reason": f"no longer applies: {exc.message}"})
-                    else:
-                        self.emit("plan.amendment.rejected", {"amendment_id": am.id, "by": g.by, "reason": g.text})
-                    rep.changed = True
-        st = self.state()
 
         # --- node gates answered
         for g in list(st.gates.values()):
@@ -1207,6 +1255,8 @@ class Engine:
             has_job = any(_executor_kind(g.nodes[n]) == "job" for n in rep.running if n in g.nodes)
             has_local = any(_executor_kind(g.nodes[n]) in LOCAL_KINDS for n in rep.running if n in g.nodes)
             rep.next_poll_s = 1.0 if has_local else (15.0 if has_job else 2.0)
+            if followers(self.paths):  # someone is watching a node: answer within half a second
+                rep.next_poll_s = 0.5
             if st.status == "parked":
                 self.emit("run.started", {"reason": "work resumed"})
             return

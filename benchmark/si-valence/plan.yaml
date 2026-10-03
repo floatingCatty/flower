@@ -124,6 +124,7 @@ nodes:
       eig_files:
         qe: "${qe.outputs.local_dir}/eig.json"
         abacus: "${abacus.outputs.local_dir}/eig.json"
+        abacus_lcao: "${abacus-lcao.outputs.local_dir}/eig.json"
         pyscf: "${pyscf.outputs.local_dir}/eig.json"
         dftb: "${dftb.outputs.local_dir}/eig.json"
         tb: "${models.outputs.items.0.local_dir}/eig.json"
@@ -131,3 +132,15 @@ nodes:
         kp: "${models.outputs.items.2.local_dir}/eig.json"
     outputs: {methods: array, results: object, table_md: string}
     files: {table: comparison.md, dso: dso.png, masses: masses.png, strain: strain.png}
+
+  - id: abacus-lcao
+    kind: shell
+    cluster: remote
+    environment: abacus
+    title: ABACUS (PBE, LCAO dojo 6 au orbitals, FR pseudopotential)
+    stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/Si_dojo_soc.upf", "${plan.dir}/Si_dojo_6au.orb"]
+    run: |
+      python3 si_valence.py abacus-lcao Si_dojo_soc.upf Si_dojo_6au.orb ${inputs.mpi_ranks}
+      python3 si_valence.py analyse eig.json > "$FLOWER_OUTPUTS"
+    outputs: {dso_meV: number, gamma1: number, strain_split12_meV: number}
+    files: {eig: eig.json}

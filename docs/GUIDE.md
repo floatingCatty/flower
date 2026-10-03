@@ -41,7 +41,36 @@ flower open me@host:/path/to/project          # on your laptop: remote project's
 
 Every command takes `RUN` as a full id, a unique fragment, or nothing (meaning the latest run).
 
-## 3. Writing good plans
+## 3. Developing a workflow inside its run
+
+You don't need a working plan before you start the run. Start it early and develop each step inside
+the run, so the run's log records the debugging and the finished run is the result. There is nothing
+to redo at the end.
+
+```bash
+flower run plan.yaml --yes            # a rough plan; steps that don't work yet simply fail
+# fix the code (staged scripts are read at run time) and/or the step in plan.yaml, then:
+flower rerun RUN STEP --follow        # applies the plan-file edit, reruns STEP, streams it, exit 0/1
+flower rerun RUN NEWSTEP --follow     # a step that is new in plan.yaml is added the same way
+```
+
+* **Plan-file edits.** `rerun` compares the plan file with the run's plan for STEP, its downstream
+  steps (and the generated environment steps they use), and steps that are new in the file. It
+  proposes the differences as one amendment, with a diff and a record of who made it. History stays
+  immutable: a finished step is superseded, never edited in place.
+* **Approval of those edits.** Set by `policies: {edits: ask | unfinished | all}` in the plan:
+  * `ask` (default): you approve with `flower approve RUN amend-…`, or pass `--yes` when you are the
+    approver;
+  * `unfinished`: edits to steps that have not succeeded, and new steps, apply at once (still
+    recorded); edits to finished results still ask;
+  * `all`: every edit applies at once.
+* **`--follow`.** Watches one step: its events, its live output for local steps, then its result or
+  its error with the log tail. The rest of the run carries on in the background. While someone
+  follows a step, polling drops to 0.5 s.
+* **Measured on a real remote machine.** Adding and debugging an ABACUS step this way took about
+  27 s per attempt. ABACUS itself took 23 s of that; launch and collection about 1 s each.
+
+## 4. Writing good plans
 
 * **Use deterministic nodes for computation and agents for judgement.** Calculations, parsing and
   plotting go in `job`, `shell` and `function` nodes. Choosing parameters, interpreting results and
@@ -61,7 +90,7 @@ Every command takes `RUN` as a full id, a unique fragment, or nothing (meaning t
   `remote` are retried. Add classes such as `exit_nonzero` explicitly if your step is flaky.
 * **Run `flower plan validate` until it is clean.** It lists *every* issue with a hint.
 
-## 4. Agents
+## 5. Agents
 
 ```yaml
 - id: analyse
@@ -86,7 +115,7 @@ Every command takes `RUN` as a full id, a unique fragment, or nothing (meaning t
 * Typical failure classes: `auth` (log the harness in), `quota_retry` (retried after the reset time),
   `config` (bad model or flag), `schema_invalid`, `budget`, `timeout`, `idle_timeout`.
 
-## 5. HPC clusters and remote machines
+## 6. HPC clusters and remote machines
 
 ```yaml
 clusters:
@@ -142,7 +171,7 @@ nodes:
   `${scf.outputs.job_dir}` from a remote node gets a remote path: keep the consumer on the same cluster,
   or fetch the files with `retrieve:` / `files:`.
 
-## 6. When something goes wrong
+## 7. When something goes wrong
 
 | You see | Meaning | Do |
 |---|---|---|
@@ -155,7 +184,7 @@ nodes:
 | `schema_invalid` | the agent never produced the declared JSON | tighten the prompt or relax `outputs` |
 | run `parked` | waiting for a gate, signal or timer | `flower status` shows exactly which, and the command to run |
 
-## 7. Files you can rely on
+## 8. Files you can rely on
 
 ```
 .flower/runs/<run>/

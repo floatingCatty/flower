@@ -221,6 +221,16 @@ or `function` node can run on a cluster or remote machine by adding `cluster: <n
 local module is shipped with it and runs in the remote Python. See the
 [guide](docs/GUIDE.md#a-machine-without-a-batch-system-scheduler-none).
 
+## Developing inside the run
+
+Start the run with a rough plan. Then fix steps where they fail:
+```bash
+flower rerun RUN STEP --follow     # picks up edits to plan.yaml (a recorded amendment), reruns STEP, streams it
+```
+`policies: {edits: unfinished}` lets edits to steps that haven't succeeded apply at once; edits to
+finished results still ask for approval. The run's log records how the workflow was made to work, and
+the finished run is the result. See [the guide](docs/GUIDE.md#3-developing-a-workflow-inside-its-run).
+
 ## Software on remote machines
 
 flower does not decide how software gets installed. An agent explores the target, through the logged
