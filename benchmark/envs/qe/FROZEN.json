@@ -2,28 +2,28 @@
   "by": "human:zhanghao",
   "drafted_setup": false,
   "files": {
-    "activate.sh": "e6490579f0d0f62af889cab27cd10f3c01544c35d6a1d1ac2f204f8baa5d5e8e",
+    "activate.sh": "35cd41fb0ed7e5c04377e8ffbce99091849ca90022916ec20d7a9b46f945d1ee",
     "check.sh": "13a6f99ea1b6a9c7556a4dc9bfb4b54edccaffe25479ef191a24d994e7021f6c",
     "conda-explicit.txt": "4849bf3468848922fe878564ef30f29d131516fd6090442faba243775cd5cf6f",
     "env.yaml": "392700596dce0e8fdbb62f62c7383b419a5ed68483d98e1bfb8ec1ddeb2da87e",
     "setup.sh": "51d24489328210fdbe39e96a94a215df9d2ab53871fcdf241a4fdfa5a6ad57f8"
   },
-  "frozen_at": "2026-10-03T16:13:16.289Z",
-  "hash": "sha256:97b983490bd10e28a0496a12fc5f416f3139ad84acacc7120b165410e967511e",
+  "frozen_at": "2026-10-03T18:51:48.783Z",
+  "hash": "sha256:a263b400fb5370caf57af21cd3dbb5f6fd66f177dc9b31fca37090bb9e101efa",
   "name": "qe",
-  "previous": null,
+  "previous": "sha256:97b983490bd10e28a0496a12fc5f416f3139ad84acacc7120b165410e967511e",
   "replays": [
     {
       "action": "replay",
-      "at": "2026-10-03T16:13:32.064Z",
+      "at": "2026-10-03T18:52:07.902Z",
       "by": "human:zhanghao",
-      "cluster": "remote",
+      "cluster": "here",
       "fresh": true,
       "ok": true,
-      "prefix": "/home/zhanghao/.flower/envs/qe-97b983490bd1-replay-20261003-161318-4c90",
+      "prefix": "/nessa/users/zhanghao/.flower/envs/qe-a263b400fb53-replay-20261003-185149-0b27",
       "rc": 0,
-      "seconds": 13.5,
-      "tail": "ld1.x Si atom: OK\n     Program LD1 v.7.5 starts on  3Oct2026 at 12:13:24 \nenvironment qe installed in /home/zhanghao/.flower/envs/qe-97b983490bd1-replay-20261003-161318-4c90\n"
+      "seconds": 18.8,
+      "tail": "ld1.x Si atom: OK\n     Program LD1 v.7.5 starts on  3Oct2026 at 18:52: 7 \nenvironment qe installed in /nessa/users/zhanghao/.flower/envs/qe-a263b400fb53-replay-20261003-185149-0b27\n"
     }
   ],
   "sessions": [

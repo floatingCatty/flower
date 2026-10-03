@@ -24,6 +24,18 @@
       "rc": 0,
       "seconds": 5.3,
       "tail": "pyscf 2.14.0 numpy 2.4.6 scipy 1.17.1 H2 SCF OK\nenvironment pyscf installed in /home/zhanghao/.flower/envs/pyscf-2ac3790213a2-replay-20261003-161337-5f5a\n"
+    },
+    {
+      "action": "replay",
+      "at": "2026-10-03T19:16:59.324Z",
+      "by": "human:zhanghao",
+      "cluster": "here",
+      "fresh": false,
+      "ok": true,
+      "prefix": "/nessa/users/zhanghao/.flower/envs/pyscf-2ac3790213a2",
+      "rc": 0,
+      "seconds": 130.7,
+      "tail": "pyscf 2.14.0 numpy 2.4.6 scipy 1.17.1 H2 SCF OK\nenvironment pyscf installed in /nessa/users/zhanghao/.flower/envs/pyscf-2ac3790213a2\n"
     }
   ],
   "sessions": [

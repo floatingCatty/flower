@@ -1,0 +1,126 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way.
+
+flower: 1
+id: si-nte
+title: "Reproduce the ab initio volume dependence of Si phonons and its negative thermal expansion (Rignanese, Michenaud, Gonze, PRB 53, 4488, 1996)"
+description: |
+  Reproduce the ab initio volume dependence of Si phonons and its negative thermal expansion (Rignanese, Michenaud, Gonze, PRB 53, 4488, 1996)
+
+policies:
+  edits: unfinished
+
+clusters:
+  # this machine, as a target with environments (QE from the frozen envs/qe recipe), no batch system
+  here: {transport: local, scheduler: none, remote_root: "${env.HOME}/flower-local-runs", max_jobs: 6, min_poll: 2s}
+
+nodes:
+  - id: paper
+    kind: shell
+    title: 'The paper: arXiv source + PDF (sha256 recorded), text extracted'
+    outputs:
+      sha256_pdf: string
+      n_pages: integer
+    files:
+      pdf: paper.pdf
+      text: paper.txt
+    run: 'curl -fsSL -A "Mozilla/5.0" -o paper.pdf https://arxiv.org/pdf/mtrl-th/9509002 && curl -fsSL -A "Mozilla/5.0" -o src.tar https://arxiv.org/e-print/mtrl-th/9509002 && mkdir -p src && (tar xf src.tar -C src 2>/dev/null || (cp src.tar src/main.tex.gz && gunzip -f src/main.tex.gz)) ; pdftotext -layout paper.pdf paper.txt && printf "{\"sha256_pdf\": \"%s\", \"n_pages\": %s}" "$(sha256sum paper.pdf | cut -c1-64)" "$(pdfinfo paper.pdf | awk "/Pages/{print \$2}")" > "$FLOWER_OUTPUTS"; ls src'
+
+  - id: pseudo
+    kind: shell
+    title: LDA norm-conserving Si pseudopotential (QE library, Si.pz-vbc.UPF), sha256 recorded
+    outputs:
+      sha256: string
+    files:
+      upf: Si.pz-vbc.UPF
+    run: 'curl -fsSL -A "Mozilla/5.0" -o Si.pz-vbc.UPF https://pseudopotentials.quantum-espresso.org/upf_files/Si.pz-vbc.UPF && grep -q "<PP_INFO>\|<UPF" Si.pz-vbc.UPF && printf "{\"sha256\": \"%s\"}" "$(sha256sum Si.pz-vbc.UPF | cut -c1-64)" > "$FLOWER_OUTPUTS"'
+
+  - id: eos
+    kind: shell
+    title: 'Static energy E(a): LDA, 10 Ha, 4x4x4 shifted k (the paper''s settings)'
+    cluster: here
+    environment: qe
+    stage_in:
+    - ${plan.dir}/si_nte.py
+    - ${pseudo.files.upf}
+    foreach:
+    - 9.9
+    - 9.98
+    - 10.06
+    - 10.14
+    - 10.22
+    - 10.3
+    - 10.38
+    outputs:
+      a: number
+      energy_ry: number
+      pressure_kbar: number
+    files:
+      result: result.json
+    run: python3 si_nte.py scf ${item} 20 4 4 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: phonons
+    kind: shell
+    title: DFPT phonons (6x6x6 q) -> IFCs -> TA(X), TA(L), phonon DOS at a = ${item} bohr
+    cluster: here
+    environment: qe
+    stage_in:
+    - ${plan.dir}/si_nte.py
+    - ${pseudo.files.upf}
+    timeout:
+      total: 3h
+    foreach:
+    - 10.0
+    - 10.09
+    - 10.18
+    - 10.26
+    - 10.35
+    outputs:
+      a: number
+      TA_X_cm: number
+      TA_L_cm: number
+    files:
+      result: result.json
+      phdos: phdos.dat
+    run: python3 si_nte.py phonon ${item} 20 4 6 8 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: qha
+    kind: shell
+    title: Quasi-harmonic thermodynamics + every claim of the paper vs this run
+    outputs:
+      a0_static: number
+      B0_Mbar: number
+      reproduced: integer
+      differs: integer
+    files:
+      result: qha.json
+      report: report.md
+      figure: qha.png
+    inputs:
+      eos: ${eos.outputs.items}
+      phonons: ${phonons.outputs.items}
+      ecut_study: ${ecut-study.outputs.items}
+    run: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python ${plan.dir}/qha.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: ecut-study
+    kind: shell
+    title: 'Bulk modulus vs plane-wave cutoff (${item} Ry): is 10 Ha converged for this pseudopotential?'
+    cluster: here
+    environment: qe
+    stage_in:
+    - ${plan.dir}/si_nte.py
+    - ${pseudo.files.upf}
+    foreach:
+    - 20
+    - 30
+    - 40
+    - 60
+    outputs:
+      ecut_ry: number
+      e_min_ry: number
+    files:
+      eos: eos.json
+    run: python3 si_nte.py eos ${item} 4 4 9.90,9.98,10.06,10.14,10.22,10.30,10.38 | tail -n 1 > "$FLOWER_OUTPUTS"

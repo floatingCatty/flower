@@ -1,0 +1,179 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way.
+
+flower: 1
+id: water-diffusion
+title: "Reproduce the size-dependent self-diffusion and the shear viscosity of rigid water models from MD (Tazi et al., J. Phys.: Condens. Matter 24, 284117 (2012), arXiv:1204.2501)"
+description: |
+  Reproduce the size-dependent self-diffusion and the shear viscosity of rigid water models from MD (Tazi et al., J. Phys.: Condens. Matter 24, 284117 (2012), arXiv:1204.2501)
+
+policies:
+  edits: unfinished
+
+inputs:
+  host: {type: string, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+
+clusters:
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           remote_root: ~/flower-runs, max_jobs: 3, min_poll: 10s}
+
+nodes:
+  - id: paper
+    kind: shell
+    title: 'The paper: arXiv source + PDF (sha256)'
+    outputs:
+      sha256_pdf: string
+    files:
+      pdf: paper.pdf
+      text: paper.txt
+    run: 'curl -fsSL -A "Mozilla/5.0" -o paper.pdf https://arxiv.org/pdf/1204.2501 && curl -fsSL -A "Mozilla/5.0" -o src.tar https://arxiv.org/e-print/1204.2501 && mkdir -p src && (tar xzf src.tar -C src 2>/dev/null || tar xf src.tar -C src 2>/dev/null || (cp src.tar src/main.tex.gz; gunzip -f src/main.tex.gz)); pdftotext -layout paper.pdf paper.txt && printf "{\"sha256_pdf\": \"%s\"}" "$(sha256sum paper.pdf | cut -c1-64)" > "$FLOWER_OUTPUTS"'
+
+  - id: speed
+    kind: shell
+    title: 'Throughput probe: ${item.model} N=${item.N}, 50 ps'
+    cluster: remote
+    environment: openmm
+    stage_in:
+    - ${plan.dir}/md_water.py
+    foreach:
+    - model: spce
+      N: 512
+    - model: tip4p2005
+      N: 512
+    outputs:
+      D_pbc: number
+      seconds: number
+    files:
+      result: result.json
+    run: python3 md_water.py ${item.model} ${item.N} 1 0.05 2 8 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: md
+    kind: shell
+    title: MD ${item.model} N=${item.N} seed ${item.seed}, ${item.ns} ns
+    cluster: remote
+    environment: openmm
+    stage_in:
+    - ${plan.dir}/md_water.py
+    timeout:
+      total: 8h
+    foreach:
+    - model: spce
+      N: 128
+      seed: 1
+      ns: 2
+    - model: spce
+      N: 128
+      seed: 2
+      ns: 2
+    - model: spce
+      N: 128
+      seed: 3
+      ns: 2
+    - model: spce
+      N: 128
+      seed: 4
+      ns: 2
+    - model: spce
+      N: 256
+      seed: 1
+      ns: 2
+    - model: spce
+      N: 256
+      seed: 2
+      ns: 2
+    - model: spce
+      N: 256
+      seed: 3
+      ns: 2
+    - model: spce
+      N: 512
+      seed: 1
+      ns: 2
+    - model: spce
+      N: 512
+      seed: 2
+      ns: 2
+    - model: spce
+      N: 1024
+      seed: 1
+      ns: 2
+    - model: spce
+      N: 2048
+      seed: 1
+      ns: 2
+    - model: tip4p2005
+      N: 128
+      seed: 1
+      ns: 2
+    - model: tip4p2005
+      N: 128
+      seed: 2
+      ns: 2
+    - model: tip4p2005
+      N: 128
+      seed: 3
+      ns: 2
+    - model: tip4p2005
+      N: 128
+      seed: 4
+      ns: 2
+    - model: tip4p2005
+      N: 256
+      seed: 1
+      ns: 2
+    - model: tip4p2005
+      N: 256
+      seed: 2
+      ns: 2
+    - model: tip4p2005
+      N: 256
+      seed: 3
+      ns: 2
+    - model: tip4p2005
+      N: 512
+      seed: 1
+      ns: 2
+    - model: tip4p2005
+      N: 512
+      seed: 2
+      ns: 2
+    - model: tip4p2005
+      N: 1024
+      seed: 1
+      ns: 2
+    - model: tip4p2005
+      N: 2048
+      seed: 1
+      ns: 2
+    outputs:
+      D_pbc: number
+      L_nm: number
+      resumed: boolean
+    files:
+      result: result.json
+      msd: msd.npy
+    retry:
+      max_attempts: 3
+    on_failure: continue
+    run: python3 md_water.py ${item.model} ${item.N} ${item.seed} ${item.ns} 2 8 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: yh
+    kind: shell
+    title: 'Yeh-Hummer extrapolation: D0 and eta per model vs the paper''s Table 2'
+    needs:
+    - md
+    outputs:
+      n_runs: integer
+      n_reproduced: integer
+    files:
+      report: report.md
+      result: yh.json
+      figure: yh.png
+    trigger: all_done
+    inputs:
+      md: ${md.outputs.items}
+    run: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python ${plan.dir}/yh_fit.py | tail -n 1 > "$FLOWER_OUTPUTS"

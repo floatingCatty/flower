@@ -1,0 +1,32 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "0dc169bf0060c8250ed9dafff769d8edd072e5fd2a3701588bf7ba1fa5e0c662",
+    "check.sh": "6cca03a48324ebf751d3eb69b5224a51108c797759b37325a4fea32ed9ddcedb",
+    "conda-explicit.txt": "88b0da499e17685767a33c9eed9cd2226588b5b9ec363368099680c5fcaa511d",
+    "env.yaml": "f0b8c3cf8fe48b9dabe0e594330a9ca14c3b6df3139834c35d4502d9abe0a670",
+    "setup.sh": "0679784a287729535370f172afc67ee4c23e93f665444433966edb57adc094d9"
+  },
+  "frozen_at": "2026-10-03T19:26:44.661Z",
+  "hash": "sha256:bd79afa62e74b87520bc4abda63078002e48063ca4011f12eca107cd72d212d0",
+  "name": "openmm",
+  "previous": null,
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-03T19:26:54.951Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": false,
+      "prefix": "/home/zhanghao/.flower/envs/openmm-bd79afa62e74-replay-20261003-192646-66d0",
+      "rc": 4,
+      "seconds": 8.2,
+      "tail": "check.sh failed after setup.sh; last lines:\nTraceback (most recent call last):\n  File \"<stdin>\", line 12, in <module>\n  File \"/home/zhanghao/.flower/envs/openmm-bd79afa62e74-replay-20261003-192646-66d0/lib/python3.11/site-packages/openmm/app/simulation.py\", line 149, in step\n    self._simulate(endStep=self.currentStep+steps)\n  File \"/home/zhanghao/.flower/envs/openmm-bd79afa62e74-replay-20261003-192646-66d0/lib/python3.11/site-packages/openmm/app/simulation.py\", line 228, in _simulate\n    self.integrator.step(10) # Only take 10 steps at a time, to give Python more chances to respond to a control-c.\n    ^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/home/zhanghao/.flower/envs/openmm-bd79afa62e74-replay-20261003-192646-66d0/lib/python3.11/site-packages/openmm/openmm.py\", line 14056, in step\n    return _openmm.NoseHooverIntegrator_step(self, steps)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\nopenmm.OpenMMException: Particle coordinate is NaN.  For more information, see https://github.com/openmm/openmm/wiki/Frequently-Asked-Questions#nan\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-03.jsonl"
+  ]
+}

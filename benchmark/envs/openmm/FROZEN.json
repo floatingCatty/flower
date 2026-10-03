@@ -1,0 +1,32 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "0dc169bf0060c8250ed9dafff769d8edd072e5fd2a3701588bf7ba1fa5e0c662",
+    "check.sh": "116ee22f33576beaea8c54e6842c5cb81db0be7e5ae9dac24bad72d976abf259",
+    "conda-explicit.txt": "88b0da499e17685767a33c9eed9cd2226588b5b9ec363368099680c5fcaa511d",
+    "env.yaml": "f0b8c3cf8fe48b9dabe0e594330a9ca14c3b6df3139834c35d4502d9abe0a670",
+    "setup.sh": "0679784a287729535370f172afc67ee4c23e93f665444433966edb57adc094d9"
+  },
+  "frozen_at": "2026-10-03T19:27:22.428Z",
+  "hash": "sha256:b87a00c467d8be7bd89f5392d383edec96f344de37a89b74ce2a2c8b612834f3",
+  "name": "openmm",
+  "previous": "sha256:bd79afa62e74b87520bc4abda63078002e48063ca4011f12eca107cd72d212d0",
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-03T19:27:44.563Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/home/zhanghao/.flower/envs/openmm-b87a00c467d8-replay-20261003-192724-0f8c",
+      "rc": 0,
+      "seconds": 19.9,
+      "tail": "openmm 8.6.1 CPU platform: 50 steps of 895 SPC/E waters OK\nenvironment openmm installed in /home/zhanghao/.flower/envs/openmm-b87a00c467d8-replay-20261003-192724-0f8c\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-03.jsonl"
+  ]
+}

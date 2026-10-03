@@ -1,0 +1,234 @@
+flower: 1
+id: ttg-twistons
+title: "Reproduce the theory of Turkel et al., Science 376, 193 (2022): magic-angle twisted trilayer graphene"
+description: |
+  Reproduction of the theoretical calculations in "Orderly disorder in magic-angle twisted trilayer graphene"
+  (doi:10.1126/science.abk1895), against the paper's figures and the authors' released code and data
+  (Harvard Dataverse doi:10.7910/DVN/QWIFR1, CC0):
+  * single-particle continuum model of mirror-symmetric TTG (SP1 / SP2), our own implementation, checked
+    against the authors' script: VHS separation and widths at 1.55 deg (Fig. 2E), displacement field
+    (fig. S14B), twist + heterostrain (Fig. 3F), bands and the flat-band resonance (Fig. 4D/E);
+  * the experimental numbers they are compared with, re-derived from the raw spectra.
+  Heavier parts (Hartree-Fock, structural relaxation, corrugation) are added as the run develops.
+
+inputs:
+  host: {type: string, required: true, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, default: [], description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+  remote_root: {type: string, default: ~/flower-runs}
+  dataset_version: {type: string, default: "1.1"}
+  analysis_python: {type: string, default: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python,
+                    description: local Python with numpy, scipy, matplotlib}
+
+policies:
+  edits: unfinished
+
+defaults:
+  timeout: {total: 2h, idle: 1h}
+  retry: {max_attempts: 2, on: [lost, remote]}
+
+clusters:
+  remote:
+    transport: ssh
+    host: ${inputs.host}
+    ssh_options: ${inputs.ssh_options}
+    scheduler: none
+    remote_root: ${inputs.remote_root}
+    max_jobs: 4
+    min_poll: 3s
+    env: {OMP_NUM_THREADS: "8"}
+
+nodes:
+  # ---------------------------------------------------------------- inputs: the authors' code and data
+  - id: fetch
+    kind: shell
+    title: Authors' code and data from Harvard Dataverse (pinned version, md5-checked)
+    run: |
+      ${inputs.analysis_python} ${plan.dir}/fetch_dataverse.py dv ${inputs.dataset_version} > "$FLOWER_OUTPUTS"
+    outputs: {version: string, license: string, n_files: integer}
+    files: {manifest: dv/MANIFEST.json}
+
+  - id: expt
+    kind: shell
+    title: Experimental VHS separation and width at CNP (two-Lorentzian fit of the raw Fig. 2B spectrum)
+    env: {PYTHONPATH: "${plan.dir}"}
+    run: ${inputs.analysis_python} ${plan.dir}/expt.py ${fetch.dir}/dv | tail -n 1 > "$FLOWER_OUTPUTS"
+    outputs: {dir: string, cnp_sep_meV: number, cnp_fwhm_meV: number}
+    files: {result: expt.json, spectra: expt.npz}
+
+  # ---------------------------------------------------------------- single-particle continuum model
+  - id: check-sp
+    kind: shell
+    title: Our continuum model vs the authors' SP_continuum script (eigenvalues at 4 k, 4 settings)
+    env: {PYTHONPATH: "${plan.dir}", OMP_NUM_THREADS: "4"}
+    run: |
+      ${inputs.analysis_python} ${plan.dir}/check_sp.py ${fetch.dir}/dv/SP_continuum.txt | tail -n 1 > "$FLOWER_OUTPUTS"
+      ${inputs.analysis_python} -c "import json,sys; sys.exit(0 if json.load(open('check_sp.json'))['agree'] else 1)"
+    outputs: {max_diff_meV: number, agree: boolean}
+    files: {result: check_sp.json}
+
+  - id: sp
+    kind: shell
+    needs: [check-sp]
+    title: "Continuum model case: ${item.label}"
+    foreach:
+      - {label: SP1 1.55, params: SP1, theta: 1.55, nk: 36}
+      - {label: SP2 1.55, params: SP2, theta: 1.55, nk: 36}
+      - {label: SP2 1.55 D=10meV, params: SP2, theta: 1.55, D: 0.010, nk: 36}
+      - {label: SP2 1.55 D=20meV, params: SP2, theta: 1.55, D: 0.020, nk: 36}
+      - {label: SP2 1.55 D=40meV, params: SP2, theta: 1.55, D: 0.040, nk: 36}
+      - {label: SP2 1.45, params: SP2, theta: 1.45, nk: 36, band_path: true,
+         fillings: [-4, -3.6, -3.2, -2.8, -2.4, -2, -1.6, -1.2, -0.8, -0.4, 0, 0.4, 0.8, 1.2, 1.6, 2, 2.4, 2.8, 3.2, 3.6, 4]}
+      - {label: SP2 1.8, params: SP2, theta: 1.8, nk: 36, band_path: true,
+         fillings: [-4, -3.6, -3.2, -2.8, -2.4, -2, -1.6, -1.2, -0.8, -0.4, 0, 0.4, 0.8, 1.2, 1.6, 2, 2.4, 2.8, 3.2, 3.6, 4]}
+      - {label: SP2 1.6 strain 0.55%, params: SP2, theta: 1.6, eps: 0.0055, nk: 36}
+      - {label: SP2 1.9, params: SP2, theta: 1.9, nk: 36}
+    env: {PYTHONPATH: "${plan.dir}", OMP_NUM_THREADS: "8"}
+    run: ${inputs.analysis_python} ${plan.dir}/ttg.py '${item}' | tail -n 1 > "$FLOWER_OUTPUTS"
+    outputs: {dir: string, vhs_sep_meV: number, fwhm_mean_meV: number, flat_bandwidth_meV: number}
+    files: {result: result.json, spectrum: spectrum.npz, eigs: eigs.npz, bands: bands.npz}
+
+  # ---------------------------------------------------------------- interactions: projected Hartree-Fock
+  - id: hf
+    kind: shell
+    needs: [check-sp]
+    title: "Hartree-Fock at charge neutrality (theta 1.53, eps 10, gate 40 nm), our implementation"
+    env: {PYTHONPATH: "${plan.dir}", OMP_NUM_THREADS: "16"}
+    run: |
+      ${inputs.analysis_python} ${plan.dir}/ttg_hf.py '{"nu": 0, "nk": 12, "nk_fine": 36}' | tail -n 1 > "$FLOWER_OUTPUTS"
+    outputs: {dir: string, converged: boolean, hf_sep_meV: number, hf_fwhm_meV: number, sp_sep_meV: number, sp_fwhm_meV: number}
+    files: {result: hf.json, spectra: hf.npz}
+
+  - id: hf-probe
+    kind: shell
+    needs: [check-sp]
+    title: "HF diagnosis: ${item.label}"
+    foreach:
+      - {label: Hartree only, nu: 0, nk: 9, nk_fine: 18, fock: false}
+      - {label: Fock only, nu: 0, nk: 9, nk_fine: 18, hartree: false}
+      - {label: both (paper scheme), nu: 0, nk: 9, nk_fine: 18}
+      - {label: both minus CNP reference, nu: 0, nk: 9, nk_fine: 18, subtract: cnp}
+      - {label: active bands by energy index (as the authors), nu: 0, nk: 9, nk_fine: 18, active: index}
+      - {label: Hartree on the first G shell only (as the authors), nu: 0, nk: 9, nk_fine: 18, hartree_shells: 1.0}
+      - {label: 13 plain iterations (as the authors), nu: 0, nk: 9, nk_fine: 18, mix: 1.0, maxit: 13}
+      - {label: "all three", nu: 0, nk: 9, nk_fine: 18, active: index, hartree_shells: 1.0, mix: 1.0, maxit: 13}
+      - {label: paper scheme without the C2zT constraint, nu: 0, nk: 9, nk_fine: 18, c2zt: false}
+    env: {PYTHONPATH: "${plan.dir}", OMP_NUM_THREADS: "8"}
+    run: |
+      ${inputs.analysis_python} ${plan.dir}/ttg_hf.py '${item}' | tail -n 1 > "$FLOWER_OUTPUTS"
+    outputs: {dir: string, converged: boolean, hf_sep_meV: number, hf_fwhm_meV: number}
+    files: {result: hf.json}
+
+  - id: authors-hf
+    kind: shell
+    title: Authors' own Hartree-Fock code (Dataverse), paths patched only
+    needs:
+    - fetch
+    cluster: remote
+    environment: moire-py
+    stage_in:
+    - ${plan.dir}/ttg.py
+    - ${plan.dir}/authors_hf.py
+    - ${fetch.dir}/dv/save_vectors_TTG_repo.py
+    - ${fetch.dir}/dv/selfconsistent_TTG_eps10_repo.py
+    - ${fetch.dir}/dv/DOS_compare.py
+    env:
+      OMP_NUM_THREADS: '8'
+      NUMBA_NUM_THREADS: '8'
+    timeout:
+      total: 8h
+    outputs:
+      sep_meV: number
+      fwhm_meV: number
+    files:
+      result: authors_hf.json
+      ldos: authors_hf.npz
+    run: python3 authors_hf.py 96 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  # ---------------------------------------------------------------- structural relaxation (authors' Julia code)
+  - id: relax
+    kind: shell
+    cluster: remote
+    environment: julia
+    needs: [fetch]
+    title: "Relaxation theta_TM=${item.tm}, theta_BM=${item.bm}, N=${item.N}, GSFE x${item.amp}"
+    foreach:   # [0] Fig. 3G/H at the paper's resolution; [1]-[3] fig. S10 delta-theta scan; [4] physical GSFE; [5] N check
+      - {tm: 1.5, bm: 1.69, N: 54, amp: 10, scale: 12, npix: 600}
+      - {tm: 1.5, bm: 1.6, N: 36, amp: 10, scale: 10, npix: 400}
+      - {tm: 1.5, bm: 1.8, N: 36, amp: 10, scale: 10, npix: 400}
+      - {tm: 1.5, bm: 2.0, N: 36, amp: 10, scale: 10, npix: 400}
+      - {tm: 1.5, bm: 1.69, N: 36, amp: 1, scale: 10, npix: 400}
+      - {tm: 1.5, bm: 1.69, N: 36, amp: 10, scale: 10, npix: 400}
+    env: {JULIA_NUM_THREADS: "8", OMP_NUM_THREADS: "1"}
+    stage_in: ["${plan.dir}/relax.jl", "${fetch.dir}/dv/Trilayers.jl", "${fetch.dir}/dv/RealSpace.jl",
+               "${fetch.dir}/dv/GrapheneParameters.jl"]
+    timeout: {total: 12h, idle: 3h}
+    run: |
+      julia -t 8 relax.jl ${item.tm} ${item.bm} ${item.N} ${item.amp} ${item.scale} ${item.npix} 4 > relax.log 2>&1 || { tail -n 40 relax.log >&2; exit 1; }
+      python3 -c "import json; m=json.load(open('relax_meta.json')); print(json.dumps({k: m[k] for k in ('energy_min','iterations','converged','seconds_opt')}))" > "$FLOWER_OUTPUTS" 2>/dev/null \
+        || julia -e 'm = read("relax_meta.json", String); print(m)' > "$FLOWER_OUTPUTS"
+    outputs: {iterations: integer, converged: boolean, seconds_opt: number}
+    files: {meta: relax_meta.json, log: relax.log}
+    retrieve: ["*.f32"]
+
+  - id: relax-analysis
+    kind: shell
+    title: "Local twist angles of a relaxed structure (AAA sites, Fig. 3G/H, fig. S10)"
+    foreach: "${relax.outputs.items}"
+    env: {PYTHONPATH: "${plan.dir}"}
+    run: |
+      cp ${item.local_dir}/relax_meta.json ${item.local_dir}/*.f32 .
+      ${inputs.analysis_python} ${plan.dir}/relax_analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"
+    outputs: {dir: string, n_aaa: integer, ata_fraction: number, n_populations: integer, theta_I: number}
+    files: {result: relax.json, maps: relax_maps.npz, figure: relax.png}
+
+  - id: corrugation
+    kind: shell
+    title: 'Fig. 1B: AtA vs AtB corrugation (hexagonal vs honeycomb moire)'
+    env:
+      PYTHONPATH: ${plan.dir}
+    outputs:
+      dir: string
+      AtA_hexagonal: boolean
+      AtB_honeycomb: boolean
+    files:
+      result: corrugation.json
+      maps: corrugation.npz
+    run: ${inputs.analysis_python} ${plan.dir}/corrugation.py 3 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  # ---------------------------------------------------------------- the comparison with the paper
+  - id: report-preview
+    kind: shell
+    title: "Claims vs reproduction (the quick steps only; the full report waits for relaxation and the authors' HF)"
+    inputs: {sp: "${sp.outputs.items}", expt: "${expt.outputs}", hf: "${hf.outputs}", corrugation: "${corrugation.outputs}"}
+    env: {PYTHONPATH: "${plan.dir}"}
+    run: ${inputs.analysis_python} ${plan.dir}/report.py | tail -n 1 > "$FLOWER_OUTPUTS"
+    outputs: {n_claims: integer}
+    files: {report: report.md, claims: claims.json, fig_2e: fig_2e.png, fig_3f: fig_3f.png, fig_s14b: fig_s14b.png,
+            fig_4: fig_4_resonance.png}
+
+  - id: report
+    kind: shell
+    title: "Reproduction report: every theoretical claim of the paper vs this run"
+    inputs: {sp: "${sp.outputs.items}", expt: "${expt.outputs}", hf: "${hf.outputs}", corrugation: "${corrugation.outputs}",
+             relax: "${relax-analysis.outputs.items}", authors_hf: "${authors-hf.outputs}"}
+    env: {PYTHONPATH: "${plan.dir}"}
+    run: ${inputs.analysis_python} ${plan.dir}/report.py | tail -n 1 > "$FLOWER_OUTPUTS"
+    outputs: {n_claims: integer}
+    files: {report: report.md, claims: claims.json, fig_2e: fig_2e.png, fig_3f: fig_3f.png, fig_s14b: fig_s14b.png,
+            fig_4: fig_4_resonance.png, fig_s10: fig_s10.png}
+
+  - id: authors-hf-inspect
+    kind: shell
+    title: 'Inside the authors'' HF run: their bands, self-energy, Hamiltonian'
+    needs:
+    - authors-hf
+    cluster: remote
+    environment: moire-py
+    stage_in:
+    - ${plan.dir}/authors_hf_inspect.py
+    outputs:
+      n_k: integer
+      self_energy_trace_mean_meV: number
+    files:
+      result: inspect.json
+    run: python3 authors_hf_inspect.py ${authors-hf.outputs.job_dir} 96 | tail -n 1 > "$FLOWER_OUTPUTS"

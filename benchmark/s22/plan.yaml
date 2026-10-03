@@ -1,0 +1,252 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way.
+
+flower: 1
+id: s22
+title: "Reproduce the S22 benchmark of noncovalent interaction energies, CCSD(T)/CBS (Jurecka, Sponer, Cerny, Hobza, PCCP 8, 1985, 2006; doi:10.1039/B600027D)"
+description: |
+  Reproduce the S22 benchmark of noncovalent interaction energies, CCSD(T)/CBS (Jurecka, Sponer, Cerny, Hobza, PCCP 8, 1985, 2006; doi:10.1039/B600027D)
+
+policies:
+  edits: unfinished
+
+clusters:
+  # this machine as a target (96 cores, 125 GB), environments from frozen recipes, no batch system
+  here: {transport: local, scheduler: none, remote_root: "${env.HOME}/flower-local-runs", max_jobs: 6, min_poll: 3s}
+  # the same machine, one job at a time, for the largest MP2/aug-cc-pVTZ calculations (~60 GB each)
+  here-big: {transport: local, scheduler: none, remote_root: "${env.HOME}/flower-local-runs", max_jobs: 1, min_poll: 5s}
+
+nodes:
+  - id: source
+    kind: shell
+    title: 'S22 geometries + reference energies: psi4 database file at tag v1.9.1 (BSD-3), sha256 recorded'
+    outputs:
+      sha256: string
+    files:
+      s22: S22.py
+    run: 'curl -fsSL -o S22.py https://raw.githubusercontent.com/psi4/psi4/v1.9.1/psi4/share/psi4/databases/S22.py && printf "{\"sha256\": \"%s\"}" "$(sha256sum S22.py | cut -c1-64)" > "$FLOWER_OUTPUTS"'
+
+  - id: data
+    kind: shell
+    title: Parse the 22 dimers (monomer split) and reference energies into s22.json
+    outputs:
+      n: integer
+      with_ref: integer
+    files:
+      s22: s22.json
+    run: python3 ${plan.dir}/s22.py data ${source.files.s22} | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: calc
+    kind: shell
+    tmpdir: job        # PySCF writes GB-sized integral files; /tmp on this shared host is too small
+    title: Interaction energy of complex ${item.i} at ${item.level} (counterpoise-corrected)
+    cluster: here
+    environment: pyscf
+    stage_in:
+    - ${plan.dir}/s22.py
+    - ${data.files.s22}
+    env:
+      OMP_NUM_THREADS: '16'
+    timeout:
+      total: 6h
+    foreach:
+    - i: 1
+      level: mp2-adz
+    - i: 2
+      level: mp2-adz
+    - i: 3
+      level: mp2-adz
+    - i: 4
+      level: mp2-adz
+    - i: 5
+      level: mp2-adz
+    - i: 6
+      level: mp2-adz
+    - i: 7
+      level: mp2-adz
+    - i: 8
+      level: mp2-adz
+    - i: 9
+      level: mp2-adz
+    - i: 10
+      level: mp2-adz
+    - i: 11
+      level: mp2-adz
+    - i: 12
+      level: mp2-adz
+    - i: 13
+      level: mp2-adz
+    - i: 14
+      level: mp2-adz
+    - i: 15
+      level: mp2-adz
+    - i: 16
+      level: mp2-adz
+    - i: 17
+      level: mp2-adz
+    - i: 18
+      level: mp2-adz
+    - i: 19
+      level: mp2-adz
+    - i: 20
+      level: mp2-adz
+    - i: 21
+      level: mp2-adz
+    - i: 22
+      level: mp2-adz
+    - i: 1
+      level: mp2-atz
+    - i: 2
+      level: mp2-atz
+    - i: 3
+      level: mp2-atz
+    - i: 4
+      level: mp2-atz
+    - i: 5
+      level: mp2-atz
+    - i: 6
+      level: mp2-atz
+    - i: 7
+      level: mp2-atz
+    - i: 8
+      level: mp2-atz
+    - i: 9
+      level: mp2-atz
+    - i: 10
+      level: mp2-atz
+    - i: 11
+      level: mp2-atz
+    - i: 12
+      level: mp2-atz
+    - i: 13
+      level: mp2-atz
+    - i: 14
+      level: mp2-atz
+    - i: 15
+      level: mp2-atz
+    - i: 16
+      level: mp2-atz
+    - i: 17
+      level: mp2-atz
+    - i: 18
+      level: mp2-atz
+    - i: 19
+      level: mp2-atz
+    - i: 20
+      level: mp2-atz
+    - i: 21
+      level: mp2-atz
+    - i: 22
+      level: mp2-atz
+    - i: 1
+      level: ccsdt-dz
+    - i: 2
+      level: ccsdt-dz
+    - i: 3
+      level: ccsdt-dz
+    - i: 4
+      level: ccsdt-dz
+    - i: 5
+      level: ccsdt-dz
+    - i: 6
+      level: ccsdt-dz
+    - i: 7
+      level: ccsdt-dz
+    - i: 8
+      level: ccsdt-dz
+    - i: 9
+      level: ccsdt-dz
+    - i: 10
+      level: ccsdt-dz
+    - i: 11
+      level: ccsdt-dz
+    - i: 12
+      level: ccsdt-dz
+    - i: 13
+      level: ccsdt-dz
+    - i: 14
+      level: ccsdt-dz
+    - i: 15
+      level: ccsdt-dz
+    - i: 16
+      level: ccsdt-dz
+    - i: 17
+      level: ccsdt-dz
+    - i: 18
+      level: ccsdt-dz
+    - i: 19
+      level: ccsdt-dz
+    - i: 20
+      level: ccsdt-dz
+    - i: 21
+      level: ccsdt-dz
+    - i: 22
+      level: ccsdt-dz
+    outputs:
+      hf_int_kcal: number
+      seconds: number
+    files:
+      result: result.json
+    retry:
+      max_attempts: 2
+    on_failure: continue
+    run: python3 s22.py calc s22.json ${item.i} ${item.level} 14000 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: report
+    kind: shell
+    title: CCSD(T)/CBS per complex vs the paper (and S22B); partial results are reported
+    needs:
+    - calc
+    outputs:
+      n_done: integer
+      n_reproduced: integer
+    files:
+      report: s22_report.md
+      result: s22_report.json
+      figure: s22.png
+    trigger: all_done
+    inputs:
+      calc: ${calc.outputs.items}
+      calc_big: ${calc-big.outputs.items}
+      data: ${data.files.s22}
+    run: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python ${plan.dir}/s22_report.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: calc-big
+    kind: shell
+    title: Complex ${item.i} at ${item.level} with 60 GB (MemoryError at 14 GB)
+    needs:
+    - data
+    cluster: here-big
+    environment: pyscf
+    stage_in:
+    - ${plan.dir}/s22.py
+    - ${data.files.s22}
+    env:
+      OMP_NUM_THREADS: '24'
+    timeout:
+      total: 10h
+    foreach:
+    - i: 5
+      level: mp2-atz
+    - i: 6
+      level: mp2-atz
+    - i: 13
+      level: mp2-atz
+    - i: 14
+      level: mp2-atz
+    - i: 21
+      level: mp2-atz
+    - i: 22
+      level: mp2-atz
+    outputs:
+      hf_int_kcal: number
+      seconds: number
+    files:
+      result: result.json
+    retry:
+      max_attempts: 2
+    on_failure: continue
+    run: python3 s22.py calc s22.json ${item.i} ${item.level} 60000 | tail -n 1 > "$FLOWER_OUTPUTS"

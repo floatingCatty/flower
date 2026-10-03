@@ -1,0 +1,33 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "Manifest.toml": "d80d0986f3f56f3e62eb31330e1b3017e6155abaa2ca1cf6b448b48647e89807",
+    "Project.toml": "47aac2ac291a4aeea462e93c53dcc210b6ae15e28081ac2ecaf2bbcc53542251",
+    "activate.sh": "ed18506a983d06d4e2b18b8b971ea317a97fb5cc54cccbc429054e16cbb48aa2",
+    "check.sh": "4e88d1b034581864f2d2bd52ee0efbbc9762a0171dfebbe9aacf670988dd2526",
+    "env.yaml": "977c5ef2ebe288da0c3d357fa1e02f0c5aad53f7809420280a3f1ac093304d22",
+    "setup.sh": "c379195ba9dde953fc9b8493cb2ac5a226fe7bf59d658771d4e54bd2093d2e19"
+  },
+  "frozen_at": "2026-10-03T17:50:41.536Z",
+  "hash": "sha256:3d683bcada3d4083a9654194b282fb39e92f8ac383713b7367fd261ab4bd917d",
+  "name": "julia",
+  "previous": "sha256:55a272ea1a7a6e859adacb73e3896d47347ba7986a3c9d22f0c9f82beee1542c",
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-03T17:51:30.293Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/home/zhanghao/.flower/envs/julia-3d683bcada3d-replay-20261003-175042-0a80",
+      "rc": 0,
+      "seconds": 47.4,
+      "tail": "julia 1.10.10 FFTW 1.10.0, Interpolations 0.16.3, LineSearches 7.5.1, Optim 1.13.3, TimerOutputs 1.2.2; LBFGS + FFT OK\nenvironment julia installed in /home/zhanghao/.flower/envs/julia-3d683bcada3d-replay-20261003-175042-0a80\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-03.jsonl"
+  ]
+}
