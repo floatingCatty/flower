@@ -35,7 +35,8 @@ flower amend RUN change.yaml                  # propose a plan change (needs app
 flower cancel RUN [--node NODE]
 flower fork RUN --from NODE -y                # new run, reusing all still-valid recorded results
 flower report RUN                             # report.md + report.html
-flower ui                                     # web UI: live DAG, details, decisions (prints a URL with token)
+flower ui                                     # web UI (background, one per project): prints its links
+flower open me@host:/path/to/project          # on your laptop: remote project's UI in your browser, one command
 ```
 
 Every command takes `RUN` as a full id, a unique fragment, or nothing (meaning the latest run).

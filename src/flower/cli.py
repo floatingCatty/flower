@@ -673,15 +673,46 @@ def cmd_driver(args, out: Out) -> int:  # internal: background driver loop
 
 
 def cmd_ui(args, out: Out) -> int:
-    from .ui import serve
+    from .ui import access_text, background_info, ensure_background, serve, stop_background
     root = find_root()
+    action = args.action or "start"
+    if action == "stop":
+        info = stop_background(root)
+        return out.done({"stopped": bool(info), "root": str(root)},
+                        f"stopped the UI server of {root} (pid {info['pid']})" if info else
+                        f"no UI server is running for {root}")
+    if action == "status":
+        info = background_info(root)
+        if not info:
+            return out.done({"running": False, "root": str(root)}, f"no UI server is running for {root}",
+                            ["flower ui"])
+        return out.done({"running": True, **info},
+                        "\n".join([f"flower ui for {root}  (running, pid {info['pid']})", *access_text(info)]))
+    if not args.foreground:
+        if args.host not in ("127.0.0.1", "localhost"):
+            raise FlowerError("usage", "--host only applies to --foreground (the background server is local-only)",
+                              "flower ui --foreground --host ...")
+        info = ensure_background(root, actor=args.actor, port=args.port)
+        how = "already running" if info.get("reused") else "started"
+        text = [f"flower ui for {root}  ({how} in the background, pid {info['pid']}; stop it: flower ui stop)",
+                *access_text(info),
+                "  runs keep going without it; the UI only reads the journal and sends the same actions as the CLI"]
+        if args.open:
+            import webbrowser
+            webbrowser.open(f"http://localhost:{info['port']}/?token={info['token']}")
+        return out.done(info, "\n".join(text))
+
+    port = args.port or 8765
+    sock = Path(args.socket) if args.socket else None
 
     def ready(srv, ui):
-        host, port = srv.server_address[:2]
-        url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{port}/?token={ui.token}"
+        host, p = srv.server_address[:2]
+        url = f"http://{'localhost' if host in ('127.0.0.1', '0.0.0.0') else host}:{p}/?token={ui.token}"
         lines = [f"flower ui for {root}", f"  open: {url}", f"  acting as: {ui.actor}  (decisions you make here are recorded under this name)"]
+        if sock:
+            lines.append(f"  owner-only socket (no token needed through it): {sock}")
         if host in ("127.0.0.1", "localhost"):
-            lines.append(f"  remote machine? tunnel first:  ssh -N -L {port}:localhost:{port} <this-host>")
+            lines.append(f"  remote machine? tunnel first:  ssh -N -L {p}:localhost:{p} <this-host>")
         lines.append("  ctrl-c to stop (runs keep going; the UI only reads the journal and sends the same actions as the CLI)")
         if out.json:
             print(json.dumps({"ok": True, "data": {"url": url, "root": str(root), "actor": ui.actor}}), flush=True)
@@ -692,11 +723,101 @@ def cmd_ui(args, out: Out) -> int:
             webbrowser.open(url)
 
     try:
-        serve(root, host=args.host, port=args.port, actor=args.actor, token=args.token, ready=ready)
+        serve(root, host=args.host, port=port, actor=args.actor, token=args.token, ready=ready, unix_socket=sock)
     except KeyboardInterrupt:
         pass
     except OSError as exc:
-        raise FlowerError("ui_port", f"cannot listen on {args.host}:{args.port}: {exc}", "pick another --port") from None
+        raise FlowerError("ui_port", f"cannot listen on {args.host}:{port}: {exc}", "pick another --port") from None
+    return 0
+
+
+def _local_port_free(port: int) -> bool:
+    import socket
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind(("127.0.0.1", port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _local_port_answers(port: int) -> bool:
+    import socket
+    try:
+        with socket.create_connection(("127.0.0.1", port), timeout=0.5):
+            return True
+    except OSError:
+        return False
+
+
+def cmd_open(args, out: Out) -> int:
+    """On your laptop: start (or reuse) a project's UI on a remote machine, tunnel to it, open the browser."""
+    import shlex
+    host, sep, path = args.target.partition(":")
+    if not sep or not host or not path:
+        raise FlowerError("usage", f"expected [user@]host:/path/to/project, got {args.target!r}",
+                          "e.g. flower open me@cluster.example.org:~/projects/si-study")
+    ssh = ["ssh", *(args.ssh_arg or [])]
+    remote = f"cd {path if path.startswith('~') else shlex.quote(path)} && {args.flower} ui --json"
+    try:  # stderr is not captured: password / MFA prompts and ssh errors reach the terminal
+        r = subprocess.run(ssh + [host, "bash -lc " + shlex.quote(remote)], stdout=subprocess.PIPE, text=True,
+                           timeout=180)
+    except subprocess.TimeoutExpired:
+        raise FlowerError("remote", f"no answer from {host} within 180 s") from None
+    info = None
+    for line in reversed((r.stdout or "").strip().splitlines()):
+        try:
+            doc = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(doc, dict) and doc.get("ok") and isinstance(doc.get("data"), dict) and doc["data"].get("socket"):
+            info = doc["data"]
+            break
+    if info is None:
+        raise FlowerError("remote", f"could not start the UI on {host} (ssh exit {r.returncode})",
+                          f"check that `{args.flower}` runs there (--flower /path/to/flower) and that {path} "
+                          "is a flower project")
+    port = args.port or int(info["port"])
+    if not _local_port_free(port):
+        port = next((p for p in range(port + 1, port + 100) if _local_port_free(p)), port)
+    url = f"http://localhost:{port}/"
+    tunnel = None
+    for fwd, link in ((f"{port}:{info['socket']}", url),  # owner-only socket: no token in the link
+                      (f"{port}:localhost:{info['port']}", f"{url}?token={info['token']}")):  # sshd forbids sockets
+        tunnel = subprocess.Popen(ssh + ["-N", "-o", "ExitOnForwardFailure=yes", "-L", fwd, host])
+        deadline = time.time() + 30
+        while tunnel.poll() is None and time.time() < deadline and not _local_port_answers(port):
+            time.sleep(0.2)
+        if tunnel.poll() is None and _local_port_answers(port):
+            url = link
+            break
+        tunnel.terminate()
+        tunnel = None
+    if tunnel is None:
+        raise FlowerError("remote", f"could not open a tunnel to {host}", "run the ssh command from `flower ui` by hand")
+    print(f"flower ui of {info['root']} on {host}\n  open: {url}\n  (keep this running; ctrl-c closes the tunnel, "
+          "the UI and your runs keep going on the remote machine)", flush=True)
+    def _close(*_):
+        raise KeyboardInterrupt
+
+    for sig in (signal.SIGTERM, signal.SIGHUP):  # a closed terminal window must not orphan the tunnel
+        signal.signal(sig, _close)
+    try:
+        if not args.no_browser:
+            import webbrowser
+            webbrowser.open(url)
+        tunnel.wait()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        if tunnel.poll() is None:
+            tunnel.terminate()
+            try:
+                tunnel.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                tunnel.kill()
     return 0
 
 
@@ -893,11 +1014,23 @@ def build_parser() -> argparse.ArgumentParser:
 
     add("doctor", cmd_doctor, "check harnesses, Slurm tools and the project")
 
-    s = add("ui", cmd_ui, "local web UI: live DAG, node details, decisions, timeline, plan history")
-    s.add_argument("--port", type=int, default=8765)
-    s.add_argument("--host", default="127.0.0.1", help="bind address (default 127.0.0.1; use an SSH tunnel)")
-    s.add_argument("--token", help="fixed access token (default: random per start)")
+    s = add("ui", cmd_ui, "web UI of this project: live DAG, node details, decisions, timeline, plan history "
+                          "(runs in the background; `flower ui stop` ends it)")
+    s.add_argument("action", nargs="?", choices=["start", "status", "stop"], help="default: start (or reuse)")
+    s.add_argument("--port", type=int, help="local TCP port (default: a stable port derived from the project)")
+    s.add_argument("--foreground", action="store_true", help="serve in this terminal instead of the background")
+    s.add_argument("--host", default="127.0.0.1", help="bind address with --foreground (default 127.0.0.1)")
+    s.add_argument("--token", help="fixed access token, with --foreground")
+    s.add_argument("--socket", help="also serve on this owner-only Unix socket, with --foreground")
     s.add_argument("--open", action="store_true", help="open a browser")
+
+    s = add("open", cmd_open, "on your laptop: open a remote project's UI (starts it there, tunnels over ssh, "
+                              "opens the browser)")
+    s.add_argument("target", help="[user@]host:/path/to/project (any ssh alias works as host)")
+    s.add_argument("--port", type=int, help="local port (default: the project's own port)")
+    s.add_argument("--flower", default="flower", help="the flower command on the remote machine")
+    s.add_argument("--ssh-arg", action="append", help="extra ssh argument, e.g. --ssh-arg=-F --ssh-arg=~/ssh_config")
+    s.add_argument("--no-browser", action="store_true")
 
     s = add("mcp", cmd_mcp, "serve flower over MCP (stdio)")
     s.add_argument("--read-only", action="store_true")

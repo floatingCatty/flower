@@ -125,14 +125,27 @@ The user guide is [`docs/GUIDE.md`](docs/GUIDE.md).
 ## Web UI
 
 ```bash
-flower ui                         # prints http://localhost:8765/?token=…
+flower ui                         # starts (or reuses) this project's UI in the background and prints its links
+flower ui status | stop
 ```
 
-On a remote machine, tunnel first:
+Each project gets one UI server that keeps running in the background, on a stable port.
+- **On the same machine:** open the `http://localhost:<port>/?token=…` link it prints.
+- **Project on a remote machine, browser on your laptop:** run one command on the laptop. It starts the
+  UI there if needed, opens an ssh tunnel and opens your browser:
 
-```bash
-ssh -N -L 8765:localhost:8765 <host>
-```
+  ```bash
+  flower open me@cluster.example.org:~/projects/si-study
+  ```
+
+  Without flower on the laptop, use the `ssh -N -L <port>:<…>/.flower/ui.sock me@host` line that
+  `flower ui` prints, then browse to `http://localhost:<port>`. To set this up once, add
+  `LocalForward <port> <…>/.flower/ui.sock` to that host in `~/.ssh/config`; any later `ssh` login then
+  carries the UI.
+
+**Why no token is needed through the tunnel.** The tunnel goes to the server's Unix socket, which only
+you can open (mode 0600). Through it, the link needs no token. On a shared machine, the TCP port is
+still guarded by the token, and actions always need the token the page carries.
 
 The UI is a local, dependency-free web view of the project's runs. It uses Eleforge's visual language:
 zinc panels, a dot-grid canvas and the "constellation" DAG. The light theme is the default;

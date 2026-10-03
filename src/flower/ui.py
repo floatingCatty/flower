@@ -5,15 +5,27 @@ folded from each run's ``events.jsonl``; every action goes through the same Engi
 
 Security model (it is meant to be reached through an SSH tunnel on shared machines):
 * binds to 127.0.0.1 by default;
-* every mutating request needs the per-process token printed at start-up (``X-Flower-Token``);
+* every mutating request needs the project's token (``X-Flower-Token``), which the page itself carries;
+* on the TCP port, reading needs the token too (other users of a shared host can reach 127.0.0.1);
+* the Unix socket ``.flower/ui.sock`` is mode 0600, so only its owner can connect: requests through it
+  (an ``ssh -L PORT:/path/ui.sock`` tunnel) need no token in the link. A Host-header check stops other
+  web sites from reaching it through the browser (DNS rebinding); the page token still guards actions;
 * files are only served from the run directory or from paths the run itself recorded as outputs.
+
+``flower ui`` keeps one server per project running in the background (``.flower/ui.json``); it is
+reused by later calls, and ``flower ui stop`` ends it.
 """
 from __future__ import annotations
 
+import hashlib
 import json
 import mimetypes
 import os
 import secrets
+import socket
+import socketserver
+import subprocess
+import sys
 import threading
 import time
 import urllib.parse
@@ -25,9 +37,10 @@ from . import __version__
 from .engine import Engine, driver_alive
 from .plan import Graph, diff_plans, on_cluster
 from .render import describe_event, kind_label, node_activity, node_time, what
-from .rundir import RunPaths, list_runs
+from .rundir import STATE_DIR, RunPaths, list_runs
 from .state import TERMINAL_RUN, NodeState, RunState
-from .util import FlowerError, first_line, fmt_duration, parse_iso, seconds_since, tail_text
+from .util import (FlowerError, atomic_write_json, first_line, fmt_duration, hostname, now_iso, parse_iso,
+                   read_json, seconds_since, tail_text)
 
 MAX_TEXT = 200_000
 
@@ -261,7 +274,11 @@ class UIState:
 
 # ====================================================================== HTTP
 
-def make_handler(ui: UIState):
+LOCAL_HOSTS = ("localhost", "127.0.0.1", "::1", "[::1]")
+
+
+def make_handler(ui: UIState, trusted: bool = False):
+    """``trusted``: the listener only lets this user in (the 0600 Unix socket), so reads need no token."""
     page_path = Path(__file__).parent / "data" / "ui.html"
 
     class Handler(BaseHTTPRequestHandler):
@@ -293,7 +310,14 @@ def make_handler(ui: UIState):
                 self._json(HTTPStatus.INTERNAL_SERVER_ERROR,
                            {"ok": False, "error": {"code": "internal", "message": f"{type(exc).__name__}: {exc}"}})
 
+        def _local_host(self) -> bool:
+            host = (self.headers.get("Host") or "localhost").strip().lower()
+            name = host.rsplit(":", 1)[0] if not host.endswith("]") else host
+            return name in LOCAL_HOSTS
+
         def _authorized(self, q: dict) -> bool:
+            if trusted and self._local_host():
+                return True
             given = self.headers.get("X-Flower-Token") or (q.get("token") or [""])[0]
             return secrets.compare_digest(given, ui.token)
 
@@ -372,15 +396,189 @@ def make_handler(ui: UIState):
     return Handler
 
 
-def serve(root: Path, host: str = "127.0.0.1", port: int = 8765, actor: str | None = None,
-          token: str | None = None, ready=None) -> None:
+class _UnixHTTPServer(socketserver.ThreadingMixIn, socketserver.UnixStreamServer):
+    daemon_threads = True
+
+    def get_request(self):
+        req, _ = super().get_request()
+        return req, ("unix", 0)  # BaseHTTPRequestHandler expects a (host, port) client address
+
+
+def _socket_answers(path: Path) -> bool:
+    s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    s.settimeout(1.0)
+    try:
+        s.connect(str(path))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _bind_unix(path: Path, handler) -> _UnixHTTPServer:
+    """Listen on ``path`` with mode 0600 from the first instant (umask), replacing a stale socket."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    if path.exists() or path.is_symlink():
+        if _socket_answers(path):
+            raise OSError(f"another flower ui already listens on {path}")
+        path.unlink()
+    old = os.umask(0o177)
+    try:
+        srv = _UnixHTTPServer(str(path), handler)
+    finally:
+        os.umask(old)
+    os.chmod(path, 0o600)
+    return srv
+
+
+def serve(root: Path, host: str = "127.0.0.1", port: int | None = 8765, actor: str | None = None,
+          token: str | None = None, ready=None, unix_socket: Path | None = None) -> None:
+    """Serve the UI on a TCP port (token required) and/or a Unix socket (owner only, no token in the link).
+    ``port=None`` serves the socket only. ``ready(srv, ui)`` gets the TCP server when there is one."""
     from .util import default_actor
     ui = UIState(root, actor or default_actor(), token or secrets.token_urlsafe(16), drive=False)
-    srv = ThreadingHTTPServer((host, port), make_handler(ui))
-    srv.daemon_threads = True
+    servers = []
+    if port is not None:
+        tcp = ThreadingHTTPServer((host, port), make_handler(ui))
+        tcp.daemon_threads = True
+        servers.append(tcp)
+    if unix_socket is not None:
+        servers.append(_bind_unix(Path(unix_socket), make_handler(ui, trusted=True)))
+    if not servers:
+        raise ValueError("nothing to serve on: give a port or a unix socket")
+    ui.socket_path = str(unix_socket) if unix_socket is not None else None
     if ready:
-        ready(srv, ui)
+        ready(servers[0], ui)
+    for s in servers[1:]:
+        threading.Thread(target=s.serve_forever, kwargs={"poll_interval": 0.5}, daemon=True).start()
     try:
-        srv.serve_forever(poll_interval=0.5)
+        servers[0].serve_forever(poll_interval=0.5)
     finally:
-        srv.server_close()
+        for s in servers[1:]:
+            s.shutdown()
+        for s in servers:
+            s.server_close()
+        if unix_socket is not None:
+            try:
+                Path(unix_socket).unlink()
+            except OSError:
+                pass
+
+
+# ====================================================================== one background server per project
+
+def state_file(root: Path) -> Path:
+    return Path(root) / STATE_DIR / "ui.json"
+
+
+def socket_path(root: Path) -> Path:
+    """``<project>/.flower/ui.sock``; a short private path when that is too long for a Unix socket (~107 B)."""
+    p = Path(root).resolve() / STATE_DIR / "ui.sock"
+    if len(str(p)) < 100:
+        return p
+    d = Path("/tmp") / f"flower-{os.getuid()}"
+    d.mkdir(mode=0o700, exist_ok=True)
+    os.chmod(d, 0o700)
+    return d / (hashlib.sha256(str(p).encode()).hexdigest()[:16] + ".sock")
+
+
+def stable_port(root: Path) -> int:
+    """A port derived from the project path (8700-8899), so the project's link stays the same."""
+    return 8700 + int(hashlib.sha256(str(Path(root).resolve()).encode()).hexdigest()[:8], 16) % 200
+
+
+def _port_free(port: int, host: str = "127.0.0.1") -> bool:
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    try:
+        s.bind((host, port))
+        return True
+    except OSError:
+        return False
+    finally:
+        s.close()
+
+
+def _pid_alive(pid) -> bool:
+    try:
+        os.kill(int(pid), 0)
+        return True
+    except (OSError, ValueError, TypeError):
+        return False
+
+
+def background_info(root: Path) -> dict | None:
+    """This project's running background server, or None (a dead server's record is ignored)."""
+    info = read_json(state_file(root))
+    if not info or info.get("host") != hostname() or not _pid_alive(info.get("pid")):
+        return None
+    if not info.get("socket") or not _socket_answers(Path(info["socket"])):
+        return None
+    return info
+
+
+def ensure_background(root: Path, actor: str | None = None, port: int | None = None,
+                      wait_s: float = 15.0) -> dict:
+    """Start this project's UI server in the background, or return the one already running."""
+    from .util import username
+    root = Path(root).resolve()
+    info = background_info(root)
+    if info:
+        return {**info, "reused": True}
+    old = read_json(state_file(root)) or {}
+    token = old.get("token") or secrets.token_urlsafe(16)  # kept across restarts: bookmarks keep working
+    want = int(port or old.get("port") or stable_port(root))
+    port = want if _port_free(want) else next((p for p in range(want + 1, want + 50) if _port_free(p)), want)
+    sock = socket_path(root)
+    log = root / STATE_DIR / "ui.log"
+    cmd = [sys.executable, "-m", "flower", "ui", "--foreground", "--port", str(port), "--token", token,
+           "--socket", str(sock)]
+    if actor:
+        cmd += ["--actor", actor]
+    env = {**os.environ, "FLOWER_HOME": str(root)}
+    with open(log, "ab") as fh:
+        proc = subprocess.Popen(cmd, cwd=str(root), stdin=subprocess.DEVNULL, stdout=fh, stderr=fh,
+                                start_new_session=True, close_fds=True, env=env)
+    deadline = time.time() + wait_s
+    while True:
+        if proc.poll() is not None:
+            raise FlowerError("ui_start", f"the UI server exited at start-up (code {proc.returncode})", f"see {log}")
+        if _socket_answers(sock):
+            break
+        if time.time() > deadline:
+            proc.kill()
+            raise FlowerError("ui_start", f"the UI server did not come up within {wait_s:.0f}s", f"see {log}")
+        time.sleep(0.1)
+    info = {"pid": proc.pid, "host": hostname(), "user": username(), "root": str(root), "socket": str(sock),
+            "port": port, "token": token, "started_at": now_iso(), "version": __version__}
+    atomic_write_json(state_file(root), info, mode=0o600)
+    return {**info, "reused": False}
+
+
+def stop_background(root: Path) -> dict | None:
+    info = background_info(root)
+    if not info:
+        return None
+    try:
+        os.kill(int(info["pid"]), 15)
+    except OSError:
+        pass
+    for _ in range(50):
+        if not _pid_alive(info["pid"]):
+            break
+        time.sleep(0.1)
+    return info
+
+
+def access_text(info: dict) -> list[str]:
+    """How to open it: on this machine, from a laptop (one ssh command, no token), or with `flower open`."""
+    port, sock = info["port"], info["socket"]
+    target = f"{info.get('user')}@{socket.getfqdn() or info['host']}"
+    return [
+        f"  on this machine:   http://localhost:{port}/?token={info['token']}",
+        "  from your laptop:  run this there and keep it open, then browse to the link (no token needed):",
+        f"      ssh -N -L {port}:{sock} {target}",
+        f"      http://localhost:{port}",
+        f"  or, with flower installed on the laptop:  flower open {target}:{info['root']}",
+        f"  or once, in the laptop's ~/.ssh/config under that host:  LocalForward {port} {sock}",
+    ]

@@ -172,6 +172,9 @@ what was done and why. For a single quick command, just do it directly.
 5. **Let it run in the background:** approval starts a background driver. Monitor with
    `flower wait RUN --timeout 600 --json` (run it as a background task if your harness supports it;
    don't poll in a tight loop). Exit code 0 = succeeded, 1 = failed, 3 = needs a decision / still running.
+   To let the user watch it, run `flower ui --json` (starts or reuses the project's UI in the background)
+   and give them its links: the local one if they sit at this machine, else the `ssh -N -L …` line, or
+   `flower open user@host:/path/to/project` if they have flower on their laptop.
 6. **When it parks on a decision** (`open_gates` in the JSON): read it with
    `flower show RUN --gate GATE`, relay the question to the user in plain words, and answer with their
    decision: `flower answer RUN GATE <decision> --text "<their reason>"`.
