@@ -27,7 +27,9 @@ clusters:                    # for job nodes, and shell/function nodes with `clu
   hpc:  {transport: ssh, host: myhpc, remote_root: ~/flower-runs, max_jobs: 20, min_poll: 60s,
          modules: [vasp/6.4], prelude: ["source ~/env.sh"], resources: {partition: cpu, account: abc}}
   here: {transport: local}   # flower runs on the login node itself
-  box:  {transport: ssh, host: mybox, scheduler: none}     # no batch system: run directly on the host
+  box:  {transport: ssh, host: mybox, scheduler: none, cpus: 32}   # no batch system: run directly on the host;
+                             # cpus: the cores flower may use there, shared by all runs of the project
+                             # (each step counts resources.cpus_per_task, default 1)
                              # install: never  -> environment steps only check, never run setup.sh
 nodes:                       # `nodes: []` is a valid draft (`flower start`): the run parks until steps are added
   - id: name                 # unique; letters, digits, - _

@@ -353,6 +353,13 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   reports a driver that exits at once with its log; `flower status` starts a driver for a running run that has
   none, and says so (`--no-tick` only warns).
 
+### 37. Runs on the same machine oversubscribed it (no batch system to arbitrate)
+- **Test:** `tests/hpc/test_direct.py::test_cpu_budget_is_shared_by_runs_on_the_same_machine`
+- **Observed:** S22 (6 × 16 threads + 24), the Si phonons (5 × 8 ranks) and another user's job on 96 cores:
+  everything slowed several-fold; `max_jobs` limits one run only.
+- **Fix:** a cluster `cpus:` budget per machine, shared by all runs of the project (each run publishes its usage
+  in `.flower/usage/<host>/<run>.json`); steps count `resources.cpus_per_task`.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

@@ -312,3 +312,20 @@ def test_tmpdir_and_resources_reach_the_payload(ff):
     o = st.nodes["a"].result.outputs
     assert o["tmp"].endswith("/a1/tmp") and Path(o["tmp"]).is_dir(), o
     assert o["mb"] == "2048" and o["cpus"] == "4"
+
+
+def test_cpu_budget_is_shared_by_runs_on_the_same_machine(ff):
+    """Two studies on one workstation (no batch system): `cpus` on the cluster is a budget for the machine, shared by
+    all runs of the project. The second run's job waits until the first's frees its cores."""
+    cl = _direct(ff, cpus=2)
+    job = ff.job("a", "sleep 2", resources={"cpus_per_task": 2})
+    e1 = ff.run(ff.plan([job], clusters=cl))
+    e2 = ff.run(ff.plan([job], clusters=cl))
+    ff.drive(e1, until=lambda s: _job_id(s, "a"))
+    rep = e2.tick()
+    assert e2.state().nodes["a"].status == "pending", "started although the machine's cpus were in use"
+    assert any("cpus in use" in w for w in rep.waiting_on), rep.waiting_on
+    assert ff.drive(e1, timeout=60).status == "succeeded"
+    assert ff.drive(e2, timeout=60).status == "succeeded", ff.why(e2)
+    left = list((e1.paths.root / ".flower" / "usage").rglob("*.json"))
+    assert left == [], f"usage files left after the runs ended: {left}"

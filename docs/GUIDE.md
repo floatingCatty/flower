@@ -114,6 +114,14 @@ For a few heavy items that need a different setup (more memory, one at a time), 
 those items on a new cluster entry (e.g. the same host with `max_jobs: 1`) and merge both in the analysis:
 the failures stay in the record, the reruns are explicit.
 
+### Several studies on one machine
+
+Without a batch system nothing arbitrates between runs: three studies each allowed `max_jobs: 6` on a 96-core
+workstation can start 160 threads. Give the cluster entry a budget, `cpus: 90`, and the steps their size,
+`resources: {cpus_per_task: 16}`: a launch then waits while the machine (transport + host, whatever the entry is
+called in each plan) has too many cores in use across all runs of the project. A single step larger than the
+budget still runs when the machine is otherwise idle.
+
 ### Large campaigns
 
 `flower status` summarises a foreach with more than 12 items on one line (running and failed items stay listed;

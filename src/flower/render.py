@@ -240,15 +240,18 @@ def status_view(st: RunState, paths: RunPaths, color: bool = False, width: int |
         if p:
             kids.setdefault(p, []).append(nid)
     big = {p for p, ks in kids.items() if len(ks) > COLLAPSE_ITEMS and not all_items}
-    shown: dict[str, int] = {}
+    # which items of a big foreach stay listed: active work first (up to 8), then failures (up to 5)
+    visible: set[str] = set()
+    for p in big:
+        st_of = lambda k: (st.nodes.get(k) or NodeState(k)).status  # noqa: E731
+        visible.update([k for k in kids[p] if st_of(k) in ("running", "retrying", "waiting")][:8])
+        visible.update([k for k in kids[p] if st_of(k) == "failed"][:5])
     for nid in g.topo():
         spec = g.nodes[nid]
         ns = st.nodes.get(nid) or NodeState(nid)
         parent = spec.get("expanded_from")
-        if parent in big:
-            if ns.status not in ("running", "failed", "retrying", "waiting") or shown.get(parent, 0) >= 8:
-                continue
-            shown[parent] = shown.get(parent, 0) + 1
+        if parent in big and nid not in visible:
+            continue
         name = ("  " * depth.get(nid, 0) + nid)[:name_w]
         att = f"#{ns.last.n}" if ns.last and ns.last.n > 1 else ""
         act = node_activity(st, paths, ns, spec)

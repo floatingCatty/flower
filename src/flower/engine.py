@@ -64,6 +64,20 @@ class TickReport:
 NEVER_RETRY = {"auth", "contract", "template"}
 
 
+def host_key(c: dict) -> str:
+    """One machine, whatever the cluster entry is called in which plan: transport + host."""
+    t = c.get("transport", "local")
+    return fs_name(f"{t}-{c.get('host') or ('localhost' if t == 'local' else 'unknown')}")
+
+
+def node_cpus(spec: dict) -> int:
+    res = spec.get("resources") or {}
+    try:
+        return max(1, int(res.get("cpus_per_task") or res.get("cpus") or 1))
+    except (TypeError, ValueError):
+        return 1
+
+
 def coerce_inputs(spec: dict, given: dict, base_dir: Path) -> dict:
     out: dict[str, Any] = {}
     problems = []
@@ -573,6 +587,7 @@ class Engine:
 
         # --- run status
         self._update_run_status(st, rep)
+        self._write_usage()
         self._write_current_plan(st)
         return rep
 
@@ -712,6 +727,43 @@ class Engine:
             return "skip", "no upstream succeeded", "failure" if "failure" in causes else sorted(causes)[0]
         return "go", None, None  # all_done
 
+    # ------------------------------------------------------------ cpu budget per machine, across runs
+    def _usage_root(self) -> Path:
+        return self.paths.root / ".flower" / "usage"
+
+    def _own_usage(self, st: RunState, g=None) -> dict:
+        """{host_key: {node: cpus}} for this run's running cluster jobs on clusters that declare `cpus`."""
+        g = g or st.graph()
+        out: dict = {}
+        for nid, ns in st.nodes.items():
+            if ns.status != "running" or nid not in g.nodes or _executor_kind(g.nodes[nid]) != "job":
+                continue
+            c = (st.plan.get("clusters") or {}).get(g.nodes[nid].get("cluster")) or {}
+            if c.get("cpus"):
+                out.setdefault(host_key(c), {})[nid] = node_cpus(g.nodes[nid])
+        return out
+
+    def _other_usage(self, key: str) -> int:
+        total = 0
+        for f in (self._usage_root() / key).glob("*.json"):
+            if f.stem == self.paths.run_id:
+                continue
+            d = read_json(f, {}) or {}
+            total += sum(int(v) for v in (d.get("jobs") or {}).values())
+        return total
+
+    def _write_usage(self) -> None:
+        st = self.state()
+        mine = {} if st.status in TERMINAL_RUN else self._own_usage(st)
+        root = self._usage_root()
+        for d in (root.glob("*") if root.is_dir() else []):
+            f = d / f"{self.paths.run_id}.json"
+            if d.name not in mine and f.exists():
+                f.unlink(missing_ok=True)
+        for key, jobs in mine.items():
+            atomic_write_json(root / key / f"{self.paths.run_id}.json",
+                              {"run": self.paths.run_id, "updated": now_iso(), "jobs": jobs})
+
     def _schedule(self, st: RunState, rep: TickReport) -> list[str]:  # noqa: C901
         g = st.graph()
         started: list[str] = []
@@ -774,6 +826,15 @@ class Engine:
                     if busy >= cap:
                         rep.waiting_on.append(f"{nid}: cluster {cl} at max_jobs={cap}")
                         continue
+                    cdef = (st.plan.get("clusters") or {}).get(cl) or {}
+                    if cdef.get("cpus"):   # a budget for the machine, shared by all runs of this project
+                        key, need = host_key(cdef), node_cpus(spec)
+                        used = self._other_usage(key) + sum(
+                            n for n in self._own_usage(st, g).get(key, {}).values())
+                        if used and used + need > int(cdef["cpus"]):
+                            rep.waiting_on.append(f"{nid}: host {key} has {used} of {cdef['cpus']} cpus in use "
+                                                  f"(all runs), needs {need}")
+                            continue
                 if self._start(st, nid, ns, spec):
                     started.append(nid)
                     if kind in LOCAL_KINDS:

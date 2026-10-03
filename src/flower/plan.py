@@ -329,6 +329,9 @@ def validate(plan: dict) -> list[Issue]:
         if c.get("install", "auto") not in ("auto", "never"):
             issues.append(Issue("cluster", f"clusters.{name}.install", "install must be `auto` or `never`",
                                 "`never`: environment steps only check, they never run setup.sh there"))
+        if c.get("cpus") is not None and not (isinstance(c.get("cpus"), int) and c["cpus"] > 0):
+            issues.append(Issue("cluster", f"clusters.{name}.cpus", "cpus must be a positive integer",
+                                "the cores flower may use on that machine, shared by all runs of this project"))
         if c.get("scheduler", "slurm") not in ("slurm", "none"):
             issues.append(Issue("cluster", f"clusters.{name}.scheduler", f"unknown scheduler {c.get('scheduler')!r}",
                                 "`slurm` (sbatch) or `none` (run the payload directly on the host)"))
