@@ -360,6 +360,26 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** a cluster `cpus:` budget per machine, shared by all runs of the project (each run publishes its usage
   in `.flower/usage/<host>/<run>.json`); steps count `resources.cpus_per_task`.
 
+## Found auditing the benchmarks for someone else to run (2026-10-03)
+
+### 38. `$FLOWER_INPUTS` was not set on clusters
+- **Test:** `tests/hpc/test_direct.py::test_cluster_step_reads_its_inputs_file`
+- **Root cause:** `inputs.json` was staged into the job directory, but the job script never exported the variable.
+
+### 39. Local steps could not use an environment recipe, so every plan named an interpreter path
+- **Test:** `tests/hpc/test_envs.py::test_a_local_step_can_name_an_environment`, `..._amendment_adds_a_local_step...`
+- **Observed:** all six benchmark plans ran their analysis with `/nessa/users/.../envs/abacus/bin/python`;
+  nobody else could run them.
+- **Fix:** `environment:` on a shell/function step without `cluster:` uses the implicit cluster `local` (this
+  machine, no scheduler), defined whenever a step uses it (also for steps added by amendment). The benchmarks'
+  analysis steps use the frozen `envs/analysis` recipe.
+
+### 40. Concurrent installs of one environment corrupted it
+- **Test:** `tests/hpc/test_envs.py::test_concurrent_installs_of_one_environment_wait_for_each_other`
+- **Observed:** three runs gained `environment: analysis` at the same moment; all found the prefix missing and
+  ran `conda create` into it together ("critical libmamba filesystem error"); two runs' steps failed.
+- **Fix:** the install takes a lock per prefix (`flock`, else a lock directory) and re-checks after waiting.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

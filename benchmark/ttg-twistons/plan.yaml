@@ -16,8 +16,7 @@ inputs:
   ssh_options: {type: array, default: [], description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
   remote_root: {type: string, default: ~/flower-runs}
   dataset_version: {type: string, default: "1.1"}
-  analysis_python: {type: string, default: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python,
-                    description: local Python with numpy, scipy, matplotlib}
+  analysis_python: {type: string, default: python3, description: "the Python of the local analysis steps (envs/analysis provides it)"}
 
 policies:
   edits: unfinished
@@ -41,6 +40,7 @@ nodes:
   # ---------------------------------------------------------------- inputs: the authors' code and data
   - id: fetch
     kind: shell
+    environment: analysis
     title: Authors' code and data from Harvard Dataverse (pinned version, md5-checked)
     run: |
       ${inputs.analysis_python} ${plan.dir}/fetch_dataverse.py dv ${inputs.dataset_version} > "$FLOWER_OUTPUTS"
@@ -49,6 +49,7 @@ nodes:
 
   - id: expt
     kind: shell
+    environment: analysis
     title: Experimental VHS separation and width at CNP (two-Lorentzian fit of the raw Fig. 2B spectrum)
     env: {PYTHONPATH: "${plan.dir}"}
     run: ${inputs.analysis_python} ${plan.dir}/expt.py ${fetch.dir}/dv | tail -n 1 > "$FLOWER_OUTPUTS"
@@ -58,6 +59,7 @@ nodes:
   # ---------------------------------------------------------------- single-particle continuum model
   - id: check-sp
     kind: shell
+    environment: analysis
     title: Our continuum model vs the authors' SP_continuum script (eigenvalues at 4 k, 4 settings)
     env: {PYTHONPATH: "${plan.dir}", OMP_NUM_THREADS: "4"}
     run: |
@@ -68,6 +70,7 @@ nodes:
 
   - id: sp
     kind: shell
+    environment: analysis
     needs: [check-sp]
     title: "Continuum model case: ${item.label}"
     foreach:
@@ -90,6 +93,7 @@ nodes:
   # ---------------------------------------------------------------- interactions: projected Hartree-Fock
   - id: hf
     kind: shell
+    environment: analysis
     needs: [check-sp]
     title: "Hartree-Fock at charge neutrality (theta 1.53, eps 10, gate 40 nm), our implementation"
     env: {PYTHONPATH: "${plan.dir}", OMP_NUM_THREADS: "16"}
@@ -100,6 +104,7 @@ nodes:
 
   - id: hf-probe
     kind: shell
+    environment: analysis
     needs: [check-sp]
     title: "HF diagnosis: ${item.label}"
     foreach:
@@ -172,6 +177,7 @@ nodes:
 
   - id: relax-analysis
     kind: shell
+    environment: analysis
     title: "Local twist angles of a relaxed structure (AAA sites, Fig. 3G/H, fig. S10)"
     foreach: "${relax.outputs.items}"
     env: {PYTHONPATH: "${plan.dir}"}
@@ -183,6 +189,7 @@ nodes:
 
   - id: corrugation
     kind: shell
+    environment: analysis
     title: 'Fig. 1B: AtA vs AtB corrugation (hexagonal vs honeycomb moire)'
     env:
       PYTHONPATH: ${plan.dir}
@@ -198,6 +205,7 @@ nodes:
   # ---------------------------------------------------------------- the comparison with the paper
   - id: report-preview
     kind: shell
+    environment: analysis
     title: "Claims vs reproduction (the quick steps only; the full report waits for relaxation and the authors' HF)"
     inputs: {sp: "${sp.outputs.items}", expt: "${expt.outputs}", hf: "${hf.outputs}", corrugation: "${corrugation.outputs}"}
     env: {PYTHONPATH: "${plan.dir}"}
@@ -208,6 +216,7 @@ nodes:
 
   - id: report
     kind: shell
+    environment: analysis
     title: "Reproduction report: every theoretical claim of the paper vs this run"
     inputs: {sp: "${sp.outputs.items}", expt: "${expt.outputs}", hf: "${hf.outputs}", corrugation: "${corrugation.outputs}",
              relax: "${relax-analysis.outputs.items}", authors_hf: "${authors-hf.outputs}"}

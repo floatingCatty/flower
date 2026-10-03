@@ -55,7 +55,8 @@ nodes:
   - {id: scf, kind: shell, cluster: box, environment: abacus, run: "mpirun -np 8 abacus > out"}
 ```
 
-A `job`, or a `shell` / `function` step on a cluster, may name an `environment`. When a plan is
+A `job`, or a `shell` / `function` step, may name an `environment` (a step without `cluster:` runs on this
+machine, on the implicit cluster `local`: local analysis gets a recipe too, so no plan names an interpreter). When a plan is
 normalised, flower adds **one generated step per (environment, cluster)**, for example
 `env-abacus-box`. This step:
 - appears in `flower plan show`, so it is part of what you approve;

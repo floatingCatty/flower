@@ -204,8 +204,25 @@ def normalize(raw: dict) -> dict:
     nodes = plan.get("nodes")
     if isinstance(nodes, list):
         plan["nodes"] = [normalize_node(n, plan["defaults"]) if isinstance(n, dict) else n for n in nodes]
+        _implicit_local_cluster(plan)
         _expand_environments(plan)
     return plan
+
+
+LOCAL_CLUSTER = "local"
+
+
+def _implicit_local_cluster(plan: dict) -> None:
+    """A shell/function step that names an `environment` but no `cluster` runs on this machine with it: on the
+    cluster `local` (transport local, no scheduler), defined here unless the plan has its own. So a recipe gives
+    every step a reproducible software environment, local analysis included (no hard-coded interpreters)."""
+    for n in plan["nodes"]:
+        if isinstance(n, dict) and n.get("environment") and not n.get("cluster") \
+                and n.get("kind") in ("shell", "function"):
+            n["cluster"] = LOCAL_CLUSTER
+    # defined whenever a step uses it, also when the step arrives already resolved (an amendment of a running plan)
+    if any(isinstance(n, dict) and n.get("cluster") == LOCAL_CLUSTER for n in plan["nodes"]):
+        plan["clusters"].setdefault(LOCAL_CLUSTER, {"transport": "local", "scheduler": "none"})
 
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -262,8 +279,8 @@ def _environment_issues(plan: dict, n: dict, p: str) -> list:
         return [Issue("environment", f"{p}.environment", f"invalid environment name {name!r}",
                       "letters, digits, '.', '-', '_'; the recipe lives in envs/<name>/")]
     if not on_cluster(n) or not n.get("cluster"):
-        return [Issue("environment", f"{p}.environment", "`environment` applies to a node that runs on a cluster",
-                      "add `cluster: <name>` (a `transport: local, scheduler: none` cluster is this machine)")]
+        return [Issue("environment", f"{p}.environment", "`environment` applies to shell, function and job steps",
+                      "a shell/function step without `cluster:` uses it on this machine")]
     if any(isinstance(x, dict) and str(x.get("generated", "")).startswith(f"env:{name}:") for x in plan.get("nodes") or []):
         return []  # the step was generated from a frozen recipe
     src = (plan.get("_source") or {}).get("dir")

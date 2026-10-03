@@ -32,6 +32,26 @@ The bulk modulus is converged with the cutoff by 40 Ry (the `ecut-study` step: 0
 0.944 Mbar), so the remaining 9 % is the pseudopotential (von Barth–Car here, Hamann in the paper), not
 numerics. Everything that depends on the phonons, which is the point of the paper, agrees.
 
+## Second run: is the bulk modulus the pseudopotential? (`si-nte-20261003-210316-6121`)
+
+The pseudopotential and the cutoff are plan inputs, so the study was re-run with PseudoDojo v0.4 LDA (ONCVPSP,
+Hamann 2013) at 40 Ry: `flower run si-nte/plan.yaml -i pseudo=dojo-lda -i ecut_ry=40 --reuse <first run>`. The paper
+download was reused from the first run; everything that depends on the pseudopotential was recomputed.
+
+| | paper (Hamann 1989) | vbc, 20 Ry | PseudoDojo LDA, 40 Ry | expt |
+|---|---|---|---|---|
+| a₀ static (bohr) | 10.189 | 10.213 | **10.193** | 10.26 |
+| B₀ converged in cutoff (Mbar) | 1.039 | 0.944 | **0.961** | ≈ 0.98 |
+| γ TA(X), TA(L) at a = 10.18 | −2.30, −1.81 | −2.40, −1.99 | −2.57, −2.09 | |
+| negative thermal expansion (K) | 20–120 | 15–122 | 5–138 | 20–120 |
+| min α (10⁻⁶/K) | | −0.61 at 74 K | −0.79 at 79 K | ≈ −0.5 near 80 K |
+| S(298) (J/K/mol), H(298)−H(0) (kJ/mol) | 19.3, 3.285 | 19.55, 3.299 | 19.41, 3.272 | 18.81, 3.217 |
+
+The modern pseudopotential moves a₀ onto the paper's value and raises B₀ by 0.02 Mbar, but both LDA
+pseudopotentials give B₀ ≈ 0.95–0.96 Mbar, as LDA usually does for Si; the paper's 1.039 Mbar (taken from a
+separate equation-of-state calculation, their ref. [Rignanese95]) is the outlier. 15 of 18 claims reproduce with
+either pseudopotential; the zone-boundary anomaly comes out somewhat stronger with PseudoDojo.
+
 ## How it ran (all inside one flower run, started with `flower start`)
 
 `paper` (arXiv source + PDF, sha256) → `pseudo` (sha256) → `env-qe-here` (the frozen QE recipe, on a second

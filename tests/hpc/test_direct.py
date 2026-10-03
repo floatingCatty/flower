@@ -329,3 +329,14 @@ def test_cpu_budget_is_shared_by_runs_on_the_same_machine(ff):
     assert ff.drive(e2, timeout=60).status == "succeeded", ff.why(e2)
     left = list((e1.paths.root / ".flower" / "usage").rglob("*.json"))
     assert left == [], f"usage files left after the runs ended: {left}"
+
+
+def test_cluster_step_reads_its_inputs_file(ff):
+    """$FLOWER_INPUTS is set on clusters too (it was only staged), with structured inputs."""
+    nodes = [ff.job("a", 'echo "{\\"x\\": 3}" > "$FLOWER_OUTPUTS"', outputs={"x": "integer"}),
+             ff.job("b", 'python3 -c "import json, os; d = json.load(open(os.environ[\'FLOWER_INPUTS\'])); '
+                         'print(json.dumps({\'y\': d[\'v\'][\'x\'] * 2}))" > "$FLOWER_OUTPUTS"',
+                    inputs={"v": "${a.outputs}"}, outputs={"y": "integer"})]
+    eng = ff.run(ff.plan(nodes, clusters=_direct(ff)))
+    st = ff.drive(eng, timeout=60)
+    assert st.nodes["b"].result.outputs["y"] == 6, ff.why(eng)

@@ -120,9 +120,13 @@ def test_environment_validation(ff, tmp_path, case):
     plan = _plan(ff, src)
     if case == "no_cluster":
         plan["nodes"][0].pop("cluster")
-    msgs = [i["message"] for i in validate(normalize(plan)) if i["code"] == "environment"]
-    want = {"missing": "no recipe envs/hello/", "draft": "is not frozen", "changed": "edited after it was frozen",
-            "no_cluster": "applies to a node that runs on a cluster"}[case]
+    norm = normalize(plan)
+    msgs = [i["message"] for i in validate(norm) if i["code"] == "environment"]
+    if case == "no_cluster":   # a shell/function step without a cluster uses the environment on this machine
+        if norm["nodes"][-1].get("kind") in ("shell", "function"):
+            assert msgs == [] and norm["clusters"]["local"]["transport"] == "local", msgs
+        return
+    want = {"missing": "no recipe envs/hello/", "draft": "is not frozen", "changed": "edited after it was frozen"}[case]
     assert any(want in m for m in msgs), msgs
 
 
@@ -238,3 +242,63 @@ def test_a_hanging_check_fails_fast_and_says_so(tmp_path):
     r = subprocess.run(["bash", "-c", script], cwd=tmp_path, capture_output=True, text=True, timeout=60)
     assert r.returncode != 0 and time.time() - t0 < 20
     assert "did not finish within 2s" in (tmp_path / "check.log").read_text()
+
+
+def test_a_local_step_can_name_an_environment(ff, tmp_path, home_dir):
+    """A shell step with `environment:` and no cluster runs on this machine with the recipe (implicit cluster
+    `local`): reproducible local analysis without a hard-coded interpreter path."""
+    src = tmp_path / "proj"
+    _recipe(src)
+    plan = {"flower": 1, "id": "loc", "nodes": [
+        {"id": "a", "kind": "shell", "environment": "hello", "run": 'echo "{\\"v\\": \\"$(hello-tool)\\"}" > "$FLOWER_OUTPUTS"',
+         "outputs": {"v": "string"}}]}
+    p = src / "plan.yaml"
+    p.write_text(json.dumps(plan))
+    from flower.plan import check, load_plan_file
+    norm = check(load_plan_file(str(p)))
+    assert norm["clusters"]["local"] == {"transport": "local", "scheduler": "none"}
+    assert any(n["id"] == "env-hello-local" for n in norm["nodes"])
+    eng = ff.run(load_plan_file(str(p)))
+    st = ff.drive(eng, timeout=60)
+    assert st.status == "succeeded", ff.why(eng)
+    assert st.nodes["a"].result.outputs["v"] == "hello v1"
+
+
+def test_an_amendment_adds_a_local_step_with_an_environment(ff, tmp_path, home_dir):
+    """The implicit `local` cluster also appears when such a step arrives by amendment (a running draft growing)."""
+    src = tmp_path / "proj"
+    _recipe(src)
+    p = src / "plan.yaml"
+    p.write_text(json.dumps({"flower": 1, "id": "am", "nodes": [{"id": "a", "kind": "shell", "run": "true"}]}))
+    from flower.plan import load_plan_file, normalize_node
+    eng = ff.run(load_plan_file(str(p)))
+    ff.drive(eng, timeout=30)
+    step = {"id": "b", "kind": "shell", "environment": "hello", "cluster": "local",   # as plan_edits delivers it
+            "run": 'echo "{\\"v\\": \\"$(hello-tool)\\"}" > "$FLOWER_OUTPUTS"', "outputs": {"v": "string"}}
+    eng.propose_amendment([{"op": "add", "nodes": [step]}], "add a local analysis step", by="test:x", auto_approve=True)
+    st = ff.drive(eng, timeout=60)
+    assert st.plan["clusters"]["local"]["transport"] == "local"
+    assert st.nodes["b"].result.outputs["v"] == "hello v1", ff.why(eng)
+
+
+def test_concurrent_installs_of_one_environment_wait_for_each_other(tmp_path):
+    """BUGS #40: three runs found the same recipe missing at once and ran `conda create` into one prefix together."""
+    import subprocess
+    d = tmp_path / "recipe"
+    d.mkdir()
+    (d / "activate.sh").write_text('export PATH="$FLOWER_ENV_PREFIX/bin:$PATH"\n')
+    (d / "check.sh").write_text('[ -x "$FLOWER_ENV_PREFIX/bin/tool" ]\n')
+    # a slow, non-reentrant install: fails if another install is in progress in the same prefix
+    (d / "setup.sh").write_text('mkdir "$FLOWER_ENV_PREFIX" || exit 9\nsleep 2\nmkdir -p "$FLOWER_ENV_PREFIX/bin"\n'
+                                'printf "#!/bin/sh\\necho ok\\n" > "$FLOWER_ENV_PREFIX/bin/tool"; chmod +x "$FLOWER_ENV_PREFIX/bin/tool"\n')
+    script = envmod.setup_script("x", "sha256:" + "1" * 64, recipe_dir=str(d), allow_install=True,
+                                 env_prefix=str(tmp_path / "pfx"))
+    procs = []
+    for i in range(3):
+        w = tmp_path / f"w{i}"
+        w.mkdir()
+        procs.append(subprocess.Popen(["bash", "-c", script], cwd=w, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True))
+    outs = [p.communicate(timeout=60) for p in procs]
+    assert [p.returncode for p in procs] == [0, 0, 0], outs
+    hows = sorted("installed" if "x installed" in o[0] else "present" for o in outs)
+    assert hows == ["installed", "present", "present"], outs

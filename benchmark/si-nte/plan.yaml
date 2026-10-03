@@ -109,7 +109,8 @@ nodes:
       eos: ${eos.outputs.items}
       phonons: ${phonons.outputs.items}
       ecut_study: ${ecut-study.outputs.items}
-    run: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python ${plan.dir}/qha.py | tail -n 1 > "$FLOWER_OUTPUTS"
+    environment: analysis    # numpy/scipy/matplotlib from envs/analysis (no interpreter paths)
+    run: python3 ${plan.dir}/qha.py | tail -n 1 > "$FLOWER_OUTPUTS"
 
   - id: ecut-study
     kind: shell

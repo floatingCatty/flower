@@ -11,9 +11,9 @@ description: |
   ABACUS reports, which can be anywhere in the gap).
 
 inputs:
-  abacus_env: {type: string, default: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus,
+  abacus_env: {type: string, required: true,
                description: conda env with abacus, mpirun and numpy/scipy/matplotlib}
-  pp_dir: {type: string, default: /homes/nessa/zhanghao/abacus-develop/tests/PP_ORB,
+  pp_dir: {type: string, required: true,
            description: directory with the pseudopotential and the numerical orbital}
   pseudo: {type: string, default: Si_ONCV_PBE-1.0.upf}
   orbital: {type: string, default: Si_gga_8au_100Ry_2s2p1d.orb}

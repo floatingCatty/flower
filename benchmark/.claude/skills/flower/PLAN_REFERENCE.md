@@ -54,7 +54,8 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
 * **environment** — on any node that runs on a cluster: `environment: abacus` uses the frozen recipe
   `envs/abacus/` (setup.sh / activate.sh / check.sh, see `docs/ENVIRONMENTS.md`). A generated step
   `env-abacus-<cluster>` checks it there (installs it if missing) before the node, which runs with it
-  activated. Recipes are made with `flower env new|freeze|replay` and `flower remote exec --env`.
+  activated. A shell/function step with `environment:` and no `cluster:` runs on this machine with it (the
+  implicit cluster `local`): use that for local analysis instead of naming an interpreter path. Recipes are made with `flower env new|freeze|replay` and `flower remote exec --env`.
 * **function** — `call: package.module:function`; kwargs = `args:` (or `inputs:`); returns a dict.
   `python: /path/to/python` to use another environment; `pythonpath: [dir]`. The cache key includes the
   source of the called module (its whole top-level package) when it lives on `pythonpath` or next to the

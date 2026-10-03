@@ -143,6 +143,15 @@ def setup_script(name: str, h: str, *, recipe_dir: str, allow_install: bool, fre
         lines.append('if chk; then how=present; fi')
     if allow_install:
         lines += [
+            # one installer per prefix: runs (or clusters naming the same machine) that find it missing at the same
+            # time wait for the first, then find it present (concurrent `conda create` into one prefix corrupts it)
+            'if [ -z "$how" ]; then',
+            '  mkdir -p "$(dirname "$FLOWER_ENV_PREFIX")"',
+            '  if command -v flock >/dev/null 2>&1; then exec 9>"$FLOWER_ENV_PREFIX.lock"; flock 9; else',
+            '    until mkdir "$FLOWER_ENV_PREFIX.lockdir" 2>/dev/null; do sleep 5; done',
+            '    trap \'rmdir "$FLOWER_ENV_PREFIX.lockdir" 2>/dev/null\' EXIT; fi',
+            '  if chk; then how=present; fi',
+            'fi',
             'if [ -z "$how" ]; then',
             '  if ( cd "$FLOWER_ENV_DIR" && bash -e ./setup.sh ) > setup.log 2>&1; then :; else',
             '    echo "setup.sh failed; last lines:" >&2; tail -n 25 setup.log >&2; exit 3; fi',

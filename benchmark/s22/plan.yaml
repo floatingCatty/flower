@@ -212,7 +212,8 @@ nodes:
       calc: ${calc.outputs.items}
       calc_big: ${calc-big.outputs.items}
       data: ${data.files.s22}
-    run: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python ${plan.dir}/s22_report.py | tail -n 1 > "$FLOWER_OUTPUTS"
+    environment: analysis    # numpy/scipy/matplotlib from envs/analysis (no interpreter paths)
+    run: python3 ${plan.dir}/s22_report.py | tail -n 1 > "$FLOWER_OUTPUTS"
 
   - id: calc-big
     kind: shell

@@ -21,8 +21,7 @@ inputs:
   mpi_ranks: {type: integer, default: 8, description: MPI ranks for QE and ABACUS}
   pyscf_threads: {type: integer, default: 12}
   pyscf_kmesh: {type: integer, default: 4, description: n of the n x n x n SCF mesh for all-electron PySCF}
-  analysis_python: {type: string, default: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python,
-                    description: local Python with numpy + matplotlib}
+  analysis_python: {type: string, default: python3, description: "the Python of the local analysis steps (envs/analysis provides it)"}
 
 defaults:
   timeout: {total: 1h, idle: 30m}
@@ -117,6 +116,7 @@ nodes:
   # ---------------------------------------------------------------- comparison (local)
   - id: compare
     kind: function
+    environment: analysis
     title: Compare all methods with experiment (table + charts)
     python: ${inputs.analysis_python}
     call: compare:compare

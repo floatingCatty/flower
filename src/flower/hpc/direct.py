@@ -94,7 +94,7 @@ def render_job_script(*, key: str, job_dir: str, resources: dict, env: dict, pre
         # cancelled before it got going (e.g. a crash window): do not start the payload
         'if [ -e .flower/cancelled ]; then echo 130 > .flower/ec.tmp && mv .flower/ec.tmp .flower/ec; exit 0; fi',
         'date -u +%Y-%m-%dT%H:%M:%SZ > .flower/started',
-        f"export FLOWER_JOB_DIR FLOWER_OUTPUTS=\"$FLOWER_JOB_DIR/outputs.json\" FLOWER_INSIDE_RUN=1 {exports}",
+        f"export FLOWER_JOB_DIR FLOWER_OUTPUTS=\"$FLOWER_JOB_DIR/outputs.json\" FLOWER_INPUTS=\"$FLOWER_JOB_DIR/inputs.json\" FLOWER_INSIDE_RUN=1 {exports}",
         *mods,
         *pre,
         *run,

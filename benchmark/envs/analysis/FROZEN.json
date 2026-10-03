@@ -1,0 +1,32 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "1d0ac7134e35b8f19c7e50530b4f69e4e69e47969996b259151f9f15a82be2b6",
+    "check.sh": "eb53f5213f3162a525248e1278e5f2d099b4217cdf197d044c14abf9c868e182",
+    "conda-explicit.txt": "3ad9e63401b4bf6ee3a35527ad52d312c757862a5633bfb4872e43800f9fd907",
+    "env.yaml": "c35907eb41e020c8f5b817ab05eba4422d1f337f3eead527e2d460168aaa797b",
+    "setup.sh": "b832323b56a83844cb07867b19085d5a58e4f04ff043d2f5c5ed66135f80217a"
+  },
+  "frozen_at": "2026-10-03T22:22:06.039Z",
+  "hash": "sha256:0e1294d20e1771ce93e613c5141c0d0cf3ec698d1b0a213e59824bfaee111d31",
+  "name": "analysis",
+  "previous": null,
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-03T22:22:35.669Z",
+      "by": "human:zhanghao",
+      "cluster": "here",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/nessa/users/zhanghao/.flower/envs/analysis-0e1294d20e17-replay-20261003-222207-bf56",
+      "rc": 0,
+      "seconds": 28.6,
+      "tail": "numpy 2.4.6 scipy 1.17.1 matplotlib 3.11.2 OK\nenvironment analysis installed in /nessa/users/zhanghao/.flower/envs/analysis-0e1294d20e17-replay-20261003-222207-bf56\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-03.jsonl"
+  ]
+}
