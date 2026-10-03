@@ -265,9 +265,27 @@ def test_hook_reminds_only_about_compute_beside_an_active_run(cli, home, tmp_pat
     monkeypatch.delenv("FLOWER_INSIDE_RUN")
     assert say("F=../.venv/bin/flower; $F remote exec -- 'python3 x.py'", "s4") is None   # flower, via a variable
     assert say("cat > check.sh <<'EOF'\npython3 - <<'PY'\nprint(1)\nPY\nEOF\nls", "s5") is None   # writing a file
+    assert say("python3 - <<'EOF'\nopen('a.py','w').write('x')\nEOF", "s6") is None   # a stdin script (editing)
 
 
 def test_hook_command_never_fails(cli, home, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO("not json"))
     code, text = cli("hook", "bash", as_json=False)
     assert code == 0 and not text.strip()
+
+
+def test_editing_a_foreach_steps_template_reruns_its_items(cli, home, tmp_path):
+    """BUGS #23: a foreach step edited in the plan file (not its items) was re-collected with the old children."""
+    plan = _plan(tmp_path, """\
+  - {id: f, kind: shell, foreach: [1, 2], run: 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
+""", policy="unfinished")
+    rid = _start(cli, plan)
+    assert _eng(home, rid).state().status == "succeeded"
+    _plan(tmp_path, """\
+  - {id: f, kind: shell, foreach: [1, 2], run: 'echo "{\\"v\\": $((${item} * 10))}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
+""", policy="unfinished")
+    code, res = cli("rerun", rid, "f", "--follow", "--yes")
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert [st.nodes[f"f[{i}]"].result.outputs["v"] for i in (0, 1)] == [10, 20]
+    assert len(st.nodes["f[0]"].attempts) == 2

@@ -953,26 +953,34 @@ class Engine:
         if not children and not items:
             self.emit("node.skipped", {"reason": "foreach over an empty list", "cause": "empty"}, node=nid)
             return True
-        if items is not None and items != old_items:
+        def child(i: int, item):
+            c = {k: v for k, v in spec.items() if k not in ("foreach", "title")}
+            c["id"] = f"{nid}[{i}]"
+            c["title"] = f"{spec.get('title') or nid} [{i}]"
+            c["needs"] = [d for d in planmod.effective_needs(spec) if d not in children]
+            c["bind"] = {"item": item, "index": i}
+            c["expanded_from"] = nid
+            return c
+
+        def canon(n: dict) -> dict:
+            return {k: v for k, v in n.items() if k not in ("id", "title", "description", "needs", "bind", "expanded_from")}
+
+        # children whose template changed (the step was edited, its items were not): replace them too
+        reshaped = set()
+        if items is not None:
+            for i, c in enumerate(children[:len(items)]):
+                if canon(child(i, items[i])) != canon(g.nodes[c]):
+                    reshaped.add(i)
+        if items is not None and (items != old_items or reshaped):
             if any(st.nodes.get(c, NodeState(c)).status in ("running", "waiting", "retrying") for c in children):
                 return False  # let in-flight children finish first
             base_needs = [d for d in (spec.get("needs") or []) if d not in children]
-
-            def child(i: int, item):
-                c = {k: v for k, v in spec.items() if k not in ("foreach", "title")}
-                c["id"] = f"{nid}[{i}]"
-                c["title"] = f"{spec.get('title') or nid} [{i}]"
-                c["needs"] = [d for d in planmod.effective_needs(spec) if d not in children]
-                c["bind"] = {"item": item, "index": i}
-                c["expanded_from"] = nid
-                return c
-
             ops: list[dict] = []
             add = [child(i, it) for i, it in enumerate(items) if i >= len(children)]
             if add:
                 ops.append({"op": "add", "nodes": add})
             for i, it in enumerate(items[:len(children)]):
-                if it != old_items[i]:
+                if it != old_items[i] or i in reshaped:
                     cid = children[i]
                     done = st.nodes.get(cid, NodeState(cid)).status not in ("pending",)
                     ops.append({"op": "replace", "node": cid, "with": child(i, it), **({"supersede": True} if done else {})})
@@ -984,7 +992,8 @@ class Engine:
             status = {k: v.status for k, v in st.nodes.items()}
             aid = new_id("fx")
             why = (f"foreach expansion of {nid} over {len(items)} item(s)" if not children else
-                   f"foreach {nid}: item list changed ({len(old_items)} → {len(items)}), re-expanded")
+                   f"foreach {nid}: item list changed ({len(old_items)} → {len(items)}), re-expanded"
+                   if items != old_items else f"foreach {nid}: step definition changed, {len(reshaped)} item(s) re-expanded")
             try:
                 new_plan, effects = planmod.apply_amendment(st.plan, ops, status)
             except planmod.PlanInvalid as exc:

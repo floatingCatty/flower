@@ -206,7 +206,7 @@ _FLOWER_CMD = re.compile(r"(^|[\s;&|(=/])flower(\s|;|$)")          # flower itse
 _HEREDOC = re.compile(r"<<-?\s*(['\"]?)(\w+)\1[^\n]*\n.*?\n\s*\2\s*(\n|$)", re.S)   # file contents being written
 _COMPUTE = re.compile(
     r"(^|[;&|(]\s*|&&\s*|\s)(?:\S*/)?(?:"
-    r"python[0-9.]*\s+(?!-c\b|-m\s+(?:json|pytest|pip|venv)\b|-V\b|--version\b)\S"
+    r"python[0-9.]*\s+(?!-c\b|-(?:\s|$)|-m\s+(?:json|pytest|pip|venv)\b|-V\b|--version\b)\S"
     r"|mpirun\s|mpiexec\s|srun\s|sbatch\s|julia\s+\S|Rscript\s|ssh\s+\S+\s+\S)")
 QUIET_S = 900   # at most one reminder per session per 15 minutes
 RECENT_S = 12 * 3600

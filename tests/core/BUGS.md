@@ -261,6 +261,15 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Root cause:** the exploration prefix's recipe directory was created but never filled.
 - **Fix:** the current recipe files are sent with every `remote exec --env` (base64 in the preamble).
 
+### 23. Editing a foreach step (not its items) re-collected the old children
+- **Test:** `test_core_devloop.py::test_editing_a_foreach_steps_template_reruns_its_items`
+- **Observed:** adding a declared file to the TTG `relax-analysis` foreach step and `flower rerun RUN
+  relax-analysis`: the collector was superseded and immediately "succeeded" with the old children's
+  results; the new file never appeared.
+- **Root cause:** `_handle_foreach` re-expanded only when the *item list* changed.
+- **Fix:** each existing child is compared with what the current step definition would produce for its item
+  (ignoring id/title/needs/bind); children that differ are replaced (superseded) like changed items.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses
