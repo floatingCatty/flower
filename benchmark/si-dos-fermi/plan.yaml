@@ -1,0 +1,125 @@
+forgeflow: 1
+id: si-dos-fermi
+title: Silicon DOS and Fermi level from occupation-function integration (ABACUS)
+description: |
+  Compute the electronic density of states of bulk diamond Si with ABACUS (PBE, LCAO DZP basis)
+  and extract the Fermi level by solving  ∫ g(E) f_FD(E; E_F, T) dE = N_e  on the DOS.
+  An SCF run on a coarse k-mesh gives the charge density; non-self-consistent runs on a series of
+  denser k-meshes give the DOS; each DOS is integrated against the Fermi-Dirac occupation; the
+  k-mesh series shows whether E_F is converged; an agent reviews whether the result is physically
+  sensible (Si is an insulator, so E_F should sit near midgap, unlike the T≈0 smearing value that
+  ABACUS reports, which can be anywhere in the gap).
+
+inputs:
+  abacus_env: {type: string, default: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus,
+               description: conda env with abacus, mpirun and numpy/scipy/matplotlib}
+  pp_dir: {type: string, default: /homes/nessa/zhanghao/abacus-develop/tests/PP_ORB,
+           description: directory with the pseudopotential and the numerical orbital}
+  pseudo: {type: string, default: Si_ONCV_PBE-1.0.upf}
+  orbital: {type: string, default: Si_gga_8au_100Ry_2s2p1d.orb}
+  alat_bohr: {type: number, default: 10.26, description: cubic lattice constant (bohr)}
+  np: {type: integer, default: 8, description: MPI ranks per ABACUS run}
+  scf_kmesh: {type: integer, default: 8}
+  dos_kmeshes: {type: array, default: [8, 12, 16, 24], description: n of the n×n×n nscf meshes}
+  temperature_K: {type: number, default: 300, description: temperature of the Fermi-Dirac occupation}
+  ef_tol_meV: {type: number, default: 5, description: k-convergence tolerance on E_F}
+  agent_review: {type: boolean, default: true, description: run the agent review step}
+
+defaults:
+  harness: {name: claude, model: sonnet}
+  timeout: {total: 30m, idle: 15m}
+  retry: {max_attempts: 1}
+  concurrency: 2
+
+results: [converge, review]
+
+nodes:
+  - id: prepare
+    kind: function
+    title: Build Si structure, count electrons
+    python: ${inputs.abacus_env}/bin/python
+    call: abacus_si:prepare
+    args: {pp_dir: "${inputs.pp_dir}", pseudo: "${inputs.pseudo}", orbital: "${inputs.orbital}",
+           alat_bohr: "${inputs.alat_bohr}"}
+    outputs: {stru: path, pp_dir: string, nelec: number, alat_angstrom: number}
+    files: {stru: STRU}
+
+  - id: scf
+    kind: shell
+    title: ABACUS SCF (charge density)
+    env: {OMP_NUM_THREADS: "1"}
+    run: |
+      PY=${inputs.abacus_env}/bin/python
+      cp ${prepare.outputs.stru} STRU
+      $PY ${plan.dir}/abacus_si.py write-input scf ${inputs.scf_kmesh} ${prepare.outputs.pp_dir}
+      ${inputs.abacus_env}/bin/mpirun -np ${inputs.np} ${inputs.abacus_env}/bin/abacus > abacus.out 2>&1
+      $PY ${plan.dir}/abacus_si.py parse OUT.si scf > "$FF_OUTPUTS"
+    outputs: {out_dir: string, ef_abacus_eV: number, etot_eV: number, converged: boolean, nelec_abacus: number}
+    files: {log: OUT.si/running_scf.log}
+
+  - id: dos
+    kind: shell
+    title: ABACUS nscf DOS
+    foreach: "${inputs.dos_kmeshes}"
+    when: "${scf.outputs.converged}"
+    env: {OMP_NUM_THREADS: "1"}
+    run: |
+      PY=${inputs.abacus_env}/bin/python
+      cp ${prepare.outputs.stru} STRU
+      $PY ${plan.dir}/abacus_si.py write-input nscf ${item} ${prepare.outputs.pp_dir} ${scf.outputs.out_dir}
+      ${inputs.abacus_env}/bin/mpirun -np ${inputs.np} ${inputs.abacus_env}/bin/abacus > abacus.out 2>&1
+      $PY ${plan.dir}/abacus_si.py parse OUT.si nscf > out.json
+      $PY -c "import json,sys; d=json.load(open('out.json')); d['kmesh']=${item}; json.dump(d, open(sys.argv[1],'w'))" "$FF_OUTPUTS"
+    outputs: {kmesh: integer, out_dir: string, ef_abacus_eV: number, nk_ibz: integer}
+    files: {dos: OUT.si/DOS1_smearing.dat, dos_raw: OUT.si/DOS1}
+
+  - id: fermi
+    kind: function
+    title: E_F by Fermi-Dirac integration of the DOS
+    foreach: "${dos.outputs.items}"
+    python: ${inputs.abacus_env}/bin/python
+    call: abacus_si:fermi_from_dos
+    args: {out_dir: "${item.out_dir}", kmesh: "${item.kmesh}", ef_abacus_eV: "${item.ef_abacus_eV}",
+           nelec: "${prepare.outputs.nelec}", temperature_K: "${inputs.temperature_K}"}
+    outputs: {kmesh: integer, ef_fd_eV: number, ef_fd_smeared_dos_eV: number, ef_abacus_eV: number,
+              vbm_eV: number, cbm_eV: number, gap_eV: number, midgap_eV: number,
+              ef_minus_midgap_meV: number, insulator: boolean, plot: path}
+
+  - id: converge
+    kind: function
+    title: k-point convergence of E_F
+    python: ${inputs.abacus_env}/bin/python
+    call: abacus_si:converge
+    args: {results: "${fermi.outputs.items}", tol_meV: "${inputs.ef_tol_meV}"}
+    outputs: {table: array, ef_eV: number, gap_eV: number, kmesh: integer, delta_last_meV: number,
+              converged: boolean, plot: path}
+    files: {plot: convergence.png}
+
+  - id: review
+    kind: agent
+    title: Physical sanity review
+    when: "${inputs.agent_review}"
+    needs: [converge]
+    harness: {name: claude, model: sonnet, budget_usd: 1}
+    prompt: |
+      You are reviewing a small DFT workflow result. Do not run any new calculations; you may read files.
+      System: bulk diamond Si, a = ${prepare.outputs.alat_angstrom} Å, PBE, ABACUS LCAO basis
+      (${inputs.orbital}), ${prepare.outputs.nelec} valence electrons per cell.
+      SCF (k=${inputs.scf_kmesh}^3): ${scf.summary}.
+      The Fermi level was obtained by solving ∫ g(E) f_FD(E; E_F, T=${inputs.temperature_K} K) dE = N_e on the
+      unbroadened nscf DOS histogram, for several k-meshes:
+      ${converge.outputs.table}
+      Convergence verdict: ${converge.summary}
+      Plots: ${converge.files.plot} and the per-mesh DOS plots listed in ${fermi.outputs.items}.
+
+      Judge, briefly and concretely:
+      1. Is E_F where it should be for an intrinsic semiconductor (relative to VBM/CBM/midgap), and is its
+         sign/magnitude of offset from midgap plausible?
+      2. Why does the ABACUS-reported E_F differ, and which number should be quoted as "the Fermi level"?
+      3. Is the DOS gap plausible for PBE Si with this LCAO basis (vs ~0.6 eV plane-wave PBE, 1.17 eV expt)?
+      4. Is E_F converged with k-mesh? Anything suspicious in the numbers?
+    outputs:
+      ok: {type: boolean, description: "true if the result is physically sensible"}
+      ef_to_quote_eV: number
+      concerns: {type: array, items: {type: string}}
+    timeout: {total: 15m}

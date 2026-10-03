@@ -1,0 +1,821 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>forgeflow</title>
+<!--
+  Visual language: Eleforge (DESIGN.md, apps/web/src/index.css) and its canvas "constellation" renderer
+  (apps/web/src/capabilities/canvas/ui/constellation-node*.tsx, blueprint-detail-panel.tsx), measured against
+  a real render of ConstellationNode:
+    run  = 48px "folder" circle, 3px border, folder icon, title label to the right
+    node = 36px circle, 2px border in TYPE_COLORS, 14px Lucide icon, bg white/90
+    status (getBorderStyle): pending dashed colour+80 · running two-tone comet arc (inset -3px, 2.5px, 1.2s)
+      · success breathe glow 3s · failed #ef4444 · needs-you amber #f59e0b 2px + pulse
+    edges: smoothstep orthogonal, colour of the target, 1.6px (skip 1.2 dashed 4 3), 7px arrow, hover 2.4 / dim 0.12
+    layout: git-graph lanes (computeBranchColumns), 24px dot grid on --canvas-bg
+    panels: floating cards, 16px radius, 1px #E4E4E7 border, 10px uppercase card titles
+  Icons: path data from Lucide (ISC licence).
+-->
+<style>
+:root {
+  --canvas: #FAFAFA; --dot: oklch(0.85 0.002 60); --panel: #FFFFFF; --elev: #F4F4F5; --hover: #E4E4E7; --border: #E4E4E7;
+  --border-focus: #D4D4D8; --text: #18181B; --text2: #71717A; --text3: #A1A1AA; --accent: #2563EB;
+  --accent-bg: rgba(37, 99, 235, 0.08); --accent-ring: rgba(37, 99, 235, 0.25);
+  --success: #16A34A; --warning: #D97706; --error: #DC2626; --radius: 16px;
+  --node-fill: rgba(255, 255, 255, 0.9); --edge-opacity: 0.9; --skip-opacity: 0.5; --tip-border: #D6D3D1;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 16px rgba(0, 0, 0, 0.06); --tip-shadow: 0 8px 32px rgba(0, 0, 0, 0.16);
+  --sans: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; --mono: ui-monospace, 'SF Mono', Menlo, monospace;
+}
+:root.dark {
+  --canvas: #06080A; --dot: oklch(0.35 0.01 30); --panel: #121214; --elev: #1D1D20; --hover: #27272A; --border: #27272A;
+  --border-focus: #3F3F46; --text: #EDEDEF; --text2: #8B8B93; --text3: #52525B; --accent: #0A84FF;
+  --accent-bg: rgba(10, 132, 255, 0.12); --accent-ring: rgba(10, 132, 255, 0.3);
+  --success: #22C55E; --warning: #F59E0B; --error: #EF4444; --radius: 20px;
+  --node-fill: rgba(28, 25, 23, 0.8); --edge-opacity: 0.72; --skip-opacity: 0.4; --tip-border: rgba(68, 64, 60, 0.6);
+  --shadow: 0 8px 24px rgba(0, 0, 0, 0.4); --tip-shadow: 0 8px 32px rgba(0, 0, 0, 0.7);
+}
+/* ---------- type scale (Eleforge DESIGN.md: a deliberately short scale; emphasis via weight/colour, not size) ----------
+   title    16px/600  lh 1.35  -0.01em   panel header: run / node name
+   section  10px/700  UPPERCASE +0.06em  card titles (Eleforge h3), text2
+   label    12px/600                     headings inside a card: decision, attempt, generation
+   body     14px/400  lh 1.6             reading text: goal, summary, rationale, decision question
+   caption  12px/400  lh 1.5             metadata, key/value keys, timeline, controls (the UI default)
+   micro    10px/400–600                 chips, badges, hints, legend
+   mono     11px/400  tabular-nums       ids, digests, paths, numbers, code, logs
+   numeral  16px/600  mono               stat values                                                          */
+:root { --fs-title: 16px; --fs-body: 14px; --fs-caption: 12px; --fs-micro: 10px; --fs-mono: 11px; }
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body { background: var(--canvas); color: var(--text); font: 400 var(--fs-caption)/1.5 var(--sans); overflow: hidden;
+       -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; text-rendering: optimizeLegibility; }
+button { font: 500 var(--fs-caption)/1 var(--sans); cursor: pointer; border-radius: 6px; border: 1px solid var(--border); background: var(--panel);
+         color: var(--text); padding: 0 10px; height: 28px; white-space: nowrap; transition: background-color 160ms cubic-bezier(.4,0,.2,1), border-color 160ms; }
+button:hover { background: var(--elev); border-color: var(--border-focus); }
+button:active { transform: scale(0.98); }
+button.primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+button.primary:hover { filter: brightness(1.08); }
+button.danger { color: var(--error); }
+button.ghost { background: transparent; border-color: transparent; color: var(--text2); }
+button.ghost:hover { background: var(--elev); color: var(--text); }
+input, textarea, select { font: 400 var(--fs-caption)/1.5 var(--sans); color: var(--text); background: var(--panel); border: 1px solid var(--border);
+       border-radius: 8px; padding: 6px 8px; width: 100%; outline: none; transition: border-color 160ms, box-shadow 160ms; }
+input:focus, textarea:focus, select:focus { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-ring); }
+input::placeholder, textarea::placeholder { color: var(--text3); }
+textarea { resize: vertical; display: block; }
+textarea.code { font: 400 var(--fs-mono)/1.6 var(--mono); }
+.mono { font-family: var(--mono); font-size: var(--fs-mono); font-variant-numeric: tabular-nums; letter-spacing: 0; }
+pre { font: 400 var(--fs-mono)/1.6 var(--mono); background: var(--elev); color: var(--text); border-radius: 8px; padding: 10px 12px;
+      margin: 8px 0 0; white-space: pre-wrap; word-break: break-word; max-height: 320px; overflow: auto; tab-size: 2; }
+pre.log { background: #171717; color: #E5E5E5; }
+a { color: var(--accent); text-decoration: none; font-weight: 500; }
+a:hover { text-decoration: underline; }
+::-webkit-scrollbar { width: 6px; height: 6px; } ::-webkit-scrollbar-thumb { background: var(--hover); border-radius: 6px; }
+
+/* type utilities */
+.t-title { font-size: var(--fs-title); font-weight: 600; line-height: 1.35; letter-spacing: -0.01em; }
+.t-label { font-size: var(--fs-caption); font-weight: 600; line-height: 1.4; }
+.t-body, .prose { font-size: var(--fs-body); line-height: 1.6; color: var(--text); }
+.small { font-size: var(--fs-caption); } .tiny { font-size: var(--fs-micro); line-height: 1.5; }
+.muted { color: var(--text2); } .faint { color: var(--text3); }
+.num { font-variant-numeric: tabular-nums; }
+
+/* ---------- top bar ---------- */
+#top { position: absolute; left: 0; right: 0; top: 0; height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 12px 0 16px;
+       background: var(--panel); border-bottom: 1px solid var(--border); z-index: 5; min-width: 0; }
+.brand { font-weight: 700; font-size: var(--fs-title); letter-spacing: -0.02em; white-space: nowrap; }
+.brand b { color: var(--accent); font-weight: 700; }
+.sep { width: 1px; height: 20px; background: var(--border); flex: none; }
+#runselect { width: auto; max-width: 360px; height: 30px; padding: 0 8px; background: var(--elev); border-color: transparent; font-weight: 500; }
+#topstatus { display: flex; align-items: center; gap: 12px; min-width: 0; color: var(--text2); white-space: nowrap; overflow: hidden; font-variant-numeric: tabular-nums; }
+.minibar { width: 96px; height: 4px; border-radius: 4px; background: var(--elev); overflow: hidden; display: flex; flex: none; }
+.minibar div, .bar div { height: 100%; }
+.sp { flex: 1; }
+#who { color: var(--text3); font-size: var(--fs-micro); white-space: nowrap; }
+
+/* ---------- canvas + floating inspector ---------- */
+#canvas { position: absolute; left: 0; right: 0; top: 48px; bottom: 0; overflow: hidden; cursor: grab;
+          background-color: var(--canvas); background-image: radial-gradient(circle, var(--dot) 1px, transparent 1px); background-size: 24px 24px; }
+#canvas.dragging { cursor: grabbing; }
+#inspector { position: absolute; top: 56px; right: 8px; bottom: 8px; width: 384px; background: var(--panel); border: 1px solid var(--border);
+             border-radius: var(--radius); box-shadow: var(--shadow); display: flex; flex-direction: column; overflow: hidden; z-index: 4; }
+.tabs { display: flex; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--border); flex: none; }
+.tab { padding: 5px 10px; font-weight: 500; line-height: 1.4; color: var(--text2); cursor: pointer; border-radius: 6px; display: flex; gap: 6px; align-items: center;
+       transition: background-color 160ms, color 160ms; }
+.tab:hover { color: var(--text); background: var(--elev); }
+.tab.active { color: var(--text); background: var(--elev); font-weight: 600; }
+.tab .count { background: #f59e0b; color: #fff; border-radius: 9999px; font-size: var(--fs-micro); min-width: 16px; padding: 0 5px; font-weight: 700; line-height: 16px; text-align: center; }
+#pane { flex: 1; overflow: auto; }
+
+/* ---------- inspector building blocks (blueprint-detail-panel) ---------- */
+.ph { padding: 16px; border-bottom: 1px solid var(--border); display: flex; gap: 12px; align-items: flex-start; }
+.ph .ib { width: 36px; height: 36px; border-radius: 8px; border: 1px solid; display: inline-flex; align-items: center; justify-content: center; flex: none; }
+.ph h2 { margin: 0; word-break: break-word; }
+.ph .meta { display: flex; align-items: center; gap: 8px; margin-top: 6px; flex-wrap: wrap; }
+.ph .desc { font-size: var(--fs-caption); color: var(--text2); line-height: 1.5; margin-top: 8px; }
+.badge { font-size: var(--fs-micro); font-weight: 600; text-transform: uppercase; padding: 0 6px; border-radius: 4px; letter-spacing: .06em; white-space: nowrap; line-height: 18px; }
+.body { padding: 12px; }
+.card { border: 1px solid var(--border); background: var(--panel); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.sh { font-size: var(--fs-micro); font-weight: 700; line-height: 1.4; color: var(--text2); text-transform: uppercase; letter-spacing: .06em; margin: 0 0 10px;
+      display: flex; align-items: center; gap: 6px; }
+.sh .r { margin-left: auto; font-weight: 500; text-transform: none; letter-spacing: 0; color: var(--text3); font-variant-numeric: tabular-nums; }
+.kv { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 16px; align-items: baseline; }
+.kv > :nth-child(odd) { color: var(--text2); }
+.kv > :nth-child(even) { font: 400 var(--fs-mono)/1.5 var(--mono); font-variant-numeric: tabular-nums; text-align: right; word-break: break-all; color: var(--text); }
+.row { display: flex; align-items: center; gap: 8px; }
+.wrap { flex-wrap: wrap; }
+.chip { display: inline-flex; align-items: center; gap: 5px; font-size: var(--fs-micro); font-weight: 600; padding: 0 8px; border-radius: 9999px; white-space: nowrap; flex: none; line-height: 18px; }
+.dot { width: 6px; height: 6px; border-radius: 9999px; display: inline-block; flex: none; }
+.tag { font: 400 var(--fs-micro)/18px var(--mono); color: var(--text2); background: var(--elev); border-radius: 4px; padding: 0 6px; cursor: pointer; transition: background-color 160ms; }
+.tag:hover { color: var(--text); background: var(--hover); }
+.stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--border); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+.stat { background: var(--panel); padding: 8px 10px; }
+.stat b { display: block; font: 600 var(--fs-title)/1.35 var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.01em; }
+.stat span { font-size: var(--fs-micro); color: var(--text2); }
+.bar { height: 4px; border-radius: 4px; background: var(--elev); overflow: hidden; display: flex; margin-top: 12px; }
+.legend-row { display: flex; flex-wrap: wrap; gap: 4px 12px; margin-top: 8px; font-size: var(--fs-micro); color: var(--text2); }
+.decision { border: 1px solid rgba(245, 158, 11, 0.35); background: rgba(245, 158, 11, 0.05); border-radius: 8px; padding: 12px; margin-bottom: 12px; }
+.decision .t { display: flex; align-items: center; gap: 6px; }
+.decision .msg { white-space: pre-wrap; margin: 8px 0 10px; max-height: 240px; overflow: auto; }
+.btns { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+.disc { border: 1px solid var(--border); border-radius: 8px; margin-bottom: 8px; overflow: hidden; background: var(--panel); }
+.disc > .dh { display: flex; align-items: center; gap: 8px; padding: 8px 10px; min-height: 36px; cursor: pointer; user-select: none; transition: background-color 160ms; }
+.disc > .dh:hover { background: var(--elev); }
+.disc > .dh .tri { color: var(--text3); width: 12px; height: 12px; flex: none; display: inline-flex; transition: transform 160ms; }
+.disc.open > .dh .tri { transform: rotate(90deg); }
+.disc > .db { padding: 0 12px 12px; display: none; border-top: 1px solid var(--border); }
+.disc.open > .db { display: block; }
+.disc .disc { margin: 8px 0 0; }
+.prose { margin-top: 12px; }
+.prose.aside { font-size: var(--fs-caption); line-height: 1.6; color: var(--text2); }   /* supporting text (rationale) steps down a level */
+.prose b, .sub-h { display: flex; align-items: center; gap: 6px; font-size: var(--fs-micro); font-weight: 700; line-height: 1.4; color: var(--text2);
+                    text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.sub-h { margin: 16px 0 6px; }
+.ev { display: grid; grid-template-columns: 56px minmax(0, 1fr); gap: 8px; padding: 7px 4px; border-bottom: 1px solid var(--border); align-items: baseline; }
+.ev:last-child { border-bottom: none; }
+.ev .t { font: 400 var(--fs-mono) var(--mono); font-variant-numeric: tabular-nums; color: var(--text3); }
+.ev .x { color: var(--text); line-height: 1.5; }
+.ev .a { color: var(--text3); font-size: var(--fs-micro); margin-top: 1px; }
+.ev .x { position: relative; padding-left: 14px; }
+.ev .x::before { content: ""; position: absolute; left: 0; top: 6px; width: 6px; height: 6px; border-radius: 9999px; background: var(--hover); }
+.ev.good .x::before { background: #22c55e; } .ev.dec .x::before { background: #f59e0b; } .ev.bad .x::before { background: #ef4444; }
+.ev.bad .x { color: var(--error); }
+.ev .a { padding-left: 14px; }
+.thumb { max-width: 100%; border-radius: 6px; border: 1px solid var(--border); margin-top: 8px; background: #fff; }
+.empty { color: var(--text3); text-align: center; padding: 48px 16px; }
+
+/* ---------- canvas overlays ---------- */
+.overlay { position: absolute; z-index: 3; background: var(--panel); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+#zoombox { left: 12px; bottom: 12px; display: flex; padding: 3px; gap: 2px; align-items: center; }
+#zoombox button { border: none; background: transparent; height: 28px; min-width: 28px; padding: 0 8px; color: var(--text2); }
+#zoombox button:hover { background: var(--elev); color: var(--text); }
+#zoombox button.on { color: var(--accent); background: var(--accent-bg); }
+#zoombox .zl { font: 500 var(--fs-micro) var(--sans); font-variant-numeric: tabular-nums; color: var(--text3); width: 38px; text-align: center; }
+#zoombox .sep { height: 16px; margin: 0 2px; }
+#legend { right: 404px; bottom: 12px; padding: 7px 12px; display: flex; gap: 12px; font-size: var(--fs-micro); color: var(--text2); flex-wrap: wrap; }
+#legend span { display: inline-flex; align-items: center; gap: 5px; }
+#legend i { width: 10px; height: 10px; border-radius: 9999px; border: 2px solid; display: inline-block; background: var(--node-fill); }
+#banner { left: calc((100% - 392px) / 2); top: 12px; transform: translateX(-50%); padding: 5px 5px 5px 12px; display: none; align-items: center; gap: 10px;
+          border-color: rgba(245, 158, 11, 0.45); white-space: nowrap; font-weight: 500; }
+#banner.show { display: flex; }
+#tip { position: absolute; z-index: 6; pointer-events: none; background: color-mix(in srgb, var(--panel) 95%, transparent); backdrop-filter: blur(4px);
+       border: 1px solid var(--tip-border); border-radius: 8px; padding: 8px 12px; box-shadow: var(--tip-shadow); max-width: 280px; display: none; }
+#tip .n { font-size: var(--fs-caption); font-weight: 500; line-height: 1.4; color: var(--text); }
+#tip .s { display: flex; gap: 6px; align-items: center; margin-top: 4px; font-size: var(--fs-micro); color: var(--text2); }
+#tip .s .k { color: var(--text3); }
+#tip .d { font-size: var(--fs-micro); color: var(--text2); margin-top: 4px; line-height: 1.5; }
+#toast { left: calc((100% - 392px) / 2); bottom: 16px; transform: translateX(-50%); padding: 8px 14px; z-index: 9; display: none; font-weight: 500; }
+
+/* ---------- constellation nodes ---------- */
+.cn { cursor: pointer; }
+.cn .ring { fill: var(--node-fill); stroke-width: 2; }
+.cn.folder .ring { stroke-width: 3; }
+.cn .hit { fill: transparent; }
+.cn .sel { fill: none; stroke: var(--accent); stroke-width: 2; opacity: 0; transition: opacity 160ms; }
+.cn.selected .sel { opacity: 1; }
+.cn .lbl { font: 500 11px var(--sans); letter-spacing: 0; fill: color-mix(in srgb, var(--c) 78%, #000); transition: opacity 150ms; }   /* light: colour+cc reads too pale on #FAFAFA */
+:root.dark .cn .lbl { fill: color-mix(in srgb, var(--c) 80%, transparent); }                                        /* dark: Eleforge's colour + cc */
+.cn .sub { font: 400 10px var(--sans); font-variant-numeric: tabular-nums; fill: var(--text3); transition: opacity 150ms; }
+.cn[data-id]:hover .lbl, .cn[data-id]:hover .sub { opacity: 0; }                                                    /* the tooltip takes over */
+.cn.folder .lbl { font-size: 12px; font-weight: 600; letter-spacing: -0.005em; }   /* run > node on the canvas: weight, not a new size */
+.cn .spin { transform-origin: 0 0; animation: cn-spin 1.2s linear infinite; }
+.cn .spin circle { fill: none; stroke-width: 2.5; }
+@keyframes cn-spin { to { transform: rotate(360deg); } }
+.cn.breathe .body-g { animation: cn-breathe 3s ease-in-out infinite; }
+@keyframes cn-breathe {
+  0%, 100% { filter: drop-shadow(0 0 2px color-mix(in srgb, var(--pulse) 40%, transparent)); opacity: .85; }
+  50% { filter: drop-shadow(0 0 6px var(--pulse)) drop-shadow(0 0 12px color-mix(in srgb, var(--pulse) 30%, transparent)); opacity: 1; } }
+.cn.attn .body-g { animation: cn-attn 2s cubic-bezier(.4, 0, .6, 1) infinite; }
+@keyframes cn-attn { 50% { opacity: .5; } }
+.edge { fill: none; stroke-linejoin: round; stroke-linecap: round; transition: stroke-opacity 160ms, stroke-width 160ms; }
+@media (prefers-reduced-motion: reduce) { .cn .spin, .cn.breathe .body-g, .cn.attn .body-g { animation: none; } }
+@media (max-width: 900px) { #inspector { top: auto; left: 8px; width: auto; height: 45%; } #legend, #topstatus, #who { display: none; }
+  #banner, #toast { left: 50%; } }
+</style>
+</head>
+<body>
+<div id="top">
+  <div class="brand">forge<b>flow</b></div>
+  <div class="sep"></div>
+  <select id="runselect" aria-label="run"></select>
+  <div id="topstatus"></div>
+  <div class="sp"></div>
+  <div id="topacts" class="row"></div>
+  <div id="who"></div>
+  <button class="ghost" id="theme" title="toggle light / dark">Theme</button>
+</div>
+<div id="canvas">
+  <div id="banner" class="overlay"></div>
+  <div id="tip"></div>
+  <div id="toast" class="overlay"></div>
+  <div id="zoombox" class="overlay"><button id="zout" title="zoom out">−</button><span class="zl" id="zl">100%</span><button id="zin" title="zoom in">+</button>
+    <span class="sep"></span><button id="zfit" title="fit to view">Fit</button><button id="zlabels" title="show / hide node labels">Labels</button></div>
+  <div id="legend" class="overlay"></div>
+</div>
+<aside id="inspector">
+  <div class="tabs" id="tabs">
+    <div class="tab active" data-tab="run">Run</div>
+    <div class="tab" data-tab="node">Node</div>
+    <div class="tab" data-tab="timeline">Timeline</div>
+    <div class="tab" data-tab="history">Plan history</div>
+  </div>
+  <div id="pane"><div class="empty">Loading…</div></div>
+</aside>
+<script>
+"use strict";
+const TOKEN = "__FORGEFLOW_TOKEN__";
+const ACTOR = "__FORGEFLOW_ACTOR__";
+const VERSION = "__FORGEFLOW_VERSION__";
+const store = { get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }, set(k, v) { try { localStorage.setItem(k, v); } catch (e) {} } };
+const S = { runs: [], runId: null, run: null, tab: "run", node: null, nodeData: null, nodeSig: null, view: null, hover: null,
+            labels: store.get("ff-labels") !== "off",
+            pendingNode: location.hash.startsWith("#node=") ? decodeURIComponent(location.hash.slice(6)) : null };
+
+// Eleforge canvas TYPE_COLORS (constellation-node-helpers.ts) mapped onto forgeflow node kinds.
+const TYPE = {
+  agent:    { color: "#38bdf8", name: "Agent",    icon: "bot" },       // BOT
+  gate:     { color: "#a78bfa", name: "Human",    icon: "user" },      // HUMAN
+  job:      { color: "#fb923c", name: "HPC job",  icon: "layers" },    // STANDARD_DAG
+  shell:    { color: "#818cf8", name: "Shell",    icon: "terminal" },  // DEFAULT
+  function: { color: "#34d399", name: "Function", icon: "braces" },    // EMBED
+  wait:     { color: "#fbbf24", name: "Wait",     icon: "clock" },     // CONTINUE
+  foreach:  { color: "#c084fc", name: "Fan-out",  icon: "split" },     // RESULT
+};
+const CHECKPOINT = "#f59e0b", FAILED = "#ef4444";
+const STATUS = {   // Eleforge statusLabel wording; colours of its tooltip status dot
+  pending: ["Pending", "#a8a29e"], running: ["Running", "#3b82f6"], succeeded: ["Completed", "#22c55e"],
+  failed: ["Failed", "#ef4444"], waiting: ["Waiting for input", "#f59e0b"], retrying: ["Retrying", "#8b5cf6"],
+  skipped: ["Skipped", "#a8a29e"], cancelled: ["Cancelled", "#ef4444"], parked: ["Waiting for input", "#f59e0b"],
+  awaiting_approval: ["Awaiting approval", "#f59e0b"], rejected: ["Rejected", "#ef4444"],
+};
+const ICONS = {  // Lucide path data (24x24 stroke icons)
+  bot: '<path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2"/><path d="M20 14h2"/><path d="M15 13v2"/><path d="M9 13v2"/>',
+  user: '<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>',
+  hand: '<path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2"/><path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2"/><path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8"/><path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15"/>',
+  terminal: '<path d="m4 17 6-6-6-6"/><path d="M12 19h8"/>',
+  braces: '<path d="M8 3H7a2 2 0 0 0-2 2v5a2 2 0 0 1-2 2 2 2 0 0 1 2 2v5c0 1.1.9 2 2 2h1"/><path d="M16 21h1a2 2 0 0 0 2-2v-5c0-1.1.9-2 2-2a2 2 0 0 1-2-2V5a2 2 0 0 0-2-2h-1"/>',
+  clock: '<circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/>',
+  layers: '<path d="m12.83 2.18a2 2 0 0 0-1.66 0L2.6 6.08a1 1 0 0 0 0 1.83l8.58 3.91a2 2 0 0 0 1.66 0l8.58-3.9a1 1 0 0 0 0-1.83Z"/><path d="m22 17.65-9.17 4.16a2 2 0 0 1-1.66 0L2 17.65"/><path d="m22 12.65-9.17 4.16a2 2 0 0 1-1.66 0L2 12.65"/>',
+  split: '<path d="M16 3h5v5"/><path d="M8 3H3v5"/><path d="M12 22v-8.3a4 4 0 0 0-1.172-2.872L3 3"/><path d="m15 9 6-6"/>',
+  folder: '<path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>',
+  x: '<path d="M18 6 6 18"/><path d="m6 6 12 12"/>',
+  sparkles: '<path d="M9.94 14.06 4 20"/><path d="m14 4 1.5 3.5L19 9l-3.5 1.5L14 14l-1.5-3.5L9 9l3.5-1.5Z"/>',
+  info: '<circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/>',
+  activity: '<path d="M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2"/>',
+  list: '<path d="M3 12h.01"/><path d="M3 18h.01"/><path d="M3 6h.01"/><path d="M8 12h13"/><path d="M8 18h13"/><path d="M8 6h13"/>',
+  file: '<path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/>',
+  git: '<circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M6 21V9a9 9 0 0 0 9 9"/>',
+  play: '<polygon points="6 3 20 12 6 21 6 3"/>',
+  chevron: '<path d="m9 18 6-6-6-6"/>',
+  shield: '<path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/>',
+};
+const kindOf = (n) => (n.foreach && n.kind !== "gate" ? "foreach" : n.kind);
+const typeOf = (n) => TYPE[kindOf(n)] || TYPE.shell;
+const runColor = (r) => {   // Eleforge getNodeColor: the folder takes the colour of its most significant task type
+  const k = new Set(r.nodes.map(kindOf));
+  return (k.has("job") ? TYPE.job : k.has("agent") ? TYPE.agent : k.has("gate") ? TYPE.gate : TYPE.shell).color;
+};
+
+// ---------------------------------------------------------------- helpers
+function el(tag, attrs, ...kids) {      // drops null/false children (DOM append would print "null")
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(attrs || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v; else if (k === "style") e.style.cssText = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v); else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const k of kids.flat()) if (k != null && k !== false) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return e;
+}
+function svgEl(tag, attrs, ...kids) {
+  const e = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs || {})) if (v != null) e.setAttribute(k, v);
+  for (const k of kids.flat()) if (k != null) e.append(k instanceof Node ? k : document.createTextNode(String(k)));
+  return e;
+}
+function icon(name, size, color) {
+  const s = svgEl("svg", { viewBox: "0 0 24 24", width: size || 12, height: size || 12, fill: "none", stroke: color || "currentColor",
+                           "stroke-width": 2, "stroke-linecap": "round", "stroke-linejoin": "round" });
+  s.innerHTML = ICONS[name] || ""; return s;
+}
+const tint = (c, a) => `color-mix(in srgb, ${c} ${a}%, transparent)`;
+function chip(status) {
+  const [label, color] = STATUS[status] || [status, "#a8a29e"];
+  return el("span", { class: "chip", style: `color:${color};background:${tint(color, 12)}` }, el("span", { class: "dot", style: `background:${color}` }), label);
+}
+const badge = (text, color) => el("span", { class: "badge", style: `color:${color};background:${tint(color, 12)}` }, text);
+const clip = (s, n) => { s = s == null ? "" : String(s); return s.length > n ? s.slice(0, n - 1) + "…" : s; };
+const enc = encodeURIComponent;
+const fileUrl = (p) => `/api/runs/${enc(S.runId)}/file?path=${enc(p)}&token=${enc(TOKEN)}`;
+const sh = (iconName, text, right) => el("h3", { class: "sh" }, iconName ? icon(iconName, 12) : null, text, right ? el("span", { class: "r" }, right) : null);
+const card = (iconName, title, ...kids) => el("div", { class: "card" }, sh(iconName, title), ...kids);
+const costText = (c, long) => !c ? null : c.usd ? `$${c.usd.toFixed(2)}` :
+  c.input_tokens ? `${Math.round((c.input_tokens + c.output_tokens) / 1000)}k${long ? " tokens" : ""}` : null;
+function toast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg; t.style.display = "block"; clearTimeout(toast._t); toast._t = setTimeout(() => (t.style.display = "none"), 2600);
+}
+async function api(path, body) {
+  const opt = { headers: { "X-Forgeflow-Token": TOKEN } };
+  if (body !== undefined) { opt.method = "POST"; opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({ ok: false, error: { message: "bad response" } }));
+  if (!j.ok) throw new Error((j.error && (j.error.message + (j.error.suggestion ? " — " + j.error.suggestion : ""))) || r.statusText);
+  return j;
+}
+async function act(action, body, label) {
+  try { const r = await api(`/api/runs/${enc(S.runId)}/${action}`, body || {}); toast(label || "done");
+        await refresh(true); if (S.node) await loadNode(S.node, true); return r; }
+  catch (e) { toast("Error: " + e.message); }
+}
+
+// ---------------------------------------------------------------- runs
+async function loadRuns() {
+  S.runs = (await api("/api/runs")).runs;
+  const sel = document.getElementById("runselect"); sel.textContent = "";
+  if (!S.runs.length) {
+    sel.append(el("option", {}, "no runs yet"));
+    document.getElementById("pane").replaceChildren(el("div", { class: "empty" }, "No runs yet. Start one with: forgeflow run plan.yaml"));
+  }
+  for (const r of S.runs) sel.append(el("option", { value: r.id, selected: r.id === S.runId },
+    `${r.title} · ${(r.created || "").slice(5, 16).replace("T", " ")}${r.decisions ? " · needs you" : ""}`));
+  if (!S.runId && S.runs.length) {
+    const fromUrl = decodeURIComponent((location.pathname.match(/^\/runs\/([^/]+)/) || [])[1] || "");
+    selectRun(S.runs.some(r => r.id === fromUrl) ? fromUrl : S.runs[0].id);
+  }
+}
+function selectRun(id) {
+  if (S.runId && S.runId !== id) { S.node = null; S.nodeData = null; if (S.tab === "node") S.tab = "run"; }
+  S.runId = id; S.run = null; S.view = null;
+  history.replaceState(null, "", `/runs/${enc(id)}?token=${enc(TOKEN)}${location.hash}`);
+  refresh(true);
+}
+
+// ---------------------------------------------------------------- top bar + banner
+function progressBar(cls, r, states) {
+  const c = r.counts || {}, bar = el("div", { class: cls });
+  for (const s of states) if (c[s]) bar.append(el("div", { style: `width:${100 * c[s] / (r.nodes.length || 1)}%;background:${STATUS[s][1]}`, title: `${c[s]} ${s}` }));
+  return bar;
+}
+function renderTop(r) {
+  const c = r.counts || {}, cost = costText(r.cost, true);
+  document.getElementById("topstatus").replaceChildren(el("span", { class: "row", style: "gap:12px" }, chip(r.status),
+    progressBar("minibar", r, ["succeeded", "running", "waiting", "retrying", "failed"]),
+    el("span", { class: "mono" }, `${c.succeeded || 0}/${r.nodes.length}`), el("span", {}, r.elapsed),
+    cost ? el("span", {}, cost) : null));
+  const acts = document.getElementById("topacts"); acts.textContent = "";
+  if (r.stalled) acts.append(el("button", { class: "primary", onclick: () => act("resume", {}, "resumed") }, "Resume"));
+  acts.append(el("button", { onclick: async () => { await act("report", {}, "report written"); window.open(`/runs/${enc(r.id)}/report?token=${enc(TOKEN)}`, "_blank"); } }, "Open report"));
+  if (!["succeeded", "failed", "cancelled", "rejected"].includes(r.status))
+    acts.append(el("button", { class: "danger", onclick: () => confirm("Cancel the whole run?") && act("cancel", {}, "cancel requested") }, "Cancel run"));
+  const n = r.gates.length + r.waits.length;
+  const banner = document.getElementById("banner");
+  banner.classList.toggle("show", n > 0 || !!r.stalled);
+  banner.replaceChildren(icon(r.gates.length ? "hand" : r.waits.length ? "clock" : "play", 14, CHECKPOINT),
+    el("span", { style: "font-weight:500" }, r.gates.length ? `${r.gates.length} decision${r.gates.length > 1 ? "s" : ""} waiting for you` :
+      r.waits.length ? `Waiting for signal “${r.waits[0].signal}”` : "Nothing is driving this run"),
+    el("button", { class: "primary", style: "height:26px", onclick: () => setTab("run") }, "Review"));
+  document.querySelector('.tab[data-tab="run"]').replaceChildren("Run", n ? el("span", { class: "count" }, String(n)) : "");
+}
+
+// ---------------------------------------------------------------- git-graph lane layout
+// Port of Eleforge computeBranchColumns (constellation-node-layout.ts): rows are execution depth; roots open
+// lanes; a node's first single-dependency child stays on the parent's lane while later siblings fork right;
+// a join sits on its primary parent's lane (deepest, then leftmost); a (lane,row) cell is never shared,
+// collisions shift right. Deviation: forks take the nearest free lane right of the parent rather than a brand
+// new lane, so wide foreach fan-outs stay compact.
+const R = 18, RF = 24, ROWH = 74, PAD = 48;     // 36px task circle, 48px folder, Eleforge row pitch
+const colW = () => (S.labels ? 176 : 68);          // 68 = Eleforge lane pitch; labels need ~120px beside the circle
+function layout(nodes) {
+  const byId = new Map(nodes.map(n => [n.id, n]));
+  const depth = (id) => (byId.get(id) || { depth: 0 }).depth;
+  const col = {}, kids = {}, occ = new Set(); let maxc = 0;
+  const claim = (n, want) => { let c = want; while (occ.has(`${c}:${n.depth}`)) c++; occ.add(`${c}:${n.depth}`); maxc = Math.max(maxc, c); return c; };
+  for (const n of [...nodes].sort((a, b) => a.depth - b.depth)) {
+    const deps = n.needs.filter(d => d in col);
+    if (!deps.length) col[n.id] = claim(n, 0);
+    else if (deps.length === 1) { const p = deps[0]; col[n.id] = claim(n, kids[p] ? col[p] + 1 : col[p]); kids[p] = true; }
+    else {
+      let best = deps[0];
+      for (const d of deps) if (depth(d) > depth(best) || (depth(d) === depth(best) && col[d] < col[best])) best = d;
+      col[n.id] = claim(n, col[best]);
+    }
+  }
+  const W = colW(), xy = new Map(); let maxr = 0;
+  for (const n of nodes) { xy.set(n.id, { x: PAD + RF + col[n.id] * W, y: PAD + RF + (n.depth + 1) * ROWH, c: col[n.id], r: n.depth, rad: R });
+                           maxr = Math.max(maxr, n.depth); }
+  const folder = { x: PAD + RF, y: PAD + RF, c: 0, r: -1, rad: RF };
+  return { xy, occ, folder, width: PAD * 2 + RF + maxc * W + (S.labels ? 150 : RF), height: PAD * 2 + RF * 2 + (maxr + 1) * ROWH };
+}
+// Eleforge depEdges `ortho` (constellation-node.tsx): smoothstep orthogonal routing from the circle's bottom to
+// the target's top. downFirst: when the source lane is clear between the rows, drop straight down it and turn in
+// 20px above the target (r 10). Same-lane skip edges bow 22px sideways around the nodes in between (always left
+// while labels are shown, since they sit to the right). Otherwise turn at mid-height (r 12).
+function edgeHash(s) { let h = 0; for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) | 0; return h; }
+function edgePath(a, b, occ, key) {
+  const fx = a.x, fy = a.y + a.rad + 1, tx = b.x, ty = b.y - b.rad - 2;
+  const sameCol = Math.abs(fx - tx) < 1, skip = b.r - a.r > 1;
+  const srcClear = () => { for (let r = a.r + 1; r < b.r; r++) if (occ.has(`${a.c}:${r}`)) return false; return true; };
+  if (!sameCol && skip && srcClear()) {
+    const dir = tx > fx ? 1 : -1, turnY = ty - 20, r = Math.max(0, Math.min(10, Math.abs(tx - fx) / 2, Math.abs(turnY - fy)));
+    return `M${fx},${fy} L${fx},${turnY - r} Q${fx},${turnY} ${fx + dir * r},${turnY} L${tx - dir * r},${turnY} Q${tx},${turnY} ${tx},${turnY + r} L${tx},${ty}`;
+  }
+  if (sameCol && skip && !srcClear()) {
+    const dir = S.labels || edgeHash(key) % 2 !== 0 ? -1 : 1, bx = fx + dir * 22, y1 = fy + 8, y2 = ty - 8, r = 8;
+    return `M${fx},${fy} L${fx},${y1 - r} Q${fx},${y1} ${fx + dir * r},${y1} L${bx - dir * r},${y1} Q${bx},${y1} ${bx},${y1 + r}` +
+           ` L${bx},${y2 - r} Q${bx},${y2} ${bx - dir * r},${y2} L${fx + dir * r},${y2} Q${fx},${y2} ${fx},${y2 + r} L${fx},${ty}`;
+  }
+  if (sameCol) return `M${fx},${fy} L${tx},${ty}`;
+  const midY = (fy + ty) / 2, dir = tx > fx ? 1 : -1, r = Math.max(0, Math.min(12, Math.abs(tx - fx) / 2, Math.abs(midY - fy)));
+  return `M${fx},${fy} L${fx},${midY - r} Q${fx},${midY} ${fx + dir * r},${midY} L${tx - dir * r},${midY} Q${tx},${midY} ${tx},${midY + r} L${tx},${ty}`;
+}
+
+// ---------------------------------------------------------------- canvas render
+function viewport() {   // the part of the canvas not covered by the floating inspector
+  const cv = document.getElementById("canvas"), wide = cv.clientWidth > 900;
+  return { w: cv.clientWidth - (wide ? 400 : 0), h: cv.clientHeight - (wide ? 0 : cv.clientHeight * 0.45) };
+}
+function renderCanvas(r) {
+  hideTip();
+  const cv = document.getElementById("canvas");
+  const L = layout(r.nodes);
+  if (!S.view) {     // Eleforge opens at 100%; shrink to fit when needed, but never below a readable 55%
+    const { w, h } = viewport();
+    const kAll = Math.min(1, (w - 48) / L.width, (h - 64) / L.height);
+    const k = kAll >= 0.7 ? kAll : Math.max(0.55, Math.min(1, (w - 48) / L.width));
+    S.view = { k, x: Math.max(16, (w - L.width * k) / 2), y: kAll >= 0.7 ? Math.max(16, (h - L.height * k) / 2) : 16 };
+  }
+  const svg = svgEl("svg", { id: "graph", width: "100%", height: "100%", style: "position:absolute;inset:0;z-index:1" });
+  const vp = svgEl("g", { id: "vp", transform: `translate(${S.view.x},${S.view.y}) scale(${S.view.k})` });
+  const defs = svgEl("defs", {}), colors = new Set(), edges = svgEl("g", {}), nodes = svgEl("g", {});
+  const addEdge = (from, to, a, b, color) => {
+    const skip = b.r - a.r > 1; colors.add(color);
+    edges.append(svgEl("path", { class: "edge", "data-a": from, "data-b": to, "data-w": skip ? 1.2 : 1.6, "data-o": `var(${skip ? "--skip-opacity" : "--edge-opacity"})`,
+      d: edgePath(a, b, L.occ, from + ">" + to), stroke: color, "stroke-width": skip ? 1.2 : 1.6, "stroke-dasharray": skip ? "4 3" : null,
+      style: `stroke-opacity:var(${skip ? "--skip-opacity" : "--edge-opacity"})`, "marker-end": `url(#arw-${color.slice(1)})` }));
+  };
+  for (const n of r.nodes) {
+    const deps = n.needs.filter(p => L.xy.has(p));
+    if (!deps.length) addEdge("__run__", n.id, L.folder, L.xy.get(n.id), typeOf(n).color);
+    for (const p of deps) addEdge(p, n.id, L.xy.get(p), L.xy.get(n.id), typeOf(n).color);
+  }
+  for (const c of colors) defs.append(svgEl("marker", { id: `arw-${c.slice(1)}`, viewBox: "0 0 7 7", refX: 6, refY: 3.5, markerWidth: 7, markerHeight: 7,
+    orient: "auto", markerUnits: "userSpaceOnUse" }, svgEl("path", { d: "M0,0 L7,3.5 L0,7 Z", fill: c })));
+  nodes.append(renderFolder(r, L.folder));
+  for (const n of r.nodes) nodes.append(renderNode(n, L.xy.get(n.id)));
+  vp.append(edges, nodes); svg.append(defs, vp);
+  const old = document.getElementById("graph");
+  if (old) old.replaceWith(svg); else cv.prepend(svg);
+  document.getElementById("zl").textContent = Math.round(S.view.k * 100) + "%";
+  applyHover();
+}
+// Eleforge getBorderStyle + ring animation classes, as SVG.
+function statusLook(status, color, kind) {
+  const L = { stroke: color, dash: null, width: null, cls: "", pulse: color, spin: false, icon: null };
+  if (status === "pending" || status === "skipped" || status === "awaiting_approval") { L.dash = "4 3"; L.stroke = color + "80"; }
+  if (status === "skipped") L.stroke = "var(--text3)";
+  if (status === "running" || status === "retrying") L.spin = true;
+  if (status === "succeeded") L.cls = "breathe";
+  if (["failed", "cancelled", "rejected"].includes(status)) { L.stroke = FAILED; L.pulse = FAILED; }
+  if (status === "waiting" || status === "parked") {     // Eleforge "checkpoint": amber, 2px, pulsing, Hand icon
+    L.stroke = CHECKPOINT; L.pulse = CHECKPOINT; L.width = 2; L.cls = "attn"; L.icon = kind === "wait" ? "clock" : "hand";
+  }
+  return L;
+}
+function ringParts(g, rad, look, iconName, iconColor, iconSize) {
+  const body = svgEl("g", { class: "body-g" });
+  body.append(svgEl("circle", { class: "ring", r: rad, stroke: look.stroke, "stroke-dasharray": look.dash, style: look.width ? `stroke-width:${look.width}` : null }));
+  const ico = icon(iconName, iconSize, iconColor); ico.setAttribute("x", -iconSize / 2); ico.setAttribute("y", -iconSize / 2); body.append(ico);
+  g.append(svgEl("circle", { class: "hit", r: rad + 4 }), svgEl("circle", { class: "sel", r: rad + 6 }), body);
+  if (look.spin) {   // .animate-constellation-spin::after — inset -3px, 2.5px border, top = colour, right = colour 30%
+    const rr = rad + 1.75, C = 2 * Math.PI * rr, q = (C / 4).toFixed(2);
+    g.append(svgEl("g", { class: "spin" },
+      svgEl("circle", { r: rr, stroke: look.pulse, "stroke-dasharray": `${q} ${C}`, "stroke-dashoffset": (C * 135 / 360).toFixed(2) }),
+      svgEl("circle", { r: rr, stroke: tint(look.pulse, 30), "stroke-dasharray": `${q} ${C}`, "stroke-dashoffset": (C * 45 / 360).toFixed(2) })));
+  }
+}
+function renderFolder(r, p) {
+  const color = runColor(r), look = statusLook(r.status, color);
+  const g = svgEl("g", { class: `cn folder ${look.cls}`, transform: `translate(${p.x},${p.y})`, style: `--pulse:${look.pulse};--c:${color}` });
+  ringParts(g, RF, look, "folder", color, 20);
+  g.append(svgEl("text", { class: "lbl", x: RF + 10, y: 4 }, clip(r.title, 60)));
+  g.addEventListener("click", (e) => { e.stopPropagation(); closeNode(); setTab("run"); });
+  g.addEventListener("mouseenter", () => { S.hover = "__run__"; applyHover(); });
+  g.addEventListener("mouseleave", () => { S.hover = null; applyHover(); });
+  return g;
+}
+function renderNode(n, p) {
+  const t = typeOf(n), look = statusLook(n.status, t.color, n.kind);
+  const g = svgEl("g", { class: `cn ${look.cls}${S.node === n.id ? " selected" : ""}`, transform: `translate(${p.x},${p.y})`, "data-id": n.id,
+                        style: `--pulse:${look.pulse};--c:${n.status === "skipped" ? "var(--text3)" : t.color}` });
+  ringParts(g, R, look, look.icon || t.icon, look.icon ? CHECKPOINT : n.status === "skipped" ? "var(--text3)" : t.color, 14);
+  if (S.labels) {
+    const [slabel] = STATUS[n.status] || [n.status];
+    g.append(svgEl("text", { class: "lbl", x: R + 10, y: -2 }, clip(n.id, 20) + (n.attempt > 1 ? ` #${n.attempt}` : "")),
+      svgEl("text", { class: "sub", x: R + 10, y: 12 }, clip(slabel + (n.time ? " · " + n.time : ""), 24)));
+  }
+  g.addEventListener("click", (e) => { e.stopPropagation(); openNode(n.id); });
+  g.addEventListener("mouseenter", () => { S.hover = n.id; applyHover(); showTip(n, g); });
+  g.addEventListener("mouseleave", () => { S.hover = null; applyHover(); hideTip(); });
+  return g;
+}
+function applyHover() {   // Eleforge: the hovered node's edges go to 2.4px / full opacity, the rest dim to 0.12
+  const h = S.hover, all = document.querySelectorAll("#graph .edge");
+  const active = h && [...all].some(e => e.dataset.a === h || e.dataset.b === h);
+  all.forEach(e => {
+    const touch = active && (e.dataset.a === h || e.dataset.b === h);
+    e.style.strokeOpacity = !active ? e.dataset.o : touch ? "1" : "0.12";
+    e.setAttribute("stroke-width", touch ? 2.4 : e.dataset.w);
+  });
+}
+function markSelected() { document.querySelectorAll("#graph .cn[data-id]").forEach(g => g.classList.toggle("selected", g.dataset.id === S.node)); }
+function showTip(n, g) {   // constellation-node-tooltip: right of the circle (ml-3), vertically centred
+  const tip = document.getElementById("tip"), t = typeOf(n);
+  const cv = document.getElementById("canvas").getBoundingClientRect(), b = g.querySelector(".ring").getBoundingClientRect();
+  const [label, color] = STATUS[n.status] || [n.status, "#a8a29e"];
+  tip.replaceChildren(...[el("div", { class: "n" }, n.title !== n.id ? n.title : n.id),
+    el("div", { class: "s" }, el("span", { class: "dot", style: `background:${color}` }), el("span", { class: "l" }, label + (n.time ? " · " + n.time : "")),
+      el("span", { class: "k" }, `${t.name.toLowerCase()} · ${n.id}`)),
+    n.what && n.what !== n.title ? el("div", { class: "d" }, clip(n.what, 180)) : null,
+    n.activity ? el("div", { class: "d" }, clip(n.activity, 180)) : null,
+    n.added_by ? el("div", { class: "d", style: `color:${CHECKPOINT}` }, `added by ${n.added_by}`) : null].filter(Boolean));
+  tip.style.display = "block";
+  let left = b.right - cv.left + 12, top = (b.top + b.bottom) / 2 - cv.top - tip.offsetHeight / 2;
+  if (left + tip.offsetWidth > viewport().w - 8) left = b.left - cv.left - 12 - tip.offsetWidth;
+  tip.style.left = Math.max(8, left) + "px"; tip.style.top = Math.max(8, top) + "px";
+}
+function hideTip() { document.getElementById("tip").style.display = "none"; }
+function setView() { const vp = document.getElementById("vp"); if (vp) vp.setAttribute("transform", `translate(${S.view.x},${S.view.y}) scale(${S.view.k})`);
+  document.getElementById("zl").textContent = Math.round(S.view.k * 100) + "%"; }
+function zoom(f, cx, cy) {
+  const v = viewport(); cx = cx ?? v.w / 2; cy = cy ?? v.h / 2;
+  const k = Math.min(2.5, Math.max(0.2, S.view.k * f)), q = k / S.view.k;
+  S.view = { k, x: cx - (cx - S.view.x) * q, y: cy - (cy - S.view.y) * q }; setView();
+}
+(function panzoom() {
+  const cv = document.getElementById("canvas"); let drag = null;
+  cv.addEventListener("wheel", (e) => {          // plain scroll pans like a map, ctrl/cmd + scroll zooms
+    if (!S.view || e.target.closest(".overlay")) return; e.preventDefault(); hideTip();
+    if (e.ctrlKey || e.metaKey) { const b = cv.getBoundingClientRect(); zoom(e.deltaY < 0 ? 1.1 : 1 / 1.1, e.clientX - b.left, e.clientY - b.top); }
+    else { S.view.x -= e.deltaX; S.view.y -= e.deltaY; setView(); }
+  }, { passive: false });
+  cv.addEventListener("mousedown", (e) => { if (e.button || !S.view || e.target.closest(".overlay, .cn")) return;
+    drag = { x: e.clientX, y: e.clientY, vx: S.view.x, vy: S.view.y, moved: false }; cv.classList.add("dragging"); });
+  window.addEventListener("mousemove", (e) => { if (!drag) return; drag.moved = true; S.view.x = drag.vx + e.clientX - drag.x; S.view.y = drag.vy + e.clientY - drag.y; setView(); });
+  window.addEventListener("mouseup", () => { cv.classList.remove("dragging"); setTimeout(() => (drag = null)); });
+  cv.addEventListener("click", (e) => { if (drag && drag.moved) return; if (!e.target.closest(".cn, .overlay") && S.node) closeNode(); });
+  document.getElementById("zin").onclick = () => zoom(1.2);
+  document.getElementById("zout").onclick = () => zoom(1 / 1.2);
+  document.getElementById("zfit").onclick = () => { S.view = null; if (S.run) renderCanvas(S.run); };
+  const lb = document.getElementById("zlabels");
+  lb.classList.toggle("on", S.labels);
+  lb.onclick = () => { S.labels = !S.labels; store.set("ff-labels", S.labels ? "on" : "off"); lb.classList.toggle("on", S.labels); S.view = null; if (S.run) renderCanvas(S.run); };
+  document.getElementById("legend").append(...Object.values(TYPE).map(t => el("span", {}, el("i", { style: `border-color:${t.color}` }), t.name)));
+})();
+
+// ---------------------------------------------------------------- inspector: Run tab
+function renderRunTab(r) {
+  const p = document.getElementById("pane"); p.textContent = "";
+  const c = r.counts || {}, color = runColor(r);
+  p.append(el("div", { class: "ph" },
+    el("span", { class: "ib", style: `color:${color};background:${tint(color, 10)};border-color:${tint(color, 30)}` }, icon("folder", 16)),
+    el("div", { style: "flex:1;min-width:0" }, el("h2", { class: "t-title" }, r.title),
+      el("div", { class: "meta" }, chip(r.status), el("span", { class: "mono faint" }, r.id)),
+      r.reason && ["failed", "parked", "cancelled", "rejected"].includes(r.status) ? el("div", { class: "desc" }, r.reason) : null)));
+  const b = el("div", { class: "body" }); p.append(b);
+  for (const g of r.gates) {
+    const text = el("textarea", { rows: 2, placeholder: "Reason or feedback, recorded with your decision" });
+    const title = g.subject === "plan" ? "Approve the plan" : g.subject === "amendment" ? "Plan change proposed" : `Decision · ${g.node}`;
+    b.append(el("div", { class: "decision" },
+      el("div", { class: "t t-label" }, icon("hand", 14, CHECKPOINT), title, el("span", { class: "mono faint", style: "margin-left:auto;font-weight:400" }, g.id)),
+      el("div", { class: "msg t-body" }, g.message),
+      g.diff ? el("div", { class: "tiny muted", style: "margin-bottom:8px" }, (g.diff.added || []).length ? `adds ${g.diff.added.join(", ")}  ` : "",
+        (g.diff.changed || []).length ? `re-wires ${g.diff.changed.map(x => x.id).join(", ")}` : "") : null,
+      text,
+      el("div", { class: "btns" }, g.decisions.map((d, i) => el("button", { class: i === 0 ? "primary" : (["reject", "abort"].includes(d) ? "danger" : null),
+        onclick: () => act("answer", { gate: g.id, decision: d, text: text.value }, `${d} recorded`) }, d)))));
+  }
+  for (const w of r.waits) {
+    const data = el("textarea", { class: "code", rows: 2, placeholder: '{"value": …}  JSON payload' });
+    b.append(el("div", { class: "decision" },
+      el("div", { class: "t t-label" }, icon("clock", 14, CHECKPOINT), `${w.node} waits for signal “${w.signal}”`),
+      el("div", { class: "tiny muted", style: "margin:4px 0 8px" }, w.deadline_at ? `deadline ${w.deadline_at.replace("T", " ").slice(0, 16)} UTC` : "no deadline"),
+      data, el("div", { class: "btns" }, el("button", { class: "primary", onclick: () => act("signal", { name: w.signal, data: data.value }, "signal sent") }, "Send signal"))));
+  }
+  if (r.stalled) b.append(el("div", { class: "decision" }, el("div", { class: "t t-label" }, icon("play", 14, CHECKPOINT), "Nothing is driving this run"),
+    el("div", { class: "small muted", style: "margin-top:4px" }, "Work is pending but no driver process is running."),
+    el("div", { class: "btns" }, el("button", { class: "primary", onclick: () => act("resume", {}, "resumed") }, "Resume"))));
+  b.append(card("activity", "Progress",
+    el("div", { class: "stats" },
+      el("div", { class: "stat" }, el("b", {}, `${c.succeeded || 0}/${r.nodes.length}`), el("span", {}, "completed")),
+      el("div", { class: "stat" }, el("b", {}, r.elapsed), el("span", {}, "elapsed")),
+      el("div", { class: "stat" }, el("b", {}, costText(r.cost) || "—"), el("span", {}, r.cost && r.cost.usd ? "agent cost" : "agent tokens"))),
+    progressBar("bar", r, ["succeeded", "running", "waiting", "retrying", "failed", "skipped"]),
+    el("div", { class: "legend-row" },
+      Object.entries(c).map(([s, v]) => el("span", { class: "row", style: "gap:5px" }, el("span", { class: "dot", style: `background:${(STATUS[s] || [0, "#a8a29e"])[1]}` }),
+        `${v} ${(STATUS[s] || [s])[0].toLowerCase()}`)))));
+  if (r.description) b.append(card("info", "Goal", el("div", { class: "t-body", style: "white-space:pre-wrap" }, r.description.trim().replace(/([^\n])\n(?=[^\n])/g, "$1 "))));
+  if (Object.keys(r.inputs || {}).length) {
+    const kv = el("div", { class: "kv" });
+    for (const [k, v] of Object.entries(r.inputs)) kv.append(el("div", {}, k), el("div", {}, clip(typeof v === "string" ? v : JSON.stringify(v), 160)));
+    b.append(card("list", "Inputs", kv));
+  }
+  b.append(card("shield", "Contract", el("div", { class: "kv" },
+    el("div", {}, "plan"), el("div", {}, r.plan_id), el("div", {}, "approved by"), el("div", {}, r.approved_by || "—"),
+    el("div", {}, "base digest"), el("div", {}, r.base_digest), el("div", {}, "current"), el("div", {}, `gen ${r.generation} · ${r.digest}`),
+    el("div", {}, "driver"), el("div", {}, r.driver ? `pid ${r.driver.pid}` : "none"),
+    el("div", {}, "directory"), el("div", {}, r.dir))));
+}
+
+// ---------------------------------------------------------------- inspector: Node tab
+function openNode(id) {
+  S.node = id; S.nodeData = null; S.nodeSig = null;
+  history.replaceState(null, "", location.pathname + location.search + "#node=" + enc(id));
+  markSelected(); setTab("node"); loadNode(id);
+}
+function closeNode() {
+  S.node = null; S.nodeData = null; markSelected();
+  history.replaceState(null, "", location.pathname + location.search);
+  if (S.tab === "node") setTab("run");
+}
+async function loadNode(id, quiet) {
+  let n; try { n = (await api(`/api/runs/${enc(S.runId)}/node/${enc(id)}`)).node; } catch (e) { if (!quiet) toast("Error: " + e.message); return; }
+  if (S.node !== id) return;
+  const sig = JSON.stringify([n.status, n.attempts.map(a => [a.n, a.status, a.summary, a.duration, Object.values(a.logs || {}).map(v => (v || "").length)])]);
+  if (quiet && S.nodeSig === id + sig) return;     // unchanged: keep scroll position and open sections
+  S.nodeSig = id + sig; S.nodeData = n;
+  if (S.tab === "node") renderNodeTab();
+}
+function disclosure(head, body, open) {           // ▸/▾ disclosure, drawn as an SVG chevron
+  const d = el("div", { class: "disc" + (open ? " open" : "") });
+  d.append(el("div", { class: "dh", onclick: () => d.classList.toggle("open") }, el("span", { class: "tri" }, icon("chevron", 12)), head),
+           el("div", { class: "db" }, body));
+  return d;
+}
+function renderNodeTab() {
+  const p = document.getElementById("pane"); p.textContent = "";
+  const n = S.nodeData;
+  if (!S.node) { p.append(el("div", { class: "empty" }, "Click a node on the canvas to inspect it.")); return; }
+  if (!n) { p.append(el("div", { class: "empty" }, "Loading…")); return; }
+  const t = typeOf((S.run && S.run.nodes.find(x => x.id === n.id)) || n);
+  p.append(el("div", { class: "ph" },
+    el("span", { class: "ib", style: `color:${t.color};background:${tint(t.color, 10)};border-color:${tint(t.color, 30)}` }, icon(t.icon, 16)),
+    el("div", { style: "flex:1;min-width:0" }, el("h2", { class: "t-title" }, n.title !== n.id ? n.title : n.id),
+      el("div", { class: "meta" }, badge(t.name, t.color), chip(n.status), el("span", { class: "mono faint" }, n.id)),
+      n.what && n.what !== n.title ? el("div", { class: "desc" }, n.what) : null,
+      n.added_by ? el("div", { class: "desc", style: `color:${CHECKPOINT}` }, `added to the plan by ${n.added_by}`) : null)));
+  const b = el("div", { class: "body" }); p.append(b);
+  const tags = (ids) => ids.length ? el("span", { class: "row wrap", style: "justify-content:flex-end;gap:4px" }, ids.map(x => el("span", { class: "tag", onclick: () => openNode(x) }, x))) : "—";
+  const rel = el("div", { class: "kv" }, el("div", {}, "executor"), el("div", {}, n.label), el("div", {}, "needs"), tags(n.needs), el("div", {}, "used by"), tags(n.children));
+  if (n.when) rel.append(el("div", {}, "condition"), el("div", {}, n.when));
+  if (n.bind) rel.append(el("div", {}, "item"), el("div", {}, clip(JSON.stringify(n.bind.item), 120)));
+  for (const [k, v] of [["skipped", n.skipped_reason], ["re-queued", n.stale_reason], ["retry at", n.retry_at]]) if (v) rel.append(el("div", {}, k), el("div", {}, v));
+  const btns = el("div", { class: "btns", style: "margin-top:12px" });
+  if (["succeeded", "failed", "skipped", "cancelled"].includes(n.status)) btns.append(
+    el("button", { onclick: () => confirm(`Run ${n.id} again, and everything after it?`) && act("rerun", { node: n.id }, "queued again") }, "Rerun + downstream"),
+    el("button", { onclick: () => confirm(`Run only ${n.id} again?`) && act("rerun", { node: n.id, only: true }, "queued again") }, "Rerun only this"));
+  if (["running", "waiting", "retrying", "pending"].includes(n.status))
+    btns.append(el("button", { class: "danger", onclick: () => confirm(`Cancel ${n.id}?`) && act("cancel", { node: n.id }, "cancel requested") }, "Cancel node"));
+  b.append(card("git", "Relations", rel, btns.children.length ? btns : null));
+  b.append(el("h3", { class: "sh", style: "margin:4px 2px 8px" }, icon("list", 12), "Attempts", el("span", { class: "r" }, String(n.attempts.length))));
+  if (!n.attempts.length) b.append(el("div", { class: "card small faint" }, "Not started yet."));
+  n.attempts.forEach((a, i) => b.append(attemptBlock(a, i === 0)));
+  b.append(el("div", { style: "margin-top:12px" }, disclosure(el("span", { class: "muted" }, "Node definition (approved plan)"), el("pre", {}, JSON.stringify(n.spec, null, 2)), false)));
+}
+function attemptBlock(a, open) {
+  const head = el("span", { class: "row", style: "flex:1;gap:8px;min-width:0" }, el("span", { class: "t-label" }, `Attempt ${a.n}`), chip(a.status),
+    a.reused_from ? el("span", { class: "tiny faint" }, "reused") : null, el("span", { class: "mono faint", style: "margin-left:auto" }, a.duration || ""));
+  const b = el("div", {});
+  if (a.reused_from) b.append(el("div", { class: "tiny muted", style: "margin-top:8px" }, `reused result of ${a.reused_from}`));
+  if (a.summary) b.append(el("div", { class: "prose" }, el("b", {}, "Summary"), a.summary));
+  if (a.rationale) b.append(el("div", { class: "prose aside" }, el("b", {}, "Why"), a.rationale));
+  if (a.error) b.append(el("div", { class: "prose", style: "color:var(--error)" }, el("b", { style: "color:var(--error)" }, a.error.error_class), a.error.message || ""));
+  const kv = el("div", { class: "kv", style: "margin-top:12px" });
+  kv.append(el("div", {}, "started"), el("div", {}, (a.started || "").replace("T", " ").slice(0, 19)));
+  if (a.actor && a.actor !== "system") kv.append(el("div", {}, "by"), el("div", {}, a.actor));
+  if (a.session) kv.append(el("div", {}, "agent session"), el("div", {}, a.session + (a.repairs ? ` · ${a.repairs} repair turn(s)` : "")));
+  if (a.usage && (a.usage.input_tokens || a.usage.cost_usd != null))
+    kv.append(el("div", {}, "usage"), el("div", {}, `${a.usage.input_tokens || 0} in · ${a.usage.output_tokens || 0} out` + (a.usage.cost_usd != null ? ` · $${Number(a.usage.cost_usd).toFixed(4)}` : "")));
+  if (a.job && a.job.job_id) kv.append(el("div", {}, "slurm"), el("div", {}, `job ${a.job.job_id} · ${a.job.cluster} · ${a.job.state || ""}`));
+  if (a.job && a.job.job_dir) kv.append(el("div", {}, "job dir"), el("div", {}, a.job.job_dir));
+  kv.append(el("div", {}, "attempt dir"), el("div", {}, a.dir));
+  b.append(kv);
+  if (a.files && a.files.length) {
+    b.append(el("div", { class: "sub-h" }, icon("file", 12), "Files"));
+    for (const f of a.files) {
+      b.append(el("div", { class: "row small", style: "justify-content:space-between;padding:2px 0" }, el("a", { href: fileUrl(f.path), target: "_blank" }, f.name),
+        el("span", { class: "mono faint" }, `${f.bytes != null ? f.bytes + " B" : ""}${f.sha256 ? " · " + f.sha256.slice(0, 10) : ""}`)));
+      if (f.image) b.append(el("img", { class: "thumb", src: fileUrl(f.path), alt: f.name }));
+    }
+  }
+  if (a.outputs && Object.keys(a.outputs).length) b.append(el("div", { class: "sub-h" }, icon("sparkles", 12), "Outputs"), el("pre", {}, JSON.stringify(a.outputs, null, 2)));
+  const more = [];
+  if (a.inputs && Object.keys(a.inputs).length) more.push(disclosure(el("span", { class: "muted" }, "Inputs"), el("pre", {}, JSON.stringify(a.inputs, null, 2)), false));
+  for (const [k, v] of Object.entries(a.logs || {})) more.push(disclosure(el("span", { class: "muted" }, k), el("pre", { class: "log" }, v), false));
+  if (more.length) b.append(el("div", { style: "margin-top:12px" }, more));
+  return disclosure(head, b, open);
+}
+
+// ---------------------------------------------------------------- inspector: Timeline / History
+async function renderTimeline() {
+  const p = document.getElementById("pane"); p.textContent = "";
+  const filter = el("input", { placeholder: "Filter by node, text or actor…" }), list = el("div", { class: "card", style: "padding:4px 8px;margin-top:10px" });
+  p.append(el("div", { class: "body" }, filter, list));
+  const evs = (await api(`/api/runs/${enc(S.runId)}/timeline`)).events;
+  const draw = () => {
+    list.textContent = ""; const f = filter.value.toLowerCase(); let shown = 0;
+    for (const e of evs) {
+      if (f && !(e.text + " " + (e.actor || "") + " " + (e.node || "")).toLowerCase().includes(f)) continue;
+      const cls = /FAILED|LOST|rejected/.test(e.text) ? "bad" : / done: |SUCCEEDED|APPLIED|APPROVED/.test(e.text) ? "good" : /decision/.test(e.text) ? "dec" : "";
+      list.append(el("div", { class: "ev " + cls }, el("div", { class: "t", title: "+" + e.rel }, e.at.slice(11, 19)),
+        el("div", {}, el("div", { class: "x" }, e.text), e.actor && e.actor !== "system" ? el("div", { class: "a" }, e.actor) : null)));
+      shown++;
+    }
+    if (!shown) list.append(el("div", { class: "empty", style: "padding:16px" }, "No matching events."));
+  };
+  filter.addEventListener("input", draw); draw();
+}
+async function renderHistory() {
+  const p = document.getElementById("pane"); p.textContent = "";
+  const h = await api(`/api/runs/${enc(S.runId)}/history`);
+  const b = el("div", { class: "body" }); p.append(b);
+  for (const g of h.generations) {
+    const c = el("div", { class: "card" },
+      el("div", { class: "row", style: "justify-content:space-between" }, el("span", { class: "t-label" }, `Generation ${g.generation}`), el("span", { class: "mono faint" }, g.digest)),
+      el("div", { class: "tiny muted", style: "margin-top:4px" }, `${(g.at || "").replace("T", " ").slice(0, 19)} · ${g.nodes} nodes · `,
+        g.generation === 0 ? `approved by ${g.by || "—"}` : `${g.by}${g.proposed_by && g.proposed_by !== g.by ? " · proposed by " + g.proposed_by : ""}`));
+    if (g.rationale) c.append(el("div", { class: "prose aside" }, el("b", {}, "Why"), g.rationale));
+    if (g.diff) {
+      const d = el("div", { class: "mono", style: "margin-top:8px;line-height:1.7" });
+      if (g.diff.added.length) d.append(el("div", { style: "color:var(--success)" }, "+ " + g.diff.added.join(", ")));
+      if (g.diff.removed.length) d.append(el("div", { style: "color:var(--error)" }, "− " + g.diff.removed.join(", ")));
+      for (const x of g.diff.changed) d.append(el("div", { class: "faint" }, `~ ${x.id}: ${x.fields.join(", ")}`));
+      c.append(d);
+    }
+    b.append(c);
+  }
+  if (h.other.length) {
+    b.append(el("h3", { class: "sh", style: "margin:16px 2px 8px" }, icon("x", 12), "Proposals not applied"));
+    for (const a of h.other) b.append(el("div", { class: "card" }, el("div", { class: "t-label" }, `${a.id} · ${a.status}`),
+      el("div", { class: "tiny muted" }, `proposed by ${a.proposed_by}`), a.rationale ? el("div", { class: "prose aside" }, a.rationale) : null,
+      a.reason ? el("div", { class: "tiny", style: "margin-top:4px;color:var(--error)" }, a.reason) : null));
+  }
+}
+
+// ---------------------------------------------------------------- tabs + refresh loop
+function setTab(tab) {
+  S.tab = tab;
+  document.querySelectorAll(".tab").forEach(x => x.classList.toggle("active", x.dataset.tab === tab));
+  if (!S.node) history.replaceState(null, "", location.pathname + location.search + (tab === "run" ? "" : "#tab=" + tab));
+  if (!S.run) return;
+  if (tab === "run") renderRunTab(S.run); else if (tab === "node") renderNodeTab();
+  else if (tab === "timeline") renderTimeline().catch(() => {}); else renderHistory().catch(() => {});
+}
+async function refresh(force) {
+  if (!S.runId) return;
+  let r; try { r = (await api(`/api/runs/${enc(S.runId)}`)).run; } catch (e) { return; }
+  const first = !S.run, changed = force || first || JSON.stringify(r) !== JSON.stringify(S.run);
+  S.run = r;
+  if (!changed) return;
+  renderTop(r); renderCanvas(r);
+  if (first && S.pendingNode) { const id = S.pendingNode; S.pendingNode = null; openNode(id); }
+  else if (first || S.tab === "run") setTab(S.tab);
+}
+document.getElementById("tabs").addEventListener("click", (e) => { const t = e.target.closest(".tab"); if (t) setTab(t.dataset.tab); });
+document.getElementById("runselect").addEventListener("change", (e) => selectRun(e.target.value));
+document.getElementById("who").textContent = `${ACTOR} · v${VERSION}`;
+function applyTheme(t) { document.documentElement.classList.toggle("dark", t === "dark"); }
+document.getElementById("theme").addEventListener("click", () => {
+  const t = document.documentElement.classList.contains("dark") ? "light" : "dark";
+  applyTheme(t); store.set("ff-theme", t);
+});
+applyTheme(new URLSearchParams(location.search).get("theme") || store.get("ff-theme") || "light");   // Eleforge default: light
+{ const m = location.hash.match(/^#tab=(\w+)/); if (m) S.tab = { graph: "run", goal: "run" }[m[1]] || m[1]; }
+window.addEventListener("resize", () => { if (S.run) { S.view = null; renderCanvas(S.run); } });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && S.node && !e.target.closest("textarea, input")) closeNode(); });
+loadRuns().catch(e => { document.getElementById("pane").replaceChildren(el("div", { class: "empty" }, "Error: " + e.message)); });
+setInterval(() => refresh(false), 2000);
+setInterval(() => { loadRuns().catch(() => {}); if (S.node) loadNode(S.node, true); }, 6000);
+</script>
+</body>
+</html>

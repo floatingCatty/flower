@@ -1,0 +1,19 @@
+# Third-party reference clones (read-only context, not vendored)
+context/repos/
+
+# Python
+__pycache__/
+*.pyc
+*.egg-info/
+build/
+dist/
+.venv/
+.pytest_cache/
+
+node_modules/
+
+# Local scratch runs (fake Slurm, demo working dir); docs/demo/ is the published record and is kept
+/demo/
+
+# forgeflow run directories (journals, node work dirs, ABACUS outputs)
+.forgeflow/

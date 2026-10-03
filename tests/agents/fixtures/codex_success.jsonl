@@ -1,0 +1,10 @@
+{"type": "thread.started", "thread_id": "0199a1b2-c3d4-7e5f-8a9b-0c1d2e3f4a5b"}
+{"type": "turn.started"}
+{"type": "item.completed", "item": {"id": "item_0", "type": "reasoning", "text": "**Planning** the steps"}}
+{"type": "item.started", "item": {"id": "item_1", "type": "command_execution", "command": "bash -lc 'ls -la'", "aggregated_output": "", "exit_code": null, "status": "in_progress"}}
+{"type": "item.completed", "item": {"id": "item_1", "type": "command_execution", "command": "bash -lc 'ls -la'", "aggregated_output": "total 8\nPOSCAR\n", "exit_code": 0, "status": "completed"}}
+{"type": "item.completed", "item": {"id": "item_2", "type": "file_change", "changes": [{"path": "/work/INCAR", "kind": "add"}, {"path": "/work/KPOINTS", "kind": "update"}], "status": "completed"}}
+{"type": "item.started", "item": {"id": "item_3", "type": "mcp_tool_call", "server": "docs", "tool": "search", "status": "in_progress"}}
+{"type": "error", "message": "stream disconnected before completion; Reconnecting... 1/5"}
+{"type": "item.completed", "item": {"id": "item_4", "type": "agent_message", "text": "Wrote inputs.\n{\"ok\": true, \"summary\": \"inputs written\"}"}}
+{"type": "turn.completed", "usage": {"input_tokens": 24000, "cached_input_tokens": 20000, "output_tokens": 1500}}
