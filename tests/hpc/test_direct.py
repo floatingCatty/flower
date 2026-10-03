@@ -66,7 +66,8 @@ def test_direct_job_runs_detached_and_succeeds(ff):
     assert (jd / "job.out").read_text().strip() == "hello"
     assert (jd / ".flower" / "ec").read_text().strip() == "0"
     assert r.outputs["job_id"] == (jd / ".flower" / "owner" / "id").read_text().strip()
-    assert r.summary.startswith(f"process {r.outputs['job_id']} completed: hello")
+    # declared outputs are the contract: the summary shows them rather than stray stdout
+    assert r.summary.startswith(f"process {r.outputs['job_id']} completed · outputs: x=1")
     assert Path(r.files["res"]["path"]) == (jd / "result.txt").resolve()
     assert ff.jobs() == []  # no Slurm anywhere
     from flower.render import describe_event

@@ -27,7 +27,7 @@ SCHEMA_VERSION = 1
 EVENT_TYPES = {
     # run lifecycle
     "run.created", "run.started", "run.parked", "run.reopened", "run.completed",
-    "run.cancel_requested", "run.note", "driver.started", "driver.stopped",
+    "run.cancel_requested", "run.note", "driver.started", "driver.stopped", "driver.reloaded", "driver.error",
     # plan contract
     "plan.proposed", "plan.approved", "plan.rejected",
     "plan.amendment.proposed", "plan.amendment.approved", "plan.amendment.rejected",

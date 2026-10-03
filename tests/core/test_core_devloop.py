@@ -266,6 +266,9 @@ def test_hook_reminds_only_about_compute_beside_an_active_run(cli, home, tmp_pat
     assert say("F=../.venv/bin/flower; $F remote exec -- 'python3 x.py'", "s4") is None   # flower, via a variable
     assert say("cat > check.sh <<'EOF'\npython3 - <<'PY'\nprint(1)\nPY\nEOF\nls", "s5") is None   # writing a file
     assert say("python3 - <<'EOF'\nopen('a.py','w').write('x')\nEOF", "s6") is None   # a stdin script (editing)
+    (cwd / "mymodel.py").write_text("X = 1\n")
+    assert say("python3 -c 'import mymodel; print(mymodel.X)'", "s7")            # the study's own code: a check
+    assert say("python3 - <<'EOF'\nfrom mymodel import X\nprint(X)\nEOF", "s8")   # same, as a heredoc
 
 
 def test_hook_command_never_fails(cli, home, monkeypatch):

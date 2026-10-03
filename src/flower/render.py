@@ -486,6 +486,8 @@ def describe_event(ev: dict) -> str | None:
                 + (f"; adds {', '.join(eff.get('added', [])[:6])}" if eff.get("added") else ""))
     if t == "plan.amendment.rejected":
         return f"plan change rejected by {p.get('by')}: {first_line(p.get('reason'), 100)}"
+    if t in ("driver.reloaded", "driver.error"):
+        return f"driver {t.split('.')[1]}: {p.get('reason') or p.get('error') or ''}".rstrip(": ")
     if t in ("driver.started", "driver.stopped"):
         return f"background driver {t.split('.')[1]} (pid {p.get('pid')})"
     return f"{t} {a}"

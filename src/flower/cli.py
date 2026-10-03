@@ -89,6 +89,16 @@ def spawn_driver(eng: Engine) -> dict:
                              stdin=subprocess.DEVNULL, stdout=fh, stderr=fh, start_new_session=True, close_fds=True)
     info = {"pid": p.pid, "host": hostname(), "started_at": now_iso(), "log": str(log)}
     atomic_write_json(eng.paths.driver_file, info)
+    # a driver that dies at once (an import error, a bad event, ...) must not look like a running one
+    size0 = log.stat().st_size if log.exists() else 0
+    for _ in range(20):
+        time.sleep(0.1)
+        if p.poll() is not None:
+            if p.returncode == 0:   # nothing left to drive (e.g. the run had already settled): a normal exit
+                break
+            tail = log.read_bytes()[size0:].decode(errors="replace").strip()[-600:]
+            raise FlowerError("driver_died", f"the background driver of {eng.paths.run_id} exited at once "
+                              f"(code {p.returncode}): {tail or 'no output'}", f"see {log}")
     return info
 
 
@@ -402,10 +412,19 @@ def cmd_status(args, out: Out) -> int:
     from .render import status_view
     eng = get_engine(args)
     st = eng.state()
+    note = ""
     if not args.no_tick and st.status not in TERMINAL_RUN and st.status != "awaiting_approval" and not driver_alive(eng.paths):
         eng.tick()
         st = eng.state()
-    return out.done(summary_data(eng, st), status_view(st, eng.paths, color=out.color, all_items=getattr(args, "items", False)),
+        if st.status == "running":   # work under way and nobody driving it: start a driver (and say so)
+            try:
+                spawn_driver(eng)
+                note = "\n(no background driver was running; started one)"
+            except FlowerError as exc:
+                note = f"\nwarning: no background driver, and starting one failed: {exc.message}"
+    elif args.no_tick and st.status == "running" and not driver_alive(eng.paths):
+        note = f"\nwarning: running, but no background driver is alive: flower resume {st.run_id} --detach"
+    return out.done(summary_data(eng, st), status_view(st, eng.paths, color=out.color, all_items=getattr(args, "items", False)) + note,
                     next_for(st, st.run_id) if out.json else None,
                     code=0)
 

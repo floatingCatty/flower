@@ -172,7 +172,8 @@ the project's UI (`flower ui`). The full guide is in `.claude/skills/flower/SKIL
    the plan file and runs it. To fix a step: edit its code or the plan file, `flower rerun RUN ID --follow`.
 3. Explore a remote machine with `flower remote exec --plan P --cluster C [--env E] [--probe] -- <cmd>`
    (logged), not raw ssh.
-4. Reading files, papers and results directly is fine; *running* things beside the run is not.
+4. Reading files, papers and results directly is fine; *running* things beside the run is not, including a
+   quick check whose answer you rely on (make it a one-line step).
 
 If `FLOWER_INSIDE_RUN` is set you are inside a step: do its task and never call flower.
 {AGENTS_END}
@@ -246,11 +247,41 @@ def active_run(root: Path) -> tuple[str, float] | None:
     return None
 
 
+_INLINE_PY = re.compile(r"(?:^|[;&|(]\s*|&&\s*|\s)(?:\S*/)?python[0-9.]*\s+(?:-c\b|-(?:\s|$))")
+_IMPORT = re.compile(r"^\s*(?:from\s+([A-Za-z_]\w*)[\w.]*\s+import|import\s+([A-Za-z_]\w*))", re.M)
+_IMPORT_C = re.compile(r"(?:from\s+([A-Za-z_]\w*)[\w.]*\s+import|import\s+([A-Za-z_]\w*))")
+
+
+def _uses_local_code(command: str, dirs: list[Path]) -> bool:
+    """Inline Python (`python -c` / `python - <<EOF`) that imports a module living in one of ``dirs``: a computation
+    with the study's own code, not a file edit."""
+    if not _INLINE_PY.search(command):
+        return False
+    names = {a or b for a, b in _IMPORT.findall(command)} | {a or b for a, b in _IMPORT_C.findall(command)}
+    return any((d / f"{n}.py").is_file() or (d / n / "__init__.py").is_file() for d in dirs for n in names if n)
+
+
+def _plan_dir(root: Path, rid: str) -> Path | None:
+    ev = root / ".flower" / "runs" / rid / "events.jsonl"
+    try:
+        first = json.loads(ev.open().readline())
+        src = (first.get("payload") or {}).get("plan_source")
+        return Path(src).parent if src else None
+    except (OSError, ValueError):
+        return None
+
+
 def reminder(command: str, cwd: Path, session: str | None) -> str | None:
     if os.environ.get("FLOWER_INSIDE_RUN") or not command.strip():
         return None
+    full = command
     command = _HEREDOC.sub("\n", command)
-    if _FLOWER_CMD.search(command) or not _COMPUTE.search(command):
+    if _FLOWER_CMD.search(command):
+        return None
+    root0 = _project_root(cwd)
+    act0 = active_run(root0) if root0 else None
+    dirs = [cwd] + ([d] if act0 and (d := _plan_dir(root0, act0[0])) else [])
+    if not _COMPUTE.search(command) and not _uses_local_code(full, dirs):
         return None
     root = _project_root(cwd)
     if root is None:

@@ -286,7 +286,7 @@ def apply(st: RunState, ev: dict) -> None:  # noqa: C901 - one switch, kept flat
         st.cancel_requested = True
     elif t == "run.note":
         st.notes.append({"at": at, "by": ev.get("actor"), "text": p.get("text"), "node": nid})
-    elif t in ("driver.started", "driver.stopped"):
+    elif t in ("driver.started", "driver.stopped", "driver.reloaded", "driver.error"):
         st.drivers.append({"at": at, "event": t, **p})
 
     elif t == "node.started":

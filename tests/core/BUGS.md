@@ -338,6 +338,21 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** `tmpdir` joins `resources`/`timeout`/`retry` outside the cache key; `FLOWER_MEM_MB` and `FLOWER_CPUS`
   are exported from `resources` so a payload can size itself without changing its definition.
 
+### 35. `--reuse` / fork reused steps marked `cache: false`
+- **Test:** `tests/core/test_core_fork_provenance.py::test_reuse_respects_cache_false`
+- **Observed:** the Si study re-run with another pseudopotential (`flower run --reuse`): its environment check,
+  which must always run, was taken from the earlier run.
+- **Fix:** reuse from other runs obeys `cache: false` and a forced rerun, like the run's own cache.
+
+### 36. New driver events were not in the journal's vocabulary: every reloading driver died (campaigns stalled)
+- **Test:** `tests/core/test_core_event_vocabulary.py`
+- **Observed:** after the self-reload of #31, the S22, water and Si runs had no driver for about an hour: the
+  first reload emitted `driver.reloaded`, the journal rejected the unknown type, the driver exited. `resume`
+  printed a PID as if all was well; `status` showed waiting steps and gave no hint.
+- **Fix:** the types are registered (and a test checks every emitted type is); `spawn_driver` waits briefly and
+  reports a driver that exits at once with its log; `flower status` starts a driver for a running run that has
+  none, and says so (`--no-tick` only warns).
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

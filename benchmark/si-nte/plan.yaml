@@ -13,6 +13,10 @@ description: |
 policies:
   edits: unfinished
 
+inputs:
+  pseudo: {type: string, default: vbc, description: "vbc (classic QE LDA, the first run) | dojo-lda (PseudoDojo, ONCVPSP)"}
+  ecut_ry: {type: number, default: 20, description: "plane-wave cutoff for eos and phonons (the paper: 10 Ha)"}
+
 clusters:
   # this machine, as a target with environments (QE from the frozen envs/qe recipe), no batch system
   here: {transport: local, scheduler: none, remote_root: "${env.HOME}/flower-local-runs", max_jobs: 6, min_poll: 2s}
@@ -31,12 +35,14 @@ nodes:
 
   - id: pseudo
     kind: shell
-    title: LDA norm-conserving Si pseudopotential (QE library, Si.pz-vbc.UPF), sha256 recorded
+    title: "Si pseudopotential (${inputs.pseudo}) as Si.upf, source and sha256 recorded"
     outputs:
+      pseudo: string
+      url: string
       sha256: string
     files:
-      upf: Si.pz-vbc.UPF
-    run: 'curl -fsSL -A "Mozilla/5.0" -o Si.pz-vbc.UPF https://pseudopotentials.quantum-espresso.org/upf_files/Si.pz-vbc.UPF && grep -q "<PP_INFO>\|<UPF" Si.pz-vbc.UPF && printf "{\"sha256\": \"%s\"}" "$(sha256sum Si.pz-vbc.UPF | cut -c1-64)" > "$FLOWER_OUTPUTS"'
+      upf: Si.upf
+    run: python3 ${plan.dir}/get_pseudo.py ${inputs.pseudo} > "$FLOWER_OUTPUTS"
 
   - id: eos
     kind: shell
@@ -60,7 +66,7 @@ nodes:
       pressure_kbar: number
     files:
       result: result.json
-    run: python3 si_nte.py scf ${item} 20 4 4 | tail -n 1 > "$FLOWER_OUTPUTS"
+    run: python3 si_nte.py scf ${item} ${inputs.ecut_ry} 4 4 | tail -n 1 > "$FLOWER_OUTPUTS"
 
   - id: phonons
     kind: shell
@@ -85,7 +91,7 @@ nodes:
     files:
       result: result.json
       phdos: phdos.dat
-    run: python3 si_nte.py phonon ${item} 20 4 6 8 | tail -n 1 > "$FLOWER_OUTPUTS"
+    run: python3 si_nte.py phonon ${item} ${inputs.ecut_ry} 4 6 8 | tail -n 1 > "$FLOWER_OUTPUTS"
 
   - id: qha
     kind: shell

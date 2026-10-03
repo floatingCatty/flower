@@ -827,7 +827,11 @@ class Engine:
                                          "reused_from": f"a{prev.n}", "decl_hash": dh, "input_hash": ih,
                                          "usage": {}}, node=nid, attempt=n)
             return True
-        hit = self._reuse_lookup(st, nid, dh, ih)
+        # results from other runs (--reuse / fork): a step marked cache: false (e.g. an environment check, which
+        # must notice an environment deleted since) always runs; an agent's recorded decision is replayed on
+        # purpose (agents are cache: false within a run only so that a rerun asks them again)
+        reusable = (spec.get("kind") == "agent" or spec.get("cache", True)) and not ns.force_next
+        hit = self._reuse_lookup(st, nid, dh, ih) if reusable else None
         if hit is not None:
             src_run, a = hit
             self.emit("node.succeeded", {"attempt": n, "outputs": a.outputs, "files": a.files, "summary": a.summary,

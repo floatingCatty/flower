@@ -503,6 +503,10 @@ class JobExecutor(Executor):
             return Outcome.fail("contract", "job finished but violates its output contract: " + "; ".join(problems[:5]),
                                 outputs=outputs, files=files, retryable=False, details=details)
         summary = outputs.get("summary") if isinstance(outputs.get("summary"), str) else None
+        shown = {k: v for k, v in outputs.items() if k not in ("job_id", "job_dir", "local_dir")}
+        if not summary and (ctx.node.get("outputs") or {}) and shown:   # declared outputs are the contract
+            summary = f"{sched.LABEL} {jid} completed · outputs: " + ", ".join(
+                f"{k}={json.dumps(v, default=str)[:40]}" for k, v in list(shown.items())[:3])
         if not summary:
             lines = [l for l in out_tail.splitlines() if l.strip()]
             summary = f"{sched.LABEL} {jid} completed" + (f": {lines[-1].strip()}" if lines else "")

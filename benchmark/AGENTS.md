@@ -11,7 +11,8 @@ the project's UI (`flower ui`). The full guide is in `.claude/skills/flower/SKIL
    the plan file and runs it. To fix a step: edit its code or the plan file, `flower rerun RUN ID --follow`.
 3. Explore a remote machine with `flower remote exec --plan P --cluster C [--env E] [--probe] -- <cmd>`
    (logged), not raw ssh.
-4. Reading files, papers and results directly is fine; *running* things beside the run is not.
+4. Reading files, papers and results directly is fine; *running* things beside the run is not, including a
+   quick check whose answer you rely on (make it a one-line step).
 
 If `FLOWER_INSIDE_RUN` is set you are inside a step: do its task and never call flower.
 <!-- flower:end -->

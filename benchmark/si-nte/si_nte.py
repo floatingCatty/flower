@@ -14,7 +14,7 @@ import re
 import subprocess
 import sys
 
-PSEUDO = "Si.pz-vbc.UPF"
+PSEUDO = "Si.upf"   # fetched by get_pseudo.py (the pseudopotential is a plan input)
 
 
 def pw_input(a: float, ecut: float, k: int, prefix: str = "si") -> str:

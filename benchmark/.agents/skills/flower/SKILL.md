@@ -30,7 +30,9 @@ watch. Nothing is too early to be a step: downloading inputs, the first quick te
   `clusters:` entry to plan.yaml; the next add/rerun picks them up. Existing clusters/inputs are fixed.
 - **Explore a remote host** with `flower remote exec` (logged), not raw ssh.
 - Reading papers, files and results directly is fine. *Running* computations beside the run is not: they
-  are unrecorded and invisible to the user. If a hook reminds you of that, move the work into a step.
+  are unrecorded and invisible to the user. That includes the quick check whose answer you rely on (a symmetry
+  test, a unit conversion with the study's code): make it a one-line `flower add` step. If a hook reminds you,
+  move the work into a step.
 For a workflow that is already known end to end, writing the whole plan first (below) is fine too.
 
 1. **Draft the plan** with the user: `flower plan new plan.yaml` or write YAML
