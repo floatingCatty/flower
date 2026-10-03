@@ -52,6 +52,11 @@ class Transport:
     def get(self, remote: str, local: Path, patterns: list[str] | None = None) -> CmdResult:
         raise NotImplementedError
 
+    def put_tree(self, local: Path, remote: str) -> CmdResult:
+        """Copy the *contents* of directory ``local`` into ``remote`` (created with its parents), following
+        symlinks, in one transfer."""
+        raise NotImplementedError
+
 
 class LocalTransport(Transport):
     is_local = True
@@ -72,6 +77,10 @@ class LocalTransport(Transport):
             shutil.copytree(local, dst, dirs_exist_ok=True)
         else:
             shutil.copy2(local, dst)
+        return CmdResult(0, "", "")
+
+    def put_tree(self, local: Path, remote: str) -> CmdResult:
+        shutil.copytree(local, Path(os.path.expanduser(remote)), dirs_exist_ok=True)  # follows symlinks
         return CmdResult(0, "", "")
 
     def get(self, remote: str, local: Path, patterns: list[str] | None = None) -> CmdResult:
@@ -132,6 +141,12 @@ class SSHTransport(Transport):
     def put(self, local: Path, remote: str) -> CmdResult:
         src = str(local) + ("/" if Path(local).is_dir() else "")
         return self._rsync([src, f"{self.host}:{remote}"])
+
+    def put_tree(self, local: Path, remote: str) -> CmdResult:
+        # --copy-links sends what the symlinks point to; the remote rsync first creates the target directory
+        mk = f"mkdir -p {shlex.quote(remote)} && rsync"
+        return self._rsync(["--copy-links", f"--rsync-path={mk}", str(local).rstrip("/") + "/",
+                            f"{self.host}:{remote.rstrip('/')}/"])
 
     def get(self, remote: str, local: Path, patterns: list[str] | None = None) -> CmdResult:
         Path(local).mkdir(parents=True, exist_ok=True)

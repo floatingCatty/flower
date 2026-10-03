@@ -14,7 +14,8 @@ from typing import Any
 from .plan import Graph, on_cluster
 from .rundir import RunPaths
 from .state import TERMINAL_RUN, NodeState, RunState
-from .util import first_line, fmt_duration, parse_iso, read_json, seconds_since, short, tail_text, truncate
+from .util import (first_line, fmt_duration, local_clock, local_stamp, local_zone, parse_iso, read_json,
+                   seconds_since, short, tail_text, truncate)
 
 ICON = {"succeeded": "✓", "failed": "✗", "running": "●", "waiting": "◆", "pending": "○", "retrying": "↻",
         "skipped": "–", "cancelled": "■"}
@@ -255,7 +256,7 @@ def next_steps(st: RunState) -> list[str]:
     if waits:
         out += ["", "Waiting for external input:"]
         for nid, w in waits:
-            dl = f" (deadline {w['deadline_at'][:16].replace('T', ' ')} UTC)" if w.get("deadline_at") else ""
+            dl = f" (deadline {local_stamp(w['deadline_at'])})" if w.get("deadline_at") else ""
             out.append(f"  • {nid} waits for signal {w['signal']!r}{dl}")
             out.append(f"      flower signal {rid} {w['signal']} --data '{{\"…\": …}}'")
     if st.status == "failed":
@@ -304,7 +305,7 @@ def node_detail(st: RunState, paths: RunPaths, nid: str, color: bool = False) ->
             label = "waiting for a decision"
         elif a.status == "running" and spec.get("kind") == "wait":
             label = "waiting for a signal/timer"
-        out += ["", bold(f"attempt {a.n}", color) + f"  {label}  started {a.started_at[:19].replace('T', ' ')}"
+        out += ["", bold(f"attempt {a.n}", color) + f"  {label}  started {local_stamp(a.started_at)}"
                 + (f"  took {fmt_duration(a.duration_s)}" if a.duration_s is not None else "")
                 + (f"  (reused result of {a.reused_from})" if a.reused_from else "")]
         out.append(f"  dir: {adir}")
@@ -408,14 +409,23 @@ def describe_event(ev: dict) -> str | None:
         return None
     if t == "agent.repair":
         return f"{a}: answer did not match contract, repair turn {p.get('n')} ({first_line(p.get('reason'), 80)})"
+    direct = p.get("scheduler") == "none"  # a process on a machine without a batch system (older events: Slurm)
     if t == "job.submit_intent":
+        if direct:
+            return f"{a}: starting a process on {p.get('cluster')} (no scheduler)"
         return f"{a}: submitting to {p.get('cluster')} as {p.get('submit_key')}"
     if t == "job.submitted":
+        if direct:
+            return f"{a}: process {p.get('job_id')} " + ("started" if p.get("via") == "submitted" else "re-attached")
         return f"{a}: slurm job {p.get('job_id')} " + ("submitted" if p.get("via") == "submitted" else f"re-attached ({p.get('via')})")
     if t == "job.observed":
-        return f"{a}: job {p.get('state')} ({p.get('raw')})"
+        if direct:
+            return f"{a}: process {p.get('state')}"
+        return f"{a}: job {p.get('state')}" + (f" ({p.get('raw')})" if p.get("raw") and p.get("raw") != p.get("state") else "")
     if t == "job.exited":
-        return f"{a}: job exited (exit code {p.get('ec')}, slurm {p.get('final')})"
+        if direct:
+            return f"{a}: process exited (exit code {p.get('ec')})"
+        return f"{a}: job exited (exit code {p.get('ec')}" + (f", slurm {p.get('final')})" if p.get("final") else ")")
     if t == "job.remote_error":
         return f"{a}: cluster error during {p.get('op')}: {first_line(p.get('error'), 90)}"
     if t == "job.lost":
@@ -455,11 +465,13 @@ def timeline(events: list[dict], color: bool = False, node: str | None = None) -
         d = describe_event(ev)
         if not d:
             continue
-        ts = ev["occurredAtIso"][11:19]
+        ts = local_clock(ev["occurredAtIso"])
         rel = fmt_duration((parse_iso(ev["occurredAtIso"]) - t0).total_seconds()) if t0 else ""
         actor = ev.get("actor", "system")
         who = "" if actor == "system" else f"  [{actor}]"
         status = ("failed" if "✗" in d or "LOST" in d or "FAILED" in d else "succeeded" if "✓" in d or "SUCCEEDED" in d
                   else "waiting" if "decision" in d else "")
         lines.append(f"{ts} +{rel:>6}  " + paint(d, status, color) + who)
+    if lines:
+        lines.insert(0, f"(times in {local_zone()})")
     return "\n".join(lines)

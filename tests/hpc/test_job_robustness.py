@@ -418,6 +418,9 @@ class _Flaky:
     def get(self, *a, **kw):
         return self.inner.get(*a, **kw)
 
+    def put_tree(self, *a, **kw):
+        return self.inner.put_tree(*a, **kw)
+
 
 def _flaky_transport(monkeypatch):
     state = {"down": False, "failed_polls": 0}

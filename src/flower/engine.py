@@ -568,15 +568,17 @@ class Engine:
         g = st.graph()
         spec = g.nodes[nid]
         deps = [d for d in g.needs[nid] if d in g.nodes]
+        if spec.get("foreach") is not None:
+            # a collector judges its own children (all_done semantics, in _handle_foreach). It must not wait for
+            # them here: after an upstream rerun it has to re-check its item list *before* stale children run
+            deps = [d for d in deps if g.nodes[d].get("expanded_from") != nid]
         if not deps:
             return "go", None, None
         stats = {d: st.nodes[d].status if d in st.nodes else "pending" for d in deps}
         if any(s not in TERMINAL_NODE for s in stats.values()):
             return "wait", None, None
-        if spec.get("foreach") is not None:  # a collector judges its own children (all_done semantics)
-            deps = [d for d in deps if g.nodes[d].get("expanded_from") != nid]
-            if not deps:
-                return "go", None, None
+        if spec.get("expanded_from") and self._item_outdated(st, spec):
+            return "wait", None, None  # the collector re-expands first and hands this child its new item
 
         def cause_of(d: str) -> str:
             s = stats[d]
@@ -808,6 +810,29 @@ class Engine:
         return None
 
     # ------------------------------------------------------------ foreach
+    def _item_outdated(self, st: RunState, spec: dict) -> bool:
+        """A foreach child whose collector is pending (first expansion or a rerun upstream) and whose bound item is
+        no longer what the collector's list evaluates to now. It must not run: re-expansion replaces it."""
+        g = st.graph()
+        parent = spec.get("expanded_from")
+        pspec = g.nodes.get(parent)
+        pns = st.nodes.get(parent)
+        if pspec is None or (pns is not None and pns.status != "pending"):
+            return False
+        try:
+            items = pspec["foreach"]
+            if isinstance(items, str):
+                items = tpl.render(items, self._resolver(st, pspec))
+            if isinstance(items, dict):
+                items = [{"key": k, "value": v} for k, v in items.items()]
+        except tpl.TemplateError:
+            return False  # the collector keeps the existing expansion in that case
+        if not isinstance(items, list):
+            return False
+        bind = spec.get("bind") or {}
+        i = bind.get("index", 0)
+        return i >= len(items) or items[i] != bind.get("item")
+
     def _handle_foreach(self, st: RunState, nid: str, ns: NodeState, spec: dict) -> bool:
         g = st.graph()
         children = [c for c in g.order if g.nodes[c].get("expanded_from") == nid]

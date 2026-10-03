@@ -205,6 +205,32 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Not covered:** `shell` and `job` scripts that run `python ${plan.dir}/x.py` are not covered. Their
   script text is hashed, but the files it names are not.
 
+### 18. Stale foreach children run once with their old item before the collector re-expands
+- **Test:** `test_core_engine_control.py::test_rerun_upstream_children_wait_for_their_new_items`
+- **Observed:** this came up in the benchmark run `si-dos-fermi-remote`. A rerun of `scf` from the web
+  UI made each `fermi[i]` run first on the *previous* attempt's DOS folder. Then `fermi` re-expanded
+  ("item list changed (4 → 4)"), superseded them, and ran them all again.
+- **Root cause:** a collector waited for all its needs, including its children, before re-evaluating
+  its item list. The stale children only waited for the upstream nodes.
+- **Fix:**
+  - A collector waits only for its non-child dependencies.
+  - `_handle_foreach` re-checks the item list first.
+  - A child whose collector is pending and whose bound item differs from the current list waits
+    (`Engine._item_outdated`). Re-expansion then replaces it with the new item.
+
+### 19. Clock times were UTC without saying so
+- **Test:** `test_core_time.py`
+- **Observed:** `flower log` showed "14:30:30" for an event at 10:30:30 EDT. The same applied to the
+  report, `watch` and the UI timeline.
+- **Root cause:** every display cut `HH:MM:SS` out of the UTC ISO stamp. On this host Python's C
+  library also ignores `/etc/localtime` when `TZ` is unset, so `astimezone()` alone reports UTC.
+- **Fix:**
+  - The journal stays UTC.
+  - Displays use `util.local_clock` / `local_stamp`, which resolve `$TZ` or `/etc/localtime` with
+    zoneinfo.
+  - The timeline and report state the zone.
+  - The UI shows browser-local time, with the UTC stamp in the tooltip.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

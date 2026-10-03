@@ -437,6 +437,25 @@ def test_rerun_reexecutes_when_upstream_file_changes(mkplan, start, tmp_path):
     assert b.reused_from is None and b.summary == "content 2"
 
 
+def test_rerun_upstream_children_wait_for_their_new_items(mkplan, start, tmp_path):
+    # regression (benchmark si-dos-fermi-remote, UI rerun of scf): the stale children of a foreach ran first
+    # with their *old* item (the previous attempt's output paths), then the collector noticed the item list
+    # had changed, superseded them, and they ran a second time
+    cnt = tmp_path / "gen.cnt"
+    seen = tmp_path / "seen.txt"
+    eng = start(mkplan([
+        sh("gen", counter(cnt) + '\necho "{\\"items\\": [\\"v$C\\"]}" > "$FLOWER_OUTPUTS"'),
+        sh("each", f'echo "${{item}}" >> {seen}', foreach="${gen.outputs.items}"),
+    ]))
+    assert drive(eng).status == "succeeded"
+    assert seen.read_text().split() == ["v1"]
+    eng.rerun("gen")
+    assert drive(eng).status == "succeeded"
+    st = eng.state()
+    assert seen.read_text().split() == ["v1", "v2"], "a child ran with its stale item before re-expansion"
+    assert len([a for a in st.nodes["each[0]"].attempts if a.status == "succeeded" and not a.reused_from]) == 2
+
+
 def test_rerun_upstream_of_foreach_reexpands(mkplan, start, tmp_path):
     cnt = tmp_path / "items.cnt"
     eng = start(mkplan([

@@ -111,6 +111,7 @@ class JobExecutor(Executor):
         except _Remote:
             job_dir = None  # cluster unreachable right now: resolved later inside the retried submit step
         ctx.emit("job.submit_intent", {"submit_key": key, "fingerprint": fingerprint, "cluster": cluster["_name"],
+                                       "scheduler": scheduler_for(cluster).NAME,
                                        "resources": resources, "job_dir": job_dir})
         ctx.job.update({"submit_key": key, "fingerprint": fingerprint, "cluster": cluster["_name"],
                         "resources": resources, "job_dir": job_dir})
@@ -130,11 +131,16 @@ class JobExecutor(Executor):
         if root.startswith("~"):
             if tr.is_local:
                 home = os.path.expanduser("~")
-            else:
-                r = tr.run("echo $HOME", timeout=60)
-                if r.rc != 0 or not r.out.strip():
-                    raise _Remote(r, "connect")
-                home = r.out.strip().splitlines()[-1]
+            else:  # asked once per run and cluster (one ssh round trip saved on every later attempt)
+                cache = ctx.run_dir / "cache" / f"home-{fs_name(cluster['_name'])}.json"
+                home = (read_json(cache, {}) or {}).get("home")
+                if not home:
+                    r = tr.run("echo $HOME", timeout=60)
+                    if r.rc != 0 or not r.out.strip():
+                        raise _Remote(r, "connect")
+                    home = r.out.strip().splitlines()[-1]
+                    cache.parent.mkdir(parents=True, exist_ok=True)
+                    atomic_write_json(cache, {"home": home})
             root = home + root[1:]
         return f"{root.rstrip('/')}/{ctx.run_id}/{fs_name(ctx.node['id'])}/a{ctx.attempt}"
 
@@ -186,48 +192,60 @@ class JobExecutor(Executor):
             "attempt": ctx.attempt, "pythonpath": [f"{job_dir}/.flower/code"] + [str(p) for p in node.get("pythonpath") or []]})
 
     def _stage(self, ctx: NodeCtx, cluster: dict, tr, job_dir: str) -> None:
+        """Create the job directory with everything the payload needs, in as few round trips as possible.
+
+        The directory's initial content (generated scripts, the function's code and arguments, local
+        ``stage_in`` files as symlinks to their sources) is assembled under ``upload/`` and sent in ONE
+        transfer that also creates the directory; cluster-side ``stage_in`` (``remote:`` sources, links on
+        a local cluster) runs as ONE command after it. Over ssh that is 2 connections instead of one per file.
+        """
+        import shutil
         self._render(ctx, cluster, job_dir)
         stage = ctx.attempt_dir / "stage"
-        q = shlex.quote
-        r = tr.run(f"mkdir -p {q(job_dir)}/.flower", timeout=60)
-        if r.rc != 0:
-            raise _Remote(r, "stage")
+        up = ctx.attempt_dir / "upload"
+        if up.exists():
+            shutil.rmtree(up)
+        (up / ".flower").mkdir(parents=True)
         for name in ("job.sh", "user.sh", "inputs.json"):
-            r = tr.put(stage / name, f"{job_dir}/{name}")
-            if r.rc != 0:
-                raise _Remote(r, "stage")
-        r = tr.put(stage / "submit.json", f"{job_dir}/.flower/submit.json")
-        if r.rc != 0:
-            raise _Remote(r, "stage")
+            shutil.copy2(stage / name, up / name)
+        shutil.copy2(stage / "submit.json", up / ".flower" / "submit.json")
         if ctx.node.get("kind") == "function":
-            for name, dst in (("code", ".flower/code"), ("kwargs.json", ".flower/kwargs.json"),
-                              ("fctx.json", ".flower/fctx.json")):
-                r = tr.put(stage / name, f"{job_dir}/{dst}")
-                if r.rc != 0:
-                    raise _Remote(r, "stage")
+            shutil.copytree(stage / "code", up / ".flower" / "code")
+            for name in ("kwargs.json", "fctx.json"):
+                shutil.copy2(stage / name, up / ".flower" / name)
+        q = shlex.quote
+        on_cluster: list[str] = []
         for item in ctx.node.get("stage_in") or []:
             item = {"from": item} if isinstance(item, str) else item
             src = str(item.get("from"))
-            to = item.get("to") or os.path.basename(src.rstrip("/"))
+            to = str(item.get("to") or os.path.basename(src.rstrip("/")))
             mode = item.get("mode", "copy")
             if src.startswith("remote:"):  # cluster-side hand-off between jobs (no download/upload round trip)
                 rsrc = src[len("remote:"):]
                 op = "ln -sfn" if mode == "link" else "cp -r"
-                r = tr.run(f"test -e {q(rsrc)} || {{ echo 'stage_in source {rsrc} does not exist' >&2; exit 66; }}; "
-                           f"{op} {q(rsrc)} {q(job_dir + '/' + to)}", timeout=600)
-                if r.rc == 66:
-                    raise FlowerError("stage_in", f"stage_in source {rsrc} does not exist on the cluster")
-            elif tr.is_local and mode == "link":
-                if not Path(src).exists():
-                    raise FlowerError("stage_in", f"stage_in source {src} does not exist")
-                r = tr.run(f"ln -sfn {q(os.path.abspath(src))} {q(job_dir + '/' + to)}", timeout=60)
-            else:
-                if not Path(src).exists():
-                    raise FlowerError("stage_in", f"stage_in source {src} does not exist")
-                try:
-                    r = tr.put(Path(src), f"{job_dir}/{to}")
-                except OSError as exc:
-                    raise FlowerError("stage_in", f"could not copy {src}: {exc}") from None
+                on_cluster.append(f"test -e {q(rsrc)} || {{ echo 'stage_in source {rsrc} does not exist' >&2; exit 66; }}; "
+                                  f"{op} {q(rsrc)} {q(job_dir + '/' + to)}")
+                continue
+            if not Path(src).exists():
+                raise FlowerError("stage_in", f"stage_in source {src} does not exist")
+            if tr.is_local and mode == "link":
+                on_cluster.append(f"ln -sfn {q(os.path.abspath(src))} {q(job_dir + '/' + to)}")
+                continue
+            dst = up / to
+            dst.parent.mkdir(parents=True, exist_ok=True)
+            if dst.is_symlink() or dst.exists():
+                dst.unlink()
+            os.symlink(os.path.abspath(src), dst)  # the transfer follows it: no local copy of the data
+        try:
+            r = tr.put_tree(up, job_dir)
+        except OSError as exc:
+            raise FlowerError("stage_in", f"could not stage files: {exc}") from None
+        if r.rc != 0:
+            raise _Remote(r, "stage")
+        if on_cluster:
+            r = tr.run("set -e; mkdir -p " + q(job_dir) + "; " + "; ".join(on_cluster), timeout=600)
+            if r.rc == 66:
+                raise FlowerError("stage_in", (r.err or "a stage_in source does not exist on the cluster").strip()[-300:])
             if r.rc != 0:
                 raise _Remote(r, "stage")
 
@@ -265,7 +283,7 @@ class JobExecutor(Executor):
         except (OSError, ValueError) as exc:
             return Outcome.fail("stage", f"{type(exc).__name__}: {exc}", retryable=False)
         job_id, via = got
-        ctx.emit("job.submitted", {"job_id": job_id, "via": via})
+        ctx.emit("job.submitted", {"job_id": job_id, "via": via, "scheduler": scheduler_for(cluster).NAME})
         ctx.job.update({"job_id": job_id, "state": "QUEUED"})
         return None
 
@@ -375,7 +393,7 @@ class JobExecutor(Executor):
         if owner and owner != jid:
             ctx.emit("job.orphan_detected", {"tracked": jid, "owner": owner,
                                              "action": "following the job that owns the attempt directory"})
-            ctx.emit("job.submitted", {"job_id": owner, "via": "owner"})
+            ctx.emit("job.submitted", {"job_id": owner, "via": "owner", "scheduler": sched.NAME})
             ctx.job.update({"job_id": owner, "state": "QUEUED"})
             return None
         if obs["state"] == "UNKNOWN":
@@ -404,11 +422,13 @@ class JobExecutor(Executor):
         if (ctx.attempt_dir / "job_poll.json").exists():
             (ctx.attempt_dir / "job_poll.json").unlink()
         if obs["state"] != prev:
-            ctx.emit("job.observed", {"state": obs["state"], "raw": obs.get("sched"), "source": obs.get("source")})
+            ctx.emit("job.observed", {"state": obs["state"], "raw": obs.get("sched"), "source": obs.get("source"),
+                                      "scheduler": sched.NAME})
             ctx.job["state"] = obs["state"]
         if obs["state"] != "EXITED":
             return None
         ctx.emit("job.exited", {"ec": obs.get("ec"), "final": obs.get("final"), "exit": obs.get("exit"),
+                                "scheduler": sched.NAME,
                                 "elapsed": obs.get("elapsed")}, key=f"job.exited:{ctx.node['id']}#a{ctx.attempt}")
         status, cls, msg, retry = sched.verdict(obs)
         return self._collect(ctx, cluster, tr, obs, status, cls, msg, retry)

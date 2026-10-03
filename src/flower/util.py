@@ -167,6 +167,54 @@ def parse_iso(text: str) -> _dt.datetime:
     return _dt.datetime.fromisoformat(text.replace("Z", "+00:00"))
 
 
+# The journal stores UTC (portable across machines); everything shown to a person is in local time.
+_LOCAL_TZ: list = []
+
+
+def _local_tz():
+    """This machine's zone: ``$TZ`` if set, else ``/etc/localtime``, both resolved with zoneinfo, because some C
+    libraries ignore /etc/localtime when TZ is unset (and cannot resolve zone names), silently reporting UTC.
+    ``None`` (the C library's idea) when there is no zone database."""
+    if not _LOCAL_TZ:
+        tz = None
+        try:
+            from zoneinfo import ZoneInfo
+            name = (os.environ.get("TZ") or "").lstrip(":")
+            path = name if name.startswith("/") else ("" if name else "/etc/localtime")
+            if path:
+                real = os.path.realpath(path)
+                if "zoneinfo/" in real:
+                    tz = ZoneInfo(real.split("zoneinfo/", 1)[1])
+                else:
+                    with open(real, "rb") as fh:
+                        tz = ZoneInfo.from_file(fh, key="localtime")
+            else:
+                tz = ZoneInfo(name)
+        except Exception:  # noqa: BLE001 - e.g. POSIX-style TZ strings or no zone database
+            tz = None
+        _LOCAL_TZ.append(tz)
+    return _LOCAL_TZ[0]
+
+
+def local_clock(iso: str) -> str:
+    """'2026-10-03T14:30:30.615Z' -> '10:30:30' in this machine's time zone."""
+    return parse_iso(iso).astimezone(_local_tz()).strftime("%H:%M:%S")
+
+
+def local_stamp(iso: str) -> str:
+    """'2026-10-03T14:30:30.615Z' -> '2026-10-03 10:30:30 EDT'."""
+    return parse_iso(iso).astimezone(_local_tz()).strftime("%Y-%m-%d %H:%M:%S %Z").strip()
+
+
+def local_zone() -> str:
+    """The local zone as shown next to clock times, e.g. 'EDT (UTC-04:00)'."""
+    d = _dt.datetime.now(_dt.timezone.utc).astimezone(_local_tz())
+    off = d.strftime("%z")
+    off = f"UTC{off[:3]}:{off[3:]}" if off else "UTC"
+    name = d.strftime("%Z")
+    return f"{name} ({off})" if name and name != off else off
+
+
 def seconds_since(iso: str | None) -> float | None:
     if not iso:
         return None

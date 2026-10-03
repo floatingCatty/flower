@@ -69,6 +69,11 @@ def test_direct_job_runs_detached_and_succeeds(ff):
     assert r.summary.startswith(f"process {r.outputs['job_id']} completed: hello")
     assert Path(r.files["res"]["path"]) == (jd / "result.txt").resolve()
     assert ff.jobs() == []  # no Slurm anywhere
+    from flower.render import describe_event
+    lines = [d for d in (describe_event(e) for e in eng.journal.read()) if d]
+    assert f"a#1: process {r.outputs['job_id']} started" in lines
+    assert any(l.startswith("a#1: process exited (exit code 0)") for l in lines)
+    assert not [l for l in lines if "slurm" in l.lower()], "timeline talks about Slurm for a plain process"
 
 
 def test_direct_nonzero_exit_reports_stderr(ff):

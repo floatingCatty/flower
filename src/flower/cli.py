@@ -23,7 +23,7 @@ from . import plan as planmod
 from .engine import Engine, create_run, driver_alive
 from .rundir import RunPaths, find_root, list_runs, resolve_run
 from .state import TERMINAL_RUN
-from .util import FlowerError, atomic_write_json, default_actor, hostname, now_iso, read_json
+from .util import FlowerError, atomic_write_json, default_actor, hostname, local_clock, now_iso, read_json
 
 EXIT = {"succeeded": 0, "failed": 1, "cancelled": 1, "rejected": 1, "parked": 3, "awaiting_approval": 3,
         "running": 3}
@@ -153,7 +153,7 @@ def live_drive(eng: Engine, out: Out, timeout: float | None = None) -> str:
             for ev in evs[seen["n"]:]:
                 d = describe_event(ev)
                 if d:
-                    print(f"{ev['occurredAtIso'][11:19]}  {d}", flush=True)
+                    print(f"{local_clock(ev['occurredAtIso'])}  {d}", flush=True)
             seen["n"] = len(evs)
 
     rep = eng.drive(until="settled", timeout=timeout, on_tick=show)
@@ -417,7 +417,7 @@ def cmd_log(args, out: Out) -> int:
                         continue
                     d = describe_event(ev)
                     if d:
-                        print(f"{ev['occurredAtIso'][11:19]}  {d}", flush=True)
+                        print(f"{local_clock(ev['occurredAtIso'])}  {d}", flush=True)
                 seen = len(evs)
         except KeyboardInterrupt:
             pass

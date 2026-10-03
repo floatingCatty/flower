@@ -297,6 +297,11 @@ const runColor = (r) => {   // Eleforge getNodeColor: the folder takes the colou
 };
 
 // ---------------------------------------------------------------- helpers
+// the journal is UTC; people read the browser's local time (the UTC stamp is in the tooltip)
+function localClock(iso) {
+  const d = new Date(iso);
+  return isNaN(d) ? String(iso).slice(11, 19) : d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false });
+}
 function el(tag, attrs, ...kids) {      // drops null/false children (DOM append would print "null")
   const e = document.createElement(tag);
   for (const [k, v] of Object.entries(attrs || {})) {
@@ -747,7 +752,7 @@ async function renderTimeline() {
     for (const e of evs) {
       if (f && !(e.text + " " + (e.actor || "") + " " + (e.node || "")).toLowerCase().includes(f)) continue;
       const cls = /FAILED|LOST|rejected/.test(e.text) ? "bad" : / done: |SUCCEEDED|APPLIED|APPROVED/.test(e.text) ? "good" : /decision/.test(e.text) ? "dec" : "";
-      list.append(el("div", { class: "ev " + cls }, el("div", { class: "t", title: "+" + e.rel }, e.at.slice(11, 19)),
+      list.append(el("div", { class: "ev " + cls }, el("div", { class: "t", title: e.at + " (UTC) · +" + e.rel }, localClock(e.at)),
         el("div", {}, el("div", { class: "x" }, e.text), e.actor && e.actor !== "system" ? el("div", { class: "a" }, e.actor) : null)));
       shown++;
     }

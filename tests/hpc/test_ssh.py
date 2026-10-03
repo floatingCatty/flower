@@ -180,8 +180,14 @@ def test_ssh_direct_job_and_remote_function_end_to_end(ff, fakessh, tmp_path):
     assert f.outputs["sq"] == 1 and f.outputs["cwd"] == f.outputs["job_dir"]
     assert (Path(f.outputs["job_dir"]) / ".flower" / "code" / "calc.py").exists()
     assert ff.jobs() == []  # no Slurm
-    calls = (fakessh / "log").read_text().split("\0")
+    calls = [c for c in (fakessh / "log").read_text().split("\0") if c]
     assert any("nohup $L bash job.sh" in c for c in calls)
+    # few round trips: the job dir's content goes up in ONE rsync (which also creates it), then ONE launch call;
+    # $HOME is asked once per run, not per step
+    for d in (str(remote_dir), f.outputs["job_dir"]):
+        launch = [c for c in calls if d in c and "@@EV" not in c and "--sender" not in c]
+        assert len(launch) == 2, launch
+    assert sum(1 for c in calls if c.endswith("echo $HOME'") or "echo $HOME" in c) == 1
 
 
 def _real_ssh_ok() -> tuple[bool, str]:
