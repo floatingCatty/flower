@@ -1,0 +1,1 @@
+export PATH="$FLOWER_ENV_PREFIX/bin:$PATH"

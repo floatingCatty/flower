@@ -1,0 +1,133 @@
+flower: 1
+id: si-valence
+title: "Si valence band at Gamma: HH/LH/SO masses, spin-orbit gap, strain splitting, 7 methods"
+description: |
+  Benchmark of the silicon valence-band top (Gamma8 HH/LH, Gamma7 split-off) across first-principles,
+  semi-empirical and semi-classical methods, all with spin-orbit coupling, at a0 = 5.431 A:
+  * Delta_so, the spin-orbit split-off gap;
+  * HH / LH / SO effective masses along [100] and [111] from the band curvature at small k, and the
+    Luttinger parameters gamma1..3;
+  * the HH-LH splitting at Gamma under 1 % biaxial (001) tension.
+  Methods: QE and ABACUS (PBE, plane waves, the same PseudoDojo fully-relativistic pseudopotential),
+  PySCF (PBE, all-electron, X2C1E spin-orbit), DFTB+ (pbc-0-3, on-site SOC from an all-electron atom),
+  sp3d5s* tight binding (Boykin 2004), the Cohen-Bergstresser empirical pseudopotential, and 6-band
+  k.p with experimental parameters. Every calculation runs on the remote machine, each code in its own
+  frozen environment recipe (benchmark/envs/); the comparison with experiment runs locally.
+
+inputs:
+  host: {type: string, required: true, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, default: [], description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+  remote_root: {type: string, default: ~/flower-runs}
+  mpi_ranks: {type: integer, default: 8, description: MPI ranks for QE and ABACUS}
+  pyscf_threads: {type: integer, default: 12}
+  pyscf_kmesh: {type: integer, default: 4, description: n of the n x n x n SCF mesh for all-electron PySCF}
+  analysis_python: {type: string, default: /nessa/users/zhanghao/softwares/miniconda3/envs/abacus/bin/python,
+                    description: local Python with numpy + matplotlib}
+
+defaults:
+  timeout: {total: 1h, idle: 30m}
+  retry: {max_attempts: 2, on: [lost, remote]}
+
+clusters:
+  remote:
+    transport: ssh
+    host: ${inputs.host}
+    ssh_options: ${inputs.ssh_options}
+    scheduler: none
+    remote_root: ${inputs.remote_root}
+    max_jobs: 4
+    min_poll: 3s
+    env: {OMP_NUM_THREADS: "1"}
+
+results: [compare]
+
+nodes:
+  # ---------------------------------------------------------------- first principles (remote)
+  - id: atom-soc
+    kind: shell
+    cluster: remote
+    environment: qe
+    title: Si atom 3p spin-orbit constant (QE ld1.x, all-electron)
+    stage_in: ["${plan.dir}/si_valence.py"]
+    run: python3 si_valence.py atom | tail -n 1 > "$FLOWER_OUTPUTS"
+    outputs: {xi_p_eV: number, split_eV: number}
+
+  - id: qe
+    kind: shell
+    cluster: remote
+    environment: qe
+    title: Quantum ESPRESSO (PBE, PW, FR pseudopotential)
+    stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/Si_dojo_soc.upf"]
+    run: |
+      python3 si_valence.py qe Si_dojo_soc.upf ${inputs.mpi_ranks}
+      python3 si_valence.py analyse eig.json > "$FLOWER_OUTPUTS"
+    outputs: {dso_meV: number, gamma1: number, strain_split12_meV: number}
+    files: {eig: eig.json}
+
+  - id: abacus
+    kind: shell
+    cluster: remote
+    environment: abacus
+    title: ABACUS (PBE, PW, FR pseudopotential)
+    stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/Si_dojo_soc.upf"]
+    run: |
+      python3 si_valence.py abacus Si_dojo_soc.upf ${inputs.mpi_ranks}
+      python3 si_valence.py analyse eig.json > "$FLOWER_OUTPUTS"
+    outputs: {dso_meV: number, gamma1: number, strain_split12_meV: number}
+    files: {eig: eig.json}
+
+  - id: pyscf
+    kind: shell
+    cluster: remote
+    environment: pyscf
+    title: PySCF (PBE, all-electron, X2C1E spin-orbit)
+    stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/run_pyscf.py"]
+    env: {OMP_NUM_THREADS: "${inputs.pyscf_threads}"}
+    run: |
+      python3 run_pyscf.py ${inputs.pyscf_kmesh} cc-pvdz > pyscf.log 2>&1 || { tail -n 30 pyscf.log >&2; exit 1; }
+      python3 si_valence.py analyse eig.json > "$FLOWER_OUTPUTS"
+    outputs: {dso_meV: number, gamma1: number, strain_split12_meV: number}
+    files: {eig: eig.json, log: pyscf.log}
+
+  # ---------------------------------------------------------------- semi-empirical / semi-classical (remote)
+  - id: dftb
+    kind: shell
+    cluster: remote
+    environment: dftbplus
+    title: DFTB+ (pbc-0-3 + on-site SOC from the atom)
+    stage_in: ["${plan.dir}/si_valence.py"]
+    env: {OMP_NUM_THREADS: "4"}
+    run: |
+      python3 si_valence.py dftb "$DFTB_SKDIR" ${atom-soc.outputs.xi_p_eV}
+      python3 si_valence.py analyse eig.json > "$FLOWER_OUTPUTS"
+    outputs: {dso_meV: number, gamma1: number, strain_split12_meV: number}
+    files: {eig: eig.json}
+
+  - id: models
+    kind: shell
+    cluster: remote
+    environment: pyscf
+    title: "Semi-empirical model (tb = tight binding, epm, kp = k·p)"
+    foreach: [tb, epm, kp]
+    stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/models.py"]
+    run: python3 models.py ${item} > "$FLOWER_OUTPUTS"
+    outputs: {dso_meV: number, gamma1: number, strain_split12_meV: number}
+    files: {eig: eig.json}
+
+  # ---------------------------------------------------------------- comparison (local)
+  - id: compare
+    kind: function
+    title: Compare all methods with experiment (table + charts)
+    python: ${inputs.analysis_python}
+    call: compare:compare
+    args:
+      eig_files:
+        qe: "${qe.outputs.local_dir}/eig.json"
+        abacus: "${abacus.outputs.local_dir}/eig.json"
+        pyscf: "${pyscf.outputs.local_dir}/eig.json"
+        dftb: "${dftb.outputs.local_dir}/eig.json"
+        tb: "${models.outputs.items.0.local_dir}/eig.json"
+        epm: "${models.outputs.items.1.local_dir}/eig.json"
+        kp: "${models.outputs.items.2.local_dir}/eig.json"
+    outputs: {methods: array, results: object, table_md: string}
+    files: {table: comparison.md, dso: dso.png, masses: masses.png, strain: strain.png}

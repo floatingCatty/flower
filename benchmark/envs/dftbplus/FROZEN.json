@@ -1,0 +1,32 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "8294f42b376f8a504c3c34511e9329b40aeef4c05903e8dc1a3a9b060397bacc",
+    "check.sh": "dad6ec2c2635fd2261eff26be27376c5fa16d868eb120505d1a1148616304291",
+    "conda-explicit.txt": "4904b4a16674f85a1e620b05d75d643fd2cf5eae809f26f5edaf3b478bdd52a3",
+    "env.yaml": "7b118fbfdc9c3899aa73e61701243ac9d253e254db19cfa861c178bb7e53c53b",
+    "setup.sh": "85cebd81b646c37c17684e8733b7d72b18d8d6d778136967a2ae17f908e7aa2c"
+  },
+  "frozen_at": "2026-10-03T16:14:48.704Z",
+  "hash": "sha256:c429158622242d9a06ea5fbfc4a53880b2c49ef7efad7761b9d4bda2d5a1bf6b",
+  "name": "dftbplus",
+  "previous": "sha256:6a7532733ca3697e882f7123db8d0210ddba7dbed603895f946cda675b335379",
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-03T16:14:52.634Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/home/zhanghao/.flower/envs/dftbplus-c42915862224-replay-20261003-161450-2cae",
+      "rc": 0,
+      "seconds": 2.2,
+      "tail": "dftb+ Si2 SCC: OK\nenvironment dftbplus installed in /home/zhanghao/.flower/envs/dftbplus-c42915862224-replay-20261003-161450-2cae\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-03.jsonl"
+  ]
+}

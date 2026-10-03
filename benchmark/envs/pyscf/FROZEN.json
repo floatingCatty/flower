@@ -1,0 +1,32 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "e6490579f0d0f62af889cab27cd10f3c01544c35d6a1d1ac2f204f8baa5d5e8e",
+    "check.sh": "2e804cfe75c2f8d963ed818990a7e26f82d192adaf5e4b9a965bfaf15eec4098",
+    "conda-explicit.txt": "c97d58224e6d3fea7e5831d2c9160bc70b19f1193c9fc9de19dd6d923af824ee",
+    "env.yaml": "0e3772b11fb35c9e0702904b734591d1836eb3a0c79e90d1596362eb1b463d0e",
+    "setup.sh": "bdd1dcef7b95be4b165ab429931fcb3fb1004937e3e0e1f10cad3b2447d02913"
+  },
+  "frozen_at": "2026-10-03T16:13:16.780Z",
+  "hash": "sha256:2ac3790213a25dd1ec0098d1da1071c92a7a49740bd6064f424793cc90a5275f",
+  "name": "pyscf",
+  "previous": null,
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-03T16:13:43.273Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/home/zhanghao/.flower/envs/pyscf-2ac3790213a2-replay-20261003-161337-5f5a",
+      "rc": 0,
+      "seconds": 5.3,
+      "tail": "pyscf 2.14.0 numpy 2.4.6 scipy 1.17.1 H2 SCF OK\nenvironment pyscf installed in /home/zhanghao/.flower/envs/pyscf-2ac3790213a2-replay-20261003-161337-5f5a\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-03.jsonl"
+  ]
+}

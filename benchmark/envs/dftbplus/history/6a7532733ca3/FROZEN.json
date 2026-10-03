@@ -1,0 +1,32 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "8294f42b376f8a504c3c34511e9329b40aeef4c05903e8dc1a3a9b060397bacc",
+    "check.sh": "15bca79c9cb0b899cb34a4b1c88420ca19ba4b2a9b397cba3b7d30fe48071bd7",
+    "conda-explicit.txt": "4904b4a16674f85a1e620b05d75d643fd2cf5eae809f26f5edaf3b478bdd52a3",
+    "env.yaml": "7b118fbfdc9c3899aa73e61701243ac9d253e254db19cfa861c178bb7e53c53b",
+    "setup.sh": "85cebd81b646c37c17684e8733b7d72b18d8d6d778136967a2ae17f908e7aa2c"
+  },
+  "frozen_at": "2026-10-03T16:14:19.736Z",
+  "hash": "sha256:6a7532733ca3697e882f7123db8d0210ddba7dbed603895f946cda675b335379",
+  "name": "dftbplus",
+  "previous": "sha256:c101dd05c5e05ef6d1c13c38d2bfd1f9839d9df08e7380af05a57b230e3c62b6",
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-03T16:14:23.612Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": false,
+      "prefix": "/home/zhanghao/.flower/envs/dftbplus-6a7532733ca3-replay-20261003-161421-0bdc",
+      "rc": 4,
+      "seconds": 2.2,
+      "tail": "check.sh failed after setup.sh; last lines:\n\nTotal Energy:                       -2.0371363885 H          -55.4333 eV\nExtrapolated to 0K:                 -2.0371363885 H          -55.4333 eV\nTotal Mermin free energy:           -2.0371363885 H          -55.4333 eV\nForce related energy:               -2.0371363885 H          -55.4333 eV\n\n\n--------------------------------------------------------------------------------\nDFTB+ running times                          cpu [s]             wall clock [s]\n--------------------------------------------------------------------------------\nSCC                                    +       0.00 ( 54.9%)       0.01 (100.0%)\n--------------------------------------------------------------------------------\nMissing                                +       0.00 ( 45.1%)       0.00 (  0.0%)\nTotal                                  =       0.00 (100.0%)       0.01 (100.0%)\n--------------------------------------------------------------------------------\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-03.jsonl"
+  ]
+}
