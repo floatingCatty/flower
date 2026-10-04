@@ -84,6 +84,8 @@ def node_from_args(a, command: list[str]) -> dict:
     n: dict = {"id": a.id, "kind": "shell"}
     if a.title:
         n["title"] = a.title
+    if getattr(a, "description", None):   # what the step establishes and how to read its result
+        n["description"] = a.description
     if a.needs:
         n["needs"] = list(a.needs)
     if a.cluster:
@@ -184,8 +186,9 @@ the project's UI (`flower ui`). The full guide is in `.claude/skills/flower/SKIL
 
 1. **Start the run first**, before exploring: `flower start "<goal>"` (prints RUN). Nothing is "too early".
 2. **Every computation is a step**, including the first quick test:
-   `flower add RUN ID -- <command>` (remote: `--cluster C --env E --stage-in FILE`). It writes the step into
-   the plan file and runs it. To fix a step: edit its code or the plan file, `flower rerun RUN ID --follow`.
+   `flower add RUN ID --description "<what it establishes, how to read the result>" -- <command>` (remote:
+   `--cluster C --env E --stage-in FILE`). It writes the step into the plan file and runs it. To fix a step:
+   edit its code or the plan file, `flower rerun RUN ID --follow`.
 3. Explore a remote machine with `flower remote exec --run RUN --cluster C [--env E] [--probe] -- <cmd>`
    (logged), not raw ssh.
 4. Reading files, papers and results directly is fine; *running* things beside the run is not, including a

@@ -475,6 +475,30 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** the re-expansion waits only when an in-flight item itself would be superseded or dropped; settings-only
   changes and pending items are updated at once.
 
+## Readability review with the user (2026-10-04)
+
+### 53. Steps had no description, and the UI did not show one when they did
+- **Tests:** `tests/core/test_core_devloop.py::test_add_description_and_the_warning_without_one`,
+  `::test_a_description_edit_applies_without_rerunning`,
+  `::test_a_description_edit_of_an_environment_step_applies_without_rerunning`
+- **Observed:** 85 steps in 11 benchmark plans, none with a description (`flower add` had no flag for one).
+  The node panel received `description` but never rendered it. Editing a description later was either ignored
+  (edit detection skipped it), or would have re-run the step, foreach items and all.
+- **Fix:** `flower add --description` (also the amendment's rationale). A missing description warns in `add`,
+  `plan validate` and the plan overview, never fails. Description and title edits apply as settings-only, foreach
+  items included, and nothing re-runs. The generated environment steps describe themselves in plain words.
+
+### 54. The node panel led with machinery
+- **Observed:** the panel showed executor, PIDs and paths first; the command only in the raw definition at the
+  bottom; outputs below the file list. Every job was labelled "slurm", direct processes included.
+- **Fix:** purpose, then **Does** (environment, machine, item, command; generated scripts collapsed), then
+  **Found** (outputs as a table with compact numbers, files, images, `report.md` rendered in place), then
+  relations, then attempts with "where it ran" collapsed. The label says "process" or "slurm job".
+
+### 55. Foreach items showed their title template
+- **Observed:** "SSE L=${item.L} beta=8L chain ${item.seed} [3]" in the UI and `flower show`.
+- **Fix:** titles and descriptions of items are displayed with their own `${item...}` / `${index}` filled in.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

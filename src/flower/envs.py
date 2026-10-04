@@ -179,14 +179,23 @@ def activation(name: str, h: str) -> list[str]:
             'set +u; source "$FLOWER_ENV_DIR/activate.sh"']
 
 
+def _env_description(name: str, cluster: str, h: str, what: str | None, allow_install: bool) -> str:
+    sw = f"the software environment {name}" + (f" ({what})" if what else "") + f", frozen recipe {short(h)}"
+    if allow_install:
+        return (f"Makes sure {sw} works on {cluster}: runs the recipe's check and, if that fails, installs it "
+                f"(setup.sh) and checks again. Output `how` says whether it was already present or installed; "
+                f"check.log has the versions the check printed.")
+    return (f"Checks that {sw} works on {cluster} (nothing is installed there). check.log has the versions the "
+            f"check printed.")
+
+
 def env_node(name: str, cluster: str, d: Path, h: str, allow_install: bool) -> dict:
     """The generated step that makes ``name`` ready on ``cluster`` (shown in the plan the user approves)."""
     st = settings(d)
     return {
         "id": node_id(name, cluster), "kind": "shell", "cluster": cluster,
         "title": f"environment {name} on {cluster}" + ("" if allow_install else " (check only)"),
-        "description": (f"check.sh, and if it fails setup.sh then check.sh again (recipe {short(h)}, "
-                        f"from {d})" if allow_install else f"check.sh only (recipe {short(h)})"),
+        "description": _env_description(name, cluster, h, st.get("description"), allow_install),
         "stage_in": [{"from": str(d), "to": "recipe"}],
         "run": setup_script(name, h, recipe_dir="recipe", allow_install=allow_install,
                             check_timeout=parse_duration(st.get("check_timeout")) if st.get("check_timeout") else None),

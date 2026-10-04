@@ -26,6 +26,7 @@ nodes:
   - id: paper
     kind: shell
     title: The paper (arXiv PDF, sha256) and its Table II parsed from the text layer
+    description: 'Downloads the paper and parses its Table II (E, S(pi,pi), C(L/2,L/2) for L = 4..16, with errors), the per-size data every later comparison uses. Read table2_rows: 7 means the table was found intact.'
     outputs:
       sha256_pdf: string
       table2_rows: integer
@@ -37,6 +38,7 @@ nodes:
   - id: verify
     kind: shell
     title: 'SSE kernel vs exact diagonalization at 4x4 (energy, S(pi,pi), stiffness: the paper''s Table I)'
+    description: 'Checks the SSE kernel before any campaign: at 4x4 its energy and S(pi,pi) must match exact diagonalization (the paper''s Table I) and its stiffness the ed-twist value, every sampled configuration must be periodic with whole windings. ok=true means the kernel can be trusted.'
     needs:
     - ed-twist
     cluster: remote
@@ -52,6 +54,7 @@ nodes:
   - id: ed-twist
     kind: shell
     title: Exact 4x4 stiffness from a twisted boundary (independent of the QMC estimator)
+    description: 'Exact diagonalization of the 4x4 lattice with a twist on every x bond: an independent value of the spin stiffness rho_s(4) for the verify step. It gives 0.2783, not the paper''s quoted 0.0484 (a different finite-size normalization).'
     cluster: remote
     environment: quspin
     stage_in:
@@ -65,6 +68,7 @@ nodes:
   - id: sse
     kind: shell
     title: 'SSE L=${item.L} beta=8L chain ${item.seed}: 250000 sweeps'
+    description: 'The campaign: SSE quantum Monte Carlo at beta = 8L for L = 4..16, 8-16 independent chains of 250000 sweeps per size. Each item''s E, S, C, rho, chi are bin averages for one chain; the fits step combines them.'
     needs:
     - verify
     cluster: remote
@@ -253,6 +257,7 @@ nodes:
   - id: fits
     kind: shell
     title: Per-size data vs Table II; extrapolations of E, M, rho_s, chi, c (L >= 6)
+    description: 'Compares every size with the paper''s Table II and repeats the paper''s unconstrained fits (L >= 6) to get E, M, rho_s, chi and c in the infinite system. Read report.md: n_reproduced of n_claims, with z-scores.'
     environment: analysis
     outputs:
       n_claims: integer
@@ -275,6 +280,7 @@ nodes:
   - id: fits-preview
     kind: shell
     title: The fits on the chains finished so far (preview)
+    description: 'The same analysis on the chains finished so far, to watch the campaign converge; rerun it to refresh.'
     environment: analysis
     outputs:
       sizes: array

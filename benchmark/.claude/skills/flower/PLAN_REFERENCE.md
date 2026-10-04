@@ -30,6 +30,8 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
   - id: name                 # unique; letters, digits, - _
     kind: shell|function|agent|job|gate|wait
     title: optional label
+    description: |           # what the step establishes and how to read its result (shown first in the UI;
+                             # a missing one warns; editing it never re-runs the step)
     needs: [other]           # explicit dependencies (references ${x...} add edges automatically)
     when: "${scan.outputs.n} > 0"           # optional condition; false -> skipped
     trigger: all_success     # all_success (default) | all_done | any_success
@@ -88,7 +90,8 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
 `FLOWER_OUTPUTS` (write the outputs JSON here) · `FLOWER_INPUTS` (the resolved `inputs:` as JSON) ·
 `FLOWER_IN_<NAME>` (scalar inputs) · `FLOWER_STATE_DIR`: a directory kept across the *retries* of one start of the
 step (write checkpoints here and resume from them when present); a deliberate `flower rerun` or an edit of the
-step starts a new, empty one · `FLOWER_JOB_DIR` (cluster steps: this attempt's directory there) ·
+step starts a new, empty one, and `flower rerun --keep-state` continues the last one (a checkpointed job that
+reached its time limit; `retry: {on: [timeout]}` retries it automatically) · `FLOWER_JOB_DIR` (cluster steps: this attempt's directory there) ·
 `FLOWER_RUN_ID`, `FLOWER_NODE_ID`, `FLOWER_ATTEMPT`.
 
 ## References

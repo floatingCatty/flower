@@ -546,6 +546,70 @@ def test_a_settings_edit_reaches_pending_items_while_one_runs(cli, home, tmp_pat
     assert st.graph().nodes["f[1]"]["timeout"]["total"] == "2h", "the pending item kept the old setting"
 
 
+def test_add_description_and_the_warning_without_one(cli, home, tmp_path, monkeypatch):
+    """Every step says what it establishes and how to read its result: `--description` writes it next to the title
+    (and into the amendment's rationale); a step added without one gets a warning, never an error."""
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    rid = res["data"]["run_id"]
+    code, res = cli("add", rid, "a", "--title", "Probe", "--description", "Checks that the machine answers.", "--",
+                    "true")
+    assert code == 0 and "no --description" not in res["message"], res
+    text = (tmp_path / "x" / "plan.yaml").read_text()
+    assert text.index("title: Probe") < text.index("description: Checks that the machine answers.") < text.index("run:")
+    st = _eng(home, rid).state()
+    assert any("Checks that the machine answers." in (am.rationale or "") for am in st.amendments.values())
+    code, res = cli("add", rid, "b", "--", "true")
+    assert code == 0 and "warning: step b has no --description" in res["message"], res
+    from flower.plan import warnings
+    assert warnings(_eng(home, rid).state().plan) == [
+        "step 'b' has no description (what it establishes, how to read its result)"]
+
+
+def test_a_description_edit_of_an_environment_step_applies_without_rerunning(cli, home, tmp_path, monkeypatch):
+    """The run's copy of a step with an `environment:` (implicit cluster `local`) carries empty stage_in /
+    retrieve / resources; describing it in the plan file must still not re-run it."""
+    from flower import envs as envmod
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    monkeypatch.setenv("HOME", str(tmp_path / "userhome"))
+    proj = tmp_path / "proj"
+    d = proj / "envs" / "hello"
+    d.mkdir(parents=True)
+    (d / "setup.sh").write_text('mkdir -p "$FLOWER_ENV_PREFIX/bin"\n')
+    (d / "activate.sh").write_text('export PATH="$FLOWER_ENV_PREFIX/bin:$PATH"\n')
+    (d / "check.sh").write_text('[ -d "$FLOWER_ENV_PREFIX/bin" ]\n')
+    envmod.freeze(d, by="test")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(proj / "x"))
+    rid = res["data"]["run_id"]
+    code, res = cli("add", rid, "a", "--env", "hello", "--", "true")
+    p = proj / "x" / "plan.yaml"
+    p.write_text(p.read_text().replace("    environment: hello\n", "    description: Says hello.\n    environment: hello\n"))
+    code, res = cli("sync", rid)
+    assert code == 0 and "plan edits applied" in res["message"], res
+    st = _eng(home, rid).state()
+    assert st.graph().nodes["a"]["description"] == "Says hello." and len(st.nodes["a"].attempts) == 1
+
+
+def test_a_description_edit_applies_without_rerunning(cli, home, tmp_path):
+    """Editing a finished step's description (or a foreach step's) is applied to the run, items included, and
+    nothing runs again."""
+    body = """\
+  - {id: f, kind: shell, foreach: [1, 2], description: DESC, run: 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
+  - {id: g, kind: shell, needs: [f], description: DESC, run: 'true'}
+"""
+    plan = _plan(tmp_path, body.replace("DESC", "old words"), policy="unfinished")
+    rid = _start(cli, plan)
+    _plan(tmp_path, body.replace("DESC", "Squares; read v."), policy="unfinished")
+    code, res = cli("sync", rid)          # no approval: nothing finished is re-run
+    assert code == 0 and "plan edits applied" in res["message"], res
+    _eng(home, rid).drive(until="settled", timeout=30)
+    st = _eng(home, rid).state()
+    g = st.graph().nodes
+    assert g["f"]["description"] == g["f[0]"]["description"] == g["g"]["description"] == "Squares; read v."
+    assert all(len(st.nodes[n].attempts) == 1 for n in ("f[0]", "f[1]", "g"))
+    assert st.status == "succeeded"
+
+
 def test_tune_clusters_amendment_refuses_placement_keys():
     from flower.plan import apply_amendment, PlanInvalid
     plan = {"flower": 1, "id": "x", "clusters": {"box": {"transport": "local", "cpus": 4}}, "nodes": []}

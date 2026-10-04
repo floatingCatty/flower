@@ -52,7 +52,8 @@ the beginning, and the finished run is the result. There is nothing to redo at t
 
 ```bash
 flower start "Reproduce Fig. 2 of the paper"  # empty draft plan (<id>/plan.yaml) + a run that waits for steps
-flower add RUN fetch --out n:integer -- 'python3 fetch.py > "$FLOWER_OUTPUTS"'   # write the step, run it, stream it
+flower add RUN fetch --description "Downloads the data; n is the number of records." \
+    --out n:integer -- 'python3 fetch.py > "$FLOWER_OUTPUTS"'   # write the step, run it, stream it
 flower add RUN fit --needs fetch --cluster box --env pyscf --stage-in fit.py -- 'python3 fit.py'
 # fix the code (staged scripts are read at run time) and/or the step in plan.yaml, then:
 flower rerun RUN STEP --follow        # applies the plan-file edit, reruns STEP, streams it, exit 0/1

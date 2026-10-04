@@ -6,6 +6,7 @@ workflow, where is it, why did it do that, and what should I do next?".
 from __future__ import annotations
 
 import json
+import re
 import os
 import sys
 from pathlib import Path
@@ -51,10 +52,56 @@ def kind_label(spec: dict) -> str:
     return k
 
 
+_ITEM_REF = re.compile(r"\$\{(item(?:\.[A-Za-z_][\w]*)*|index)\}")
+
+
+def bound(text, spec: dict):
+    """A foreach item's title or description with its own ${item...} / ${index} filled in (display only)."""
+    b = spec.get("bind")
+    if not isinstance(text, str) or not b or "${" not in text:
+        return text
+
+    def sub(m):
+        ref = m.group(1)
+        if ref == "index":
+            return str(b.get("index"))
+        v = b.get("item")
+        for part in ref.split(".")[1:]:
+            if not isinstance(v, dict) or part not in v:
+                return m.group(0)
+            v = v[part]
+        return v if isinstance(v, str) else json.dumps(v)
+    return _ITEM_REF.sub(sub, text)
+
+
+def display_title(spec: dict, nid: str | None = None) -> str:
+    return bound(spec.get("title"), spec) or nid or spec.get("id") or ""
+
+
+def command_text(spec: dict) -> str:
+    """What the step runs, in full (the UI's "Does" section): the shell script, the job script, the call, the
+    prompt, the question or the awaited signal."""
+    k = spec.get("kind")
+    if k == "shell":
+        return str(spec.get("run") or "")
+    if k == "job":
+        return str(spec.get("script") or "")
+    if k == "function":
+        args = spec.get("args") or spec.get("inputs") or {}
+        return f"{spec.get('call')}(" + ", ".join(f"{a}={v!r}" for a, v in args.items()) + ")"
+    if k == "agent":
+        return str(spec.get("prompt") or spec.get("prompt_file") or "")
+    if k == "gate":
+        return str(spec.get("message") or "")
+    if k == "wait":
+        return f"signal {spec.get('signal')}" if spec.get("signal") else f"timer {spec.get('timer')}"
+    return ""
+
+
 def what(spec: dict) -> str:
     k = spec.get("kind")
     if spec.get("title") and spec.get("title") != spec.get("id"):
-        return first_line(spec["title"], 90)
+        return first_line(display_title(spec), 90)
     if spec.get("description"):
         return first_line(spec["description"], 90)
     if k == "agent":
@@ -120,6 +167,10 @@ def plan_overview(plan: dict, inputs: dict | None = None) -> str:
     agents = {kind_label(s) for s in g.nodes.values() if s.get("kind") == "agent"}
     if agents:
         out += ["", "Agents used: " + ", ".join(sorted(agents))]
+    from .plan import warnings as plan_warnings
+    missing = [w.split("'")[1] for w in plan_warnings(plan) if "'" in w]
+    if missing:
+        out += ["", "Steps without a description (what they establish, how to read the result): " + ", ".join(missing)]
     return "\n".join(out)
 
 
@@ -319,7 +370,7 @@ def node_detail(st: RunState, paths: RunPaths, nid: str, color: bool = False) ->
     ns = st.nodes.get(nid) or NodeState(nid)
     g = st.graph()
     out = [f"{bold(nid, color)}  [{kind_label(spec)}]  {paint(ns.status.upper(), ns.status, color)}",
-           f"  {spec.get('title') if spec.get('title') != nid else ''}".rstrip()]
+           f"  {display_title(spec, nid) if spec.get('title') != nid else ''}".rstrip()]
     if spec.get("description"):
         out.append("  " + spec["description"].strip())
     out.append(f"  needs: {', '.join(g.needs[nid]) or '-'}   ·   used by: {', '.join(g.children.get(nid, [])) or '-'}")

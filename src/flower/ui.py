@@ -36,7 +36,7 @@ from pathlib import Path
 from . import __version__
 from .engine import Engine, driver_alive
 from .plan import Graph, diff_plans, on_cluster
-from .render import describe_event, kind_label, node_activity, node_time, what
+from .render import bound, command_text, describe_event, display_title, kind_label, node_activity, node_time, what
 from .rundir import STATE_DIR, RunPaths, list_runs
 from .state import TERMINAL_RUN, NodeState, RunState
 from .util import (FlowerError, atomic_write_json, first_line, fmt_duration, hostname, now_iso, parse_iso,
@@ -89,8 +89,9 @@ class UIState:
             ns = st.nodes.get(nid) or NodeState(nid)
             a = ns.last
             nodes.append({
-                "id": nid, "kind": spec.get("kind"), "label": kind_label(spec), "title": spec.get("title") or nid,
-                "what": what(spec), "status": ns.status, "depth": depth.get(nid, 0), "needs": g.needs[nid],
+                "id": nid, "kind": spec.get("kind"), "label": kind_label(spec), "title": display_title(spec, nid),
+                "what": what(spec), "description": bound(spec.get("description"), spec),
+                "status": ns.status, "depth": depth.get(nid, 0), "needs": g.needs[nid],
                 "expanded_from": spec.get("expanded_from"), "foreach": spec.get("foreach") is not None,
                 "attempt": a.n if a else 0, "time": node_time(ns),
                 "activity": node_activity(st, eng.paths, ns, spec),
@@ -139,6 +140,10 @@ class UIState:
         for a in ns.attempts:
             adir = eng.paths.attempt_dir(nid, a.n)
             logs = {}
+            sched = None
+            if on_cluster(spec):
+                from .hpc import scheduler_for
+                sched = scheduler_for((st.plan.get("clusters") or {}).get(spec.get("cluster")) or {}).NAME
             if spec.get("kind") == "agent":
                 from .transcript import render_transcript
                 try:
@@ -166,12 +171,14 @@ class UIState:
                 "files": [{"name": k, **v, "image": str(v.get("path", "")).lower().endswith((".png", ".jpg", ".jpeg", ".svg", ".gif"))}
                           for k, v in (a.files or {}).items()],
                 "usage": a.usage, "error": a.error, "session": a.session, "repairs": a.repairs, "job": a.job,
-                "reused_from": a.reused_from, "actor": a.actor, "dir": str(adir),
+                "reused_from": a.reused_from, "actor": a.actor, "dir": str(adir), "scheduler": sched,
                 "logs": {k: v for k, v in logs.items() if v},
             })
         return {
-            "id": nid, "kind": spec.get("kind"), "label": kind_label(spec), "title": spec.get("title") or nid,
-            "status": ns.status, "what": what(spec), "description": spec.get("description"),
+            "id": nid, "kind": spec.get("kind"), "label": kind_label(spec), "title": display_title(spec, nid),
+            "status": ns.status, "what": what(spec), "description": bound(spec.get("description"), spec),
+            "command": command_text(spec), "environment": spec.get("environment"), "cluster": spec.get("cluster"),
+            "generated": bool(spec.get("generated")),
             "needs": g.needs[nid], "children": g.children.get(nid, []), "when": spec.get("when"),
             "skipped_reason": ns.skipped_reason if ns.status == "skipped" else None,
             "stale_reason": ns.stale_reason if ns.status == "pending" else None,

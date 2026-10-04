@@ -23,7 +23,7 @@ from . import plan as planmod
 from .engine import Engine, create_run, driver_alive
 from .rundir import RunPaths, find_root, list_runs, resolve_run
 from .state import TERMINAL_RUN
-from .util import FlowerError, atomic_write_json, default_actor, hostname, local_clock, now_iso, parse_duration, read_json
+from .util import FlowerError, atomic_write_json, default_actor, first_line, hostname, local_clock, now_iso, parse_duration, read_json
 
 EXIT = {"succeeded": 0, "failed": 1, "cancelled": 1, "rejected": 1, "parked": 3, "awaiting_approval": 3,
         "running": 3}
@@ -36,6 +36,7 @@ class Out:
 
     def done(self, data: Any = None, text: str | None = None, nxt: list[str] | None = None, code: int = 0) -> int:
         if self.json:
+            text = (getattr(self, "prefix", "") + (text or "")) or None
             msg = {"message": text} if text else {}   # notes (e.g. an ignored edit) reach --json callers too
             print(json.dumps({"ok": code in (0, 3), "data": data, **msg, "next": nxt or []}, default=str,
                              ensure_ascii=False))
@@ -197,7 +198,7 @@ def cmd_init(args, out: Out) -> int:
         files.append(str(p))
         msg.append(f"Claude Code hook (reminds an agent that runs compute beside an active run) → {p}")
     return out.done({"root": str(root), "files": files}, "\n".join(msg),
-                    ['flower start "<what the work is for>"', "flower add RUN ID -- <command>"])
+                    ['flower start "<what the work is for>"', "flower add RUN ID --description \"<what it establishes>\" -- <command>"])
 
 
 def cmd_start(args, out: Out) -> int:
@@ -264,6 +265,11 @@ def cmd_add(args, out: Out) -> int:
     ns = argparse.Namespace(run=args.run, node=args.id, only=False, cached=False, no_continue=False, wait=False,
                             reason=f"added with `flower add`", follow=not args.no_follow, no_edits=False,
                             yes=args.yes, input=args.input, timeout=args.timeout, json=args.json, actor=args.actor)
+    if not node.get("description"):
+        ns.pre_notes = [f"warning: step {args.id} has no --description: say in a sentence or two what it establishes "
+                        f"and how to read its result (edit plan.yaml, then `flower sync {st.run_id}`)"]
+        if not out.json:
+            print(ns.pre_notes[0], flush=True)
     if not out.json:
         print(f"added step {args.id} to {src}", flush=True)
     return cmd_rerun(ns, out)
@@ -288,8 +294,11 @@ def cmd_plan(args, out: Out) -> int:
     if args.plan_cmd == "validate":
         raw = planmod.load_plan_file(args.file)
         plan = planmod.check(raw)
-        return out.done({"valid": True, "id": plan["id"], "nodes": len(plan["nodes"]), "digest": planmod.plan_digest(plan)},
-                        f"✓ {args.file} is valid: {len(plan['nodes'])} nodes, digest {planmod.plan_digest(plan)[7:19]}",
+        warn = planmod.warnings(plan)
+        return out.done({"valid": True, "id": plan["id"], "nodes": len(plan["nodes"]), "digest": planmod.plan_digest(plan),
+                         "warnings": warn},
+                        f"✓ {args.file} is valid: {len(plan['nodes'])} nodes, digest {planmod.plan_digest(plan)[7:19]}"
+                        + "".join(f"\nwarning: {w}" for w in warn),
                         [f"flower plan show {args.file}", f"flower run {args.file}"])
     if args.plan_cmd == "show":
         raw = planmod.load_plan_file(args.file)
@@ -682,6 +691,10 @@ def _pick_up_edits(eng: Engine, args, out: Out, node: str | None, via: str) -> t
                      + [f"new input {', '.join(ed['new_inputs'])}"] * bool(ed.get("new_inputs"))
                      + [f"new cluster {', '.join(ed['new_clusters'])}"] * bool(ed.get("new_clusters"))
                      + [f"cluster {', '.join(ed['tuned_clusters'])}"] * bool(ed.get("tuned_clusters")))
+    descs = [n.get("description") for op in ed["ops"] if op.get("op") == "add" for n in op.get("nodes") or []
+             if isinstance(n, dict) and n.get("description")]
+    if len(descs) == 1:
+        what += f": {first_line(descs[0], 160)}"
     waiting = next((a for a in st.amendments.values() if a.status == "proposed" and a.ops == ed["ops"]), None)
     if waiting is not None and not auto:  # the same edit is already waiting for a decision
         aid = waiting.id
@@ -717,9 +730,10 @@ def cmd_sync(args, out: Out) -> int:
 def cmd_rerun(args, out: Out) -> int:
     eng = get_engine(args)
     by = args.actor or default_actor()
-    notes = []
+    notes = list(getattr(args, "pre_notes", None) or [])
     if not args.no_edits:
-        notes, rc = _pick_up_edits(eng, args, out, args.node, f"flower rerun {args.node}")
+        more, rc = _pick_up_edits(eng, args, out, args.node, f"flower rerun {args.node}")
+        notes += more
         if rc is not None:
             return rc
     st = eng.state()
@@ -744,6 +758,8 @@ def cmd_rerun(args, out: Out) -> int:
     if args.follow:
         if not out.json:
             print("\n".join(notes), flush=True)
+        elif notes:
+            out.prefix = "\n".join(notes) + "\n"   # the notes reach --json callers with the follow's result
         return _follow(eng, args.node, out, timeout=args.timeout)
     return _record_and_continue(eng, args, out, "\n".join(notes))
 
@@ -1591,6 +1607,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("id", help="step id")
     s.add_argument("command", nargs="*", help="the shell command, after `--`")
     s.add_argument("--title")
+    s.add_argument("--description", help="what the step establishes and how to read its result (1-2 sentences; "
+                                         "shown in the UI and in `flower show`)")
     s.add_argument("--needs", action="append", default=[], help="a step this one depends on (repeatable)")
     s.add_argument("--cluster", help="run it on this cluster of the plan (ssh / Slurm)")
     s.add_argument("--env", dest="environment", help="environment recipe (envs/NAME) to activate there")

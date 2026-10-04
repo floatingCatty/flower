@@ -21,9 +21,13 @@ what was done and why. For a single quick command, just do it directly.
 **Start the run before you explore.** `flower start "<goal>"` creates an empty draft plan
 (`<id>/plan.yaml`) and a run that parks until it has steps, and starts the project's UI so the user can
 watch. Nothing is too early to be a step: downloading inputs, the first quick test, a parameter probe.
-- **One command per step:** `flower add RUN ID [--needs X] [--out NAME:TYPE] [--file NAME=PATH]
-  [--cluster C --env E --stage-in FILE --retrieve GLOB --cpus N --mem 16G] -- <command>` writes the step into plan.yaml
-  and runs it, streaming its output. The command writes outputs as JSON to `$FLOWER_OUTPUTS`.
+- **One command per step:** `flower add RUN ID --title T --description D [--needs X] [--out NAME:TYPE]
+  [--file NAME=PATH] [--cluster C --env E --stage-in FILE --retrieve GLOB --cpus N --mem 16G] -- <command>` writes the
+  step into plan.yaml and runs it, streaming its output. The command writes outputs as JSON to `$FLOWER_OUTPUTS`.
+- **Describe every step** (`--description`, one or two sentences): what it establishes, and how to read its
+  result (which output or file answers the question, what a good value looks like). The run is read by people who
+  were not there; the UI shows the description first. Missing ones only warn; add them later in plan.yaml and
+  `flower sync RUN` (a description edit re-runs nothing).
 - **Fix and repeat:** edit the code or the step in plan.yaml, then `flower rerun RUN ID --follow`. Edits are
   picked up as recorded amendments (`policies: {edits: unfinished}` lets new/unfinished steps through).
 - **A new machine later:** add an `inputs:` entry (value with `-i NAME=VALUE` on add/rerun) and a

@@ -429,7 +429,7 @@ class Engine:
                 # a generated environment step is its recipe (hash) on its cluster; its script is flower's own and
                 # changes with flower's version, which is not an edit of the plan (BUGS #47)
                 return {"generated": n.get("generated"), "cluster": n.get("cluster")}
-            c = {k: v for k, v in n.items() if k not in ("needs", "bind", "expanded_from", "title", "description")
+            c = {k: v for k, v in n.items() if k not in ("needs", "bind", "expanded_from")
                  and v not in ({}, [], None)}
             kids = {x for x, s in cur.items() if s.get("expanded_from") == n.get("id")}
             c["needs"] = sorted(d for d in (n.get("needs") or []) if d not in kids)
@@ -452,9 +452,25 @@ class Engine:
         status = {k: v.status for k, v in st.nodes.items()}
         for nid in changed:
             spec = {k: v for k, v in new[nid].items() if k != "id"}
-            if not new[nid].get("foreach") and planmod.decl_hash(new[nid]) == planmod.decl_hash(cur[nid]):
-                # timeout / retry / resources / title ...: applied without re-running a finished step (#49)
+            def ident(n: dict) -> str:   # cache identity, compared like the edit itself (empty values absent)
+                return planmod.decl_hash({**{k: v for k, v in n.items() if v not in ({}, [], None)},
+                                          "needs": canon(n).get("needs", n.get("needs") or [])})
+            if ident(new[nid]) == ident(cur[nid]):
+                # description / title / timeout / retry / resources ...: applied without re-running anything (#49);
+                # a foreach step's items take the new settings too
                 res["ops"].append({"op": "replace", "node": nid, "with": spec, "settings_only": True})
+                keys = [k for k in planmod.DECL_EXCLUDE if new[nid].get(k) != cur[nid].get(k)]
+                for c in [x for x, sp in cur.items() if sp.get("expanded_from") == nid]:
+                    i = (cur[c].get("bind") or {}).get("index", 0)
+                    upd = {k: v for k, v in cur[c].items() if k != "id"}
+                    for k in keys:
+                        if k == "title":
+                            upd[k] = f"{new[nid].get('title') or nid} [{i}]"
+                        elif new[nid].get(k) is None:
+                            upd.pop(k, None)
+                        else:
+                            upd[k] = new[nid][k]
+                    res["ops"].append({"op": "replace", "node": c, "with": upd, "settings_only": True})
                 continue
             pending = status.get(nid, "pending") == "pending"
             res["ops"].append({"op": "replace", "node": nid, "with": spec, **({} if pending else {"supersede": True})})

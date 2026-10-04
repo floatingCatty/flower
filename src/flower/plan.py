@@ -583,6 +583,18 @@ def plan_digest(plan: dict) -> str:
 DECL_EXCLUDE = {"title", "description", "tags", "retry", "timeout", "resources", "poll", "deadline", "cache", "tmpdir"}
 
 
+def warnings(plan: dict) -> list[str]:
+    """Readability, not validity: steps written by hand (not generated, not foreach items) without a `description`,
+    i.e. without the one or two sentences that say what the step establishes and how to read its result."""
+    out = []
+    for n in plan.get("nodes") or []:
+        if not isinstance(n, dict) or n.get("generated") or n.get("expanded_from"):
+            continue
+        if not str(n.get("description") or "").strip():
+            out.append(f"step {n.get('id')!r} has no description (what it establishes, how to read its result)")
+    return out
+
+
 def decl_hash(node: dict) -> str:
     """Identity of *what a node does* (scheduler resources and cosmetics excluded, as AiiDA does)."""
     return digest({k: v for k, v in node.items() if k not in DECL_EXCLUDE})
@@ -697,6 +709,7 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
                 # scheduling and cosmetics only (timeout, retry, resources, ...): allowed whatever the node's state,
                 # nothing becomes stale, as long as what the node does (its cache identity) is unchanged
                 nn = normalize_node({**dict(spec), "id": nid}, defaults)
+                nn["needs"] = list(by_id[nid].get("needs") or [])   # settings only: the wiring stays as it is
                 if decl_hash(nn) != decl_hash(by_id[nid]):
                     issues.append(Issue("amend_replace", p, f"settings_only replace of {nid!r} changes what it does",
                                         "use `supersede: true` to re-run it"))

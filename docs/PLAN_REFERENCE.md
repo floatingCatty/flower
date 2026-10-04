@@ -30,6 +30,8 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
   - id: name                 # unique; letters, digits, - _
     kind: shell|function|agent|job|gate|wait
     title: optional label
+    description: |           # what the step establishes and how to read its result (shown first in the UI;
+                             # a missing one warns; editing it never re-runs the step)
     needs: [other]           # explicit dependencies (references ${x...} add edges automatically)
     when: "${scan.outputs.n} > 0"           # optional condition; false -> skipped
     trigger: all_success     # all_success (default) | all_done | any_success
