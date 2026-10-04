@@ -517,17 +517,17 @@ def test_items_appended_to_a_running_foreach_start_now(cli, home, tmp_path):
     body = """\
   - {id: f, kind: shell, foreach: ITEMS, run: 'sleep ${item}; echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
 """
-    plan = _plan(tmp_path, body.replace("ITEMS", "[3]"), policy="unfinished")
+    plan = _plan(tmp_path, body.replace("ITEMS", "[20]"), policy="unfinished")
     code, res = cli("run", str(plan), "--yes", "--detach")
     rid = res["data"]["run_id"]
     eng = _eng(home, rid)
     deadline = time.time() + 20
     while time.time() < deadline and eng.state().nodes.get("f[0]") is None:
         eng.tick(); time.sleep(0.2)
-    _plan(tmp_path, body.replace("ITEMS", "[3, 0]"), policy="unfinished")
+    _plan(tmp_path, body.replace("ITEMS", "[20, 0]"), policy="unfinished")
     code, res = cli("sync", rid)
     assert code == 0, res
-    deadline = time.time() + 2.5
+    deadline = time.time() + 15     # well inside the first item's 20 s, even on a loaded machine
     while time.time() < deadline and "f[1]" not in eng.state().nodes:
         eng.tick(); time.sleep(0.1)
     st = eng.state()
@@ -543,7 +543,7 @@ def test_a_settings_edit_reaches_pending_items_while_one_runs(cli, home, tmp_pat
             "  box: {transport: local, scheduler: none, max_jobs: 1, min_poll: 0.2s, remote_root: '%s'}\nnodes:\n"
             % (tmp_path / "remote"))
     body = """\
-  - {id: f, kind: shell, cluster: box, foreach: [3, 0, 0], timeout: {total: TT}, run: 'sleep ${item}', outputs: {}}
+  - {id: f, kind: shell, cluster: box, foreach: [20, 0, 0], timeout: {total: TT}, run: 'sleep ${item}', outputs: {}}
 """
     p = tmp_path / "plan.yaml"
     p.write_text(head + body.replace("TT", "1h"))
@@ -557,7 +557,7 @@ def test_a_settings_edit_reaches_pending_items_while_one_runs(cli, home, tmp_pat
     p.write_text(head + body.replace("TT", "2h"))
     code, res = cli("sync", rid)
     assert code == 0, res
-    deadline = time.time() + 2.5
+    deadline = time.time() + 15
     while time.time() < deadline and eng.state().graph().nodes["f[1]"]["timeout"]["total"] != "2h":
         eng.tick(); time.sleep(0.1)
     st = eng.state()
