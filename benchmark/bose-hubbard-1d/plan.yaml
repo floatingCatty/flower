@@ -1,0 +1,204 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
+# existing cluster, only cpus / max_jobs / min_poll may change.
+
+flower: 1
+id: bose-hubbard-1d
+title: "Reproduce the Kosterlitz-Thouless point t_c = 0.297(10) of the Mott insulator at density 1 in the one-dimensional Bose-Hubbard model, and its dependence on the correlation-function fit interval (Table I), by finite DMRG (Kuhner, White, Monien, PRB 61, 12474 (2000), arXiv:cond-mat/9906019)"
+description: |
+  Reproduce the Kosterlitz-Thouless point t_c = 0.297(10) of the Mott insulator at density 1 in the one-dimensional Bose-Hubbard model, and its dependence on the correlation-function fit interval (Table I), by finite DMRG (Kuhner, White, Monien, PRB 61, 12474 (2000), arXiv:cond-mat/9906019)
+
+policies:
+  edits: unfinished
+
+inputs:
+  host: {type: string, required: true, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+
+clusters:
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           remote_root: ~/flower-runs, min_poll: 15s, cpus: 32}
+
+nodes:
+  - id: smoke
+    kind: shell
+    title: 'Smoke: DMRG L=${item.L} t=${item.t} chi=${item.chi}'
+    description: 'Two small DMRG runs at t = 0.3 (L = 64 and 128) to size the campaign: run time, truncation error, and a first Gamma(r). Not used in the result.'
+    cluster: remote
+    environment: tenpy
+    stage_in:
+    - ${plan.dir}/bh_dmrg.py
+    env:
+      OMP_NUM_THREADS: '4'
+    timeout:
+      total: 3h
+    resources:
+      cpus_per_task: 4
+    foreach:
+    - L: 64
+      t: 0.3
+      chi: 150
+    - L: 128
+      t: 0.3
+      chi: 200
+    outputs:
+      E_per_site: number
+      max_trunc_err: number
+      S_center: number
+      sweeps: integer
+      seconds: number
+    files:
+      gamma: gamma.npz
+    run: python3 bh_dmrg.py ${item.L} ${item.t} ${item.chi} 5 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: kfit-smoke
+    kind: shell
+    title: K fits on the smoke runs (checks the analysis)
+    description: 'The K-fit analysis on the smoke runs, to test the script before the campaign. Not used in the result.'
+    environment: analysis
+    outputs:
+      n_claims: integer
+      points: integer
+    files:
+      report: report.md
+    inputs:
+      runs: ${smoke.outputs.items}
+    run: python3 ${plan.dir}/kfit.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: dmrg
+    kind: shell
+    title: DMRG L=${item.L} t=${item.t} chi=${item.chi}, n_max=5
+    description: 'Ground state at density 1 for one (L, t), and Gamma(r) = <b+ b> at distances r centred on the chain (gamma.npz, read by kfit). max_trunc_err should be about 1e-6 or smaller.'
+    cluster: remote
+    environment: tenpy
+    stage_in:
+    - ${plan.dir}/bh_dmrg.py
+    env:
+      OMP_NUM_THREADS: '4'
+    timeout:
+      total: 12h
+    resources:
+      cpus_per_task: 4
+    foreach:
+    - L: 512
+      t: 0.29
+      chi: 300
+    - L: 512
+      t: 0.295
+      chi: 300
+    - L: 512
+      t: 0.3
+      chi: 300
+    - L: 512
+      t: 0.305
+      chi: 300
+    - L: 512
+      t: 0.31
+      chi: 300
+    - L: 256
+      t: 0.27
+      chi: 300
+    - L: 256
+      t: 0.28
+      chi: 300
+    - L: 256
+      t: 0.285
+      chi: 300
+    - L: 256
+      t: 0.29
+      chi: 300
+    - L: 256
+      t: 0.295
+      chi: 300
+    - L: 256
+      t: 0.3
+      chi: 300
+    - L: 256
+      t: 0.305
+      chi: 300
+    - L: 256
+      t: 0.31
+      chi: 300
+    - L: 256
+      t: 0.32
+      chi: 300
+    - L: 256
+      t: 0.33
+      chi: 300
+    - L: 128
+      t: 0.27
+      chi: 300
+    - L: 128
+      t: 0.28
+      chi: 300
+    - L: 128
+      t: 0.285
+      chi: 300
+    - L: 128
+      t: 0.29
+      chi: 300
+    - L: 128
+      t: 0.295
+      chi: 300
+    - L: 128
+      t: 0.3
+      chi: 300
+    - L: 128
+      t: 0.305
+      chi: 300
+    - L: 128
+      t: 0.31
+      chi: 300
+    - L: 128
+      t: 0.32
+      chi: 300
+    - L: 128
+      t: 0.33
+      chi: 300
+    outputs:
+      E_per_site: number
+      max_trunc_err: number
+      S_center: number
+      sweeps: integer
+      seconds: number
+    files:
+      gamma: gamma.npz
+    retry:
+      max_attempts: 2
+    on_failure: continue
+    run: python3 bh_dmrg.py ${item.L} ${item.t} ${item.chi} 5 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: kfit
+    kind: shell
+    title: K(t) per fit interval from the two biggest systems; t_c where K = 1/2 vs Table I
+    description: 'Fits K from Gamma(r) ~ r^(-K/2) on each interval of r, extrapolates with the two biggest systems, and finds t_c where K = 1/2. Read report.md: t_c per interval against the paper''s Table I, and n_reproduced.'
+    environment: analysis
+    outputs:
+      n_claims: integer
+      n_reproduced: integer
+      t_c: object
+      points: integer
+    files:
+      report: report.md
+      figure: kfit.png
+      data: kfit.json
+    trigger: all_done
+    inputs:
+      runs: ${dmrg.outputs.items}
+    run: python3 ${plan.dir}/kfit.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: kfit-preview
+    kind: shell
+    title: K fits on the systems finished so far (preview)
+    description: 'The same analysis on the systems finished so far; rerun it to refresh.'
+    environment: analysis
+    outputs:
+      points: integer
+    files:
+      report: report.md
+    inputs:
+      runs: ${dmrg.partial}
+    run: python3 ${plan.dir}/kfit.py | tail -n 1 > "$FLOWER_OUTPUTS"

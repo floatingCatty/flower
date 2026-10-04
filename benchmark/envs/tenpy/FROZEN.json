@@ -1,0 +1,33 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "2b5cc08fd936605b79ca64b7ceb27f6a77f5df37555b033981e9c0340e39a07b",
+    "check.sh": "e6cbf897f347fac3916d2ac3967662af1ca11eb9597044eeb71389136c34a2e2",
+    "conda-explicit.txt": "9e4b40ef1fb809a40964fbcfb0ec821a266ba68aa23798f89e7e930d47662dc2",
+    "env.yaml": "360eda0e2b4277423d5fcbc7c5d1d8e711c01bcb66c7b4606c3f1baf1711207d",
+    "requirements.txt": "6aef255bb6ce1e7b95a748f4d055e0ed108f8bd0eeb3ad8ae2c1c189aacc3b84",
+    "setup.sh": "819a74739000235051442b07d60fd15851eb4497a2280b89dd3902b851d7e076"
+  },
+  "frozen_at": "2026-10-04T18:24:15.400Z",
+  "hash": "sha256:8e6b257fb64fdd370fca6fd2a52cb9b0f2c78bd8e2b9244f8b5a7a611472f0ec",
+  "name": "tenpy",
+  "previous": null,
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-04T18:24:25.983Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/home/zhanghao/.flower/envs/tenpy-8e6b257fb64f-replay-20261004-182416-79ad",
+      "rc": 0,
+      "seconds": 9.2,
+      "tail": "/home/zhanghao/.flower/envs/tenpy-8e6b257fb64f-replay-20261004-182416-79ad/lib/python3.11/site-packages/tenpy/networks/mps.py:1629: UserWarning: unit_cell_width is a new argument for MPS and similar classes. It is optional for now, but will become mandatory in a future release. The default value (unit_cell_width=len(sites)) is correct, iff the lattice is a Chain. For other lattices, it is incorrect. It is used for dipolar charges and correlation_function2.\n  super().__init__(sites, bc, unit_cell_width)\ntenpy 1.1.1 numpy 2.4.6 scipy 1.17.1 Bose-Hubbard L=6: DMRG -1.5151231656 = ED -1.5151231656 OK\nenvironment tenpy installed in /home/zhanghao/.flower/envs/tenpy-8e6b257fb64f-replay-20261004-182416-79ad\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-04.jsonl"
+  ]
+}

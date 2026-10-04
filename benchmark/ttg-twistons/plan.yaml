@@ -42,6 +42,7 @@ nodes:
     kind: shell
     environment: analysis
     title: Authors' code and data from Harvard Dataverse (pinned version, md5-checked)
+    description: 'Downloads the authors'' code and data from Harvard Dataverse at a pinned version and checks every file''s md5 (manifest, n_files).'
     run: |
       ${inputs.analysis_python} ${plan.dir}/fetch_dataverse.py dv ${inputs.dataset_version} > "$FLOWER_OUTPUTS"
     outputs: {version: string, license: string, n_files: integer}
@@ -51,6 +52,7 @@ nodes:
     kind: shell
     environment: analysis
     title: Experimental VHS separation and width at CNP (two-Lorentzian fit of the raw Fig. 2B spectrum)
+    description: 'The experimental van Hove separation and width at charge neutrality, from a two-Lorentzian fit of the raw Fig. 2B spectrum (cnp_sep_meV, cnp_fwhm_meV).'
     env: {PYTHONPATH: "${plan.dir}"}
     run: ${inputs.analysis_python} ${plan.dir}/expt.py ${fetch.dir}/dv | tail -n 1 > "$FLOWER_OUTPUTS"
     outputs: {dir: string, cnp_sep_meV: number, cnp_fwhm_meV: number}
@@ -61,6 +63,7 @@ nodes:
     kind: shell
     environment: analysis
     title: Our continuum model vs the authors' SP_continuum script (eigenvalues at 4 k, 4 settings)
+    description: 'Our continuum model against the authors'' own script: eigenvalues at 4 k points for 4 settings. agree should be true, max_diff_meV small.'
     env: {PYTHONPATH: "${plan.dir}", OMP_NUM_THREADS: "4"}
     run: |
       ${inputs.analysis_python} ${plan.dir}/check_sp.py ${fetch.dir}/dv/SP_continuum.txt | tail -n 1 > "$FLOWER_OUTPUTS"
@@ -73,6 +76,7 @@ nodes:
     environment: analysis
     needs: [check-sp]
     title: "Continuum model case: ${item.label}"
+    description: 'The single-particle continuum model for one case: van Hove separation, width and flat-band bandwidth, compared with experiment in the report.'
     foreach:
       - {label: SP1 1.55, params: SP1, theta: 1.55, nk: 36}
       - {label: SP2 1.55, params: SP2, theta: 1.55, nk: 36}
@@ -96,6 +100,7 @@ nodes:
     environment: analysis
     needs: [check-sp]
     title: "Hartree-Fock at charge neutrality (theta 1.53, eps 10, gate 40 nm), our implementation"
+    description: 'Our Hartree-Fock at charge neutrality: the van Hove separation and width with interactions (hf_sep_meV, hf_fwhm_meV) against the single-particle values.'
     env: {PYTHONPATH: "${plan.dir}", OMP_NUM_THREADS: "16"}
     run: |
       ${inputs.analysis_python} ${plan.dir}/ttg_hf.py '{"nu": 0, "nk": 12, "nk_fine": 36}' | tail -n 1 > "$FLOWER_OUTPUTS"
@@ -107,6 +112,7 @@ nodes:
     environment: analysis
     needs: [check-sp]
     title: "HF diagnosis: ${item.label}"
+    description: 'One variation of our Hartree-Fock, used to find out why it differs from the authors''.'
     foreach:
       - {label: Hartree only, nu: 0, nk: 9, nk_fine: 18, fock: false}
       - {label: Fock only, nu: 0, nk: 9, nk_fine: 18, hartree: false}
@@ -126,6 +132,7 @@ nodes:
   - id: authors-hf
     kind: shell
     title: Authors' own Hartree-Fock code (Dataverse), paths patched only
+    description: 'The authors'' own Hartree-Fock code, unchanged except for paths: their separation and width, to compare with ours.'
     needs:
     - fetch
     cluster: remote
@@ -156,6 +163,7 @@ nodes:
     environment: julia
     needs: [fetch]
     title: "Relaxation theta_TM=${item.tm}, theta_BM=${item.bm}, N=${item.N}, GSFE x${item.amp}"
+    description: 'The authors'' lattice relaxation (Julia) for one pair of twist angles: the relaxed structure for the local-twist analysis.'
     foreach:   # [0] Fig. 3G/H at the paper's resolution; [1]-[3] fig. S10 delta-theta scan; [4] physical GSFE; [5] N check
       - {tm: 1.5, bm: 1.69, N: 54, amp: 10, scale: 12, npix: 600}
       - {tm: 1.5, bm: 1.6, N: 36, amp: 10, scale: 10, npix: 400}
@@ -179,6 +187,7 @@ nodes:
     kind: shell
     environment: analysis
     title: "Local twist angles of a relaxed structure (AAA sites, Fig. 3G/H, fig. S10)"
+    description: 'Local twist angles of one relaxed structure at the AAA sites (Fig. 3G/H, fig. S10).'
     foreach: "${relax.outputs.items}"
     env: {PYTHONPATH: "${plan.dir}"}
     run: |
@@ -191,6 +200,7 @@ nodes:
     kind: shell
     environment: analysis
     title: 'Fig. 1B: AtA vs AtB corrugation (hexagonal vs honeycomb moire)'
+    description: 'Fig. 1B: whether the AtA and AtB stacking regions form hexagonal and honeycomb moire patterns (AtA_hexagonal, AtB_honeycomb).'
     env:
       PYTHONPATH: ${plan.dir}
     outputs:
@@ -207,6 +217,7 @@ nodes:
     kind: shell
     environment: analysis
     title: "Claims vs reproduction (the quick steps only; the full report waits for relaxation and the authors' HF)"
+    description: 'The claims report from the quick steps only, before the relaxation and the authors'' Hartree-Fock finish.'
     inputs: {sp: "${sp.outputs.items}", expt: "${expt.outputs}", hf: "${hf.outputs}", corrugation: "${corrugation.outputs}"}
     env: {PYTHONPATH: "${plan.dir}"}
     run: ${inputs.analysis_python} ${plan.dir}/report.py | tail -n 1 > "$FLOWER_OUTPUTS"
@@ -218,6 +229,7 @@ nodes:
     kind: shell
     environment: analysis
     title: "Reproduction report: every theoretical claim of the paper vs this run"
+    description: 'Every theoretical claim of the paper against this run, with figures. Read report.md: which claims are reproduced, and why the others are not.'
     inputs: {sp: "${sp.outputs.items}", expt: "${expt.outputs}", hf: "${hf.outputs}", corrugation: "${corrugation.outputs}",
              relax: "${relax-analysis.outputs.items}", authors_hf: "${authors-hf.outputs}"}
     env: {PYTHONPATH: "${plan.dir}"}
@@ -229,6 +241,7 @@ nodes:
   - id: authors-hf-inspect
     kind: shell
     title: 'Inside the authors'' HF run: their bands, self-energy, Hamiltonian'
+    description: 'Looks inside the authors'' Hartree-Fock run (bands, self-energy, Hamiltonian) to compare with ours piece by piece.'
     needs:
     - authors-hf
     cluster: remote

@@ -25,6 +25,7 @@ nodes:
   - id: paper
     kind: shell
     title: 'The paper: arXiv source + PDF (sha256 recorded), text extracted'
+    description: 'Downloads the paper (arXiv source and PDF, sha256) and extracts its text.'
     outputs:
       sha256_pdf: string
       n_pages: integer
@@ -36,6 +37,7 @@ nodes:
   - id: pseudo
     kind: shell
     title: "Si pseudopotential (${inputs.pseudo}) as Si.upf, source and sha256 recorded"
+    description: 'Fetches the chosen Si pseudopotential (input pseudo) as Si.upf, with its source and sha256.'
     outputs:
       pseudo: string
       url: string
@@ -47,6 +49,7 @@ nodes:
   - id: eos
     kind: shell
     title: 'Static energy E(a): LDA, 10 Ha, 4x4x4 shifted k (the paper''s settings)'
+    description: 'Static total energy at one lattice constant with the paper''s settings (LDA, 4x4x4 shifted k). The qha step fits E(a) for a0 and the bulk modulus.'
     cluster: here
     environment: qe
     stage_in:
@@ -71,6 +74,7 @@ nodes:
   - id: phonons
     kind: shell
     title: DFPT phonons (6x6x6 q) -> IFCs -> TA(X), TA(L), phonon DOS at a = ${item} bohr
+    description: 'DFPT phonons at one lattice constant: TA(X), TA(L) and the phonon DOS the quasi-harmonic step uses.'
     cluster: here
     environment: qe
     stage_in:
@@ -96,6 +100,7 @@ nodes:
   - id: qha
     kind: shell
     title: Quasi-harmonic thermodynamics + every claim of the paper vs this run
+    description: 'Quasi-harmonic free energy and every claim of the paper (lattice constants, frequencies, Grueneisen parameters, thermal expansion, entropy, enthalpy) against this run. Read report.md: reproduced and differs.'
     outputs:
       a0_static: number
       B0_Mbar: number
@@ -115,6 +120,7 @@ nodes:
   - id: ecut-study
     kind: shell
     title: 'Bulk modulus vs plane-wave cutoff (${item} Ry): is 10 Ha converged for this pseudopotential?'
+    description: 'The equation of state at one plane-wave cutoff: is the paper''s 10 Ha converged for the bulk modulus? Compare B0 across the cutoffs.'
     cluster: here
     environment: qe
     stage_in:

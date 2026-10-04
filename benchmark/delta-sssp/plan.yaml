@@ -28,6 +28,7 @@ nodes:
   - id: sources
     kind: shell
     title: Delta package (pinned commit), SSSP 1.1 PBE efficiency, the SSSP paper (sha256)
+    description: 'Downloads and hashes everything the study starts from: the Delta package at a pinned commit (CIFs, WIEN2k reference, published results), SSSP 1.1 efficiency, and the SSSP paper. n_cifs, n_pseudos and n_wien2k should be 71, 85 and 71.'
     outputs:
       delta_zip_sha256: string
       sssp_tar_sha256: string
@@ -45,6 +46,7 @@ nodes:
   - id: structures
     kind: shell
     title: 'pw.x inputs: 71 crystals x 7 volumes (94-106 % of V0 WIEN2k), SSSP cutoffs, magnetism per the Delta protocol'
+    description: 'Writes the pw.x inputs: each of the 71 crystals at 94-106 % of the WIEN2k volume, at SSSP''s recommended cutoffs, k-spacing 0.1/A, magnetism per the Delta protocol. items lists the elements, most expensive first, for the eos fan-out.'
     environment: ase
     outputs:
       items: array
@@ -59,6 +61,7 @@ nodes:
   - id: eos-smoke
     kind: shell
     title: 'Smoke test: EOS of ${item.el}'
+    description: 'A first equation of state for Si and Fe (magnetic) to test the pw.x pipeline end to end. Not used in the result.'
     cluster: remote
     environment: qe
     stage_in:
@@ -82,6 +85,7 @@ nodes:
   - id: delta-smoke
     kind: shell
     title: Delta on the smoke-test elements (checks the analysis and its port of calcDelta.py)
+    description: 'The Delta analysis on the smoke elements, to test the script and its port of calcDelta.py (port_max_diff about 1e-3 meV/atom or less). Not used in the result.'
     environment: ase
     outputs:
       n_elements: integer
@@ -104,6 +108,7 @@ nodes:
   - id: eos
     kind: shell
     title: 'EOS of ${item.el}: 7 volumes with pw.x (SSSP 1.1 efficiency)'
+    description: 'pw.x energies of one element at its seven volumes, checkpointed per volume. V and E (per atom) feed the delta step; mag is the total magnetization (zero for the antiferromagnets).'
     cluster: remote
     environment: qe
     stage_in:
@@ -129,6 +134,7 @@ nodes:
   - id: delta
     kind: shell
     title: Delta factor vs WIEN2k over all elements, and vs the published QE + SSSP efficiency entry
+    description: 'Birch-Murnaghan fits and the Delta factor of every element against WIEN2k, and against the published QE + SSSP entry. Read report.md: avg_delta (the paper: 0.44 meV/atom), the per-element table, and port_max_diff.'
     environment: ase
     outputs:
       n_elements: integer
@@ -153,6 +159,7 @@ nodes:
   - id: delta-preview
     kind: shell
     title: Delta on the elements finished so far (preview)
+    description: 'The Delta analysis on the elements finished so far; rerun it to refresh.'
     environment: ase
     outputs:
       n_elements: integer
@@ -169,6 +176,7 @@ nodes:
   - id: structures-hicut
     kind: shell
     title: pw.x inputs at 1.5x the recommended cutoffs for the elements furthest from the published QE+SSSP entry
+    description: 'pw.x inputs at 1.5x the recommended cutoffs for the nine elements furthest from the published entry: is the gap to the paper the cutoff?'
     environment: ase
     outputs:
       items: array
@@ -185,6 +193,7 @@ nodes:
   - id: eos-hicut
     kind: shell
     title: EOS of ${item.el} at 1.5x the recommended cutoffs
+    description: 'Equation of state of one outlier at 1.5x the cutoffs; compare with the same element in eos.'
     cluster: remote
     environment: qe
     stage_in:
@@ -209,6 +218,7 @@ nodes:
   - id: delta-hicut
     kind: shell
     title: Delta at 1.5x the cutoffs (is the gap to the paper the cutoff?)
+    description: 'Delta of the outliers at 1.5x the cutoffs. An element whose Delta does not change is not limited by the cutoff.'
     environment: ase
     outputs:
       n_elements: integer
@@ -227,6 +237,7 @@ nodes:
   - id: structures-smear
     kind: shell
     title: pw.x inputs with the paper's smearing (0.002 Ry) and a denser k-mesh (0.07 1/A) for five metals
+    description: 'pw.x inputs for five metals with the paper''s smearing (0.002 Ry) and a denser k-mesh (0.07/A): is the gap the smearing?'
     environment: ase
     outputs:
       items: array
@@ -247,6 +258,7 @@ nodes:
   - id: eos-smear
     kind: shell
     title: EOS of ${item.el}, smearing 0.002 Ry, k-spacing 0.07 1/A
+    description: 'Equation of state of one metal with the paper''s smearing and the denser k-mesh.'
     cluster: remote
     environment: qe
     stage_in:
@@ -271,6 +283,7 @@ nodes:
   - id: delta-smear
     kind: shell
     title: Delta of five metals with the paper's smearing (is the gap the smearing?)
+    description: 'Delta of the five metals with the paper''s smearing; compare with delta. Unchanged values rule the smearing out.'
     environment: ase
     outputs:
       n_elements: integer
@@ -289,6 +302,7 @@ nodes:
   - id: delta-reference
     kind: shell
     title: Published QE Delta values (all pseudopotential families in the package history) for the outliers
+    description: 'The Delta of every published QE pseudopotential family in the package history, for the outliers: shows whether a large Delta belongs to the pseudopotential file rather than to this run.'
     environment: ase
     outputs:
       sections: integer

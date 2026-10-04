@@ -31,6 +31,7 @@ nodes:
   - id: source
     kind: shell
     title: 'S22 geometries + reference energies: psi4 database file at tag v1.9.1 (BSD-3), sha256 recorded'
+    description: 'Downloads the S22 geometries and reference energies (the psi4 database file at a pinned tag) and records its sha256.'
     outputs:
       sha256: string
     files:
@@ -40,6 +41,7 @@ nodes:
   - id: data
     kind: shell
     title: Parse the 22 dimers (monomer split) and reference energies into s22.json
+    description: 'Splits each of the 22 dimers into its monomers and collects the 2006 and S22B reference energies into s22.json; n and with_ref should both be 22.'
     outputs:
       n: integer
       with_ref: integer
@@ -51,6 +53,7 @@ nodes:
     kind: shell
     tmpdir: job        # PySCF writes GB-sized integral files; /tmp on this shared host is too small
     title: Interaction energy of complex ${item.i} at ${item.level} (counterpoise-corrected)
+    description: 'Counterpoise-corrected interaction energy of one complex at one level (MP2/aug-cc-pVDZ, MP2/aug-cc-pVTZ, or the CCSD(T)-MP2 correction in cc-pVDZ); result.json has the components the report combines.'
     cluster: here
     environment: pyscf
     stage_in:
@@ -206,6 +209,7 @@ nodes:
   - id: report
     kind: shell
     title: CCSD(T)/CBS per complex vs the paper (and S22B); partial results are reported
+    description: 'Combines the levels into CCSD(T)/CBS per complex (MP2/CBS from aDZ and aTZ, plus the CCSD(T) correction) and compares with the paper and S22B. Read s22_report.md: n_reproduced of n_done, and which complexes are still missing.'
     needs:
     - calc
     outputs:
@@ -227,6 +231,7 @@ nodes:
   - id: calc-big
     kind: shell
     title: Complex ${item.i} at ${item.level} with 60 GB (MemoryError at 14 GB)
+    description: 'The MP2/aug-cc-pVTZ items that ran out of memory at 14 GB, again with 60 GB, one at a time.'
     needs:
     - data
     cluster: here-big
@@ -264,6 +269,7 @@ nodes:
   - id: calc-remote
     kind: shell
     title: 'Complex ${item.i} at ${item.level} on the remote (in core, local disk): timed out or out of memory here'
+    description: 'The items that ran out of time or memory on this machine, again on the remote workstation (local disk, 60 GB, 15 cores). Where both exist, the report uses these results.'
     needs:
     - data
     cluster: remote

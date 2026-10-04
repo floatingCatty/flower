@@ -26,6 +26,7 @@ nodes:
   - id: paper
     kind: shell
     title: The paper (arXiv PDF, sha256) and its Table I parsed from the text layer
+    description: 'Downloads the paper and parses its Table I (<Sz(0)Sz(L/2)> for L = 8..32 at five J2) from the text layer; table1_rows should be 13.'
     outputs:
       sha256_pdf: string
       table1_rows: integer
@@ -38,6 +39,7 @@ nodes:
   - id: sectors
     kind: shell
     title: Symmetry blocks of the low-lying states, L=${item}
+    description: 'Exact diagonalization of every symmetry block at one small L (8..20): which block holds the ground state, the lowest excited singlet and the lowest triplet (identified by <S^2>).'
     cluster: remote
     environment: quspin
     stage_in:
@@ -60,6 +62,7 @@ nodes:
   - id: rule
     kind: shell
     title: The block rule for L = 0, 2 (mod 4), required to hold at every scanned L
+    description: 'Checks that those blocks follow one rule for L = 0 and one for L = 2 (mod 4) at every scanned size, and hands the rule to the big diagonalizations. Fails if any size breaks it.'
     environment: analysis
     outputs:
       by_mod4: object
@@ -71,6 +74,7 @@ nodes:
   - id: ed
     kind: shell
     title: 'ED L=${item}: <Sz(0)Sz(L/2)> at nine J2, singlet and triplet levels on a J2 grid'
+    description: 'Lanczos at one L: ground-state energy and <Sz(0)Sz(L/2)> at nine J2, and the singlet and triplet levels on a J2 grid (result.json). E0_per_site_J2_0 approaches the Bethe-ansatz -0.4431 from below.'
     cluster: remote
     environment: quspin
     stage_in:
@@ -110,6 +114,7 @@ nodes:
   - id: analysis
     kind: shell
     title: Table I, Table II, Figs. 3-4 and J2crit against the paper
+    description: 'Compares with the paper: Table I to the printed digits, Table II and Figs. 3-4 (with the fit choices from fitscan), and J2crit where the splitting falls as 1/L^3. Read report.md: n_reproduced of n_claims.'
     environment: analysis
     outputs:
       n_claims: integer
@@ -132,6 +137,7 @@ nodes:
   - id: preview
     kind: shell
     title: The analysis on the sizes finished so far (preview)
+    description: 'The analysis on the sizes finished so far; rerun it to refresh.'
     environment: analysis
     outputs:
       n_claims: integer
@@ -154,6 +160,7 @@ nodes:
   - id: fitscan
     kind: shell
     title: Which fit choices turn the paper's Table I into its Table II
+    description: 'Tries 144 fitting choices the paper does not state on the paper''s own Table I, and keeps the one that best reproduces its Table II (best_err_* about 1 %); the analysis uses it.'
     environment: analysis
     outputs:
       n_choices: integer

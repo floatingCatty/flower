@@ -26,6 +26,7 @@ nodes:
   - id: paper
     kind: shell
     title: The paper (arXiv PDF, sha256)
+    description: 'Downloads the paper (sha256) and checks that its text quotes Kc = 0.221 654 626.'
     outputs:
       sha256_pdf: string
     files:
@@ -36,6 +37,7 @@ nodes:
   - id: mc-smoke
     kind: shell
     title: 'Smoke: Wolff L=${item.L} seed ${item.seed}, 5000 measurements'
+    description: 'Short Wolff runs at L = 8, 12, 16 to test the pipeline end to end; they exposed a biased measurement schedule. Not used in the result.'
     needs:
     - verify
     cluster: remote
@@ -71,6 +73,7 @@ nodes:
   - id: fss-smoke
     kind: shell
     title: FSS analysis on the smoke runs (checks the pipeline)
+    description: 'The analysis on the smoke runs, to test the pipeline. Not used in the result.'
     environment: analysis
     outputs:
       Kc: number
@@ -93,6 +96,7 @@ nodes:
   - id: verify
     kind: shell
     title: The Wolff kernel vs exact enumeration at L=3 (2^27 states), neighbour-table symmetry
+    description: 'Checks the Wolff kernel against an exact enumeration of all 2^27 states at L = 3 and against an independent Metropolis sampler. ok=true (every |z| < 4) is required before the campaign: mc needs this step.'
     cluster: remote
     environment: numba
     stage_in:
@@ -106,6 +110,7 @@ nodes:
   - id: rngcheck
     kind: shell
     title: Is numba's np.random.randint(n) uniform?
+    description: 'Checks that numba''s random integers are uniform (chi2/dof near 1): one suspect while the kernel''s bias was being tracked down.'
     cluster: remote
     environment: numba
     stage_in:
@@ -115,6 +120,7 @@ nodes:
   - id: mc
     kind: shell
     title: Wolff L=${item.L} seed ${item.seed}, ${item.n} measurements at K0 = 0.221654
+    description: 'One Wolff Markov chain at K0 = 0.221654: E and M at every measurement (series.npz) for the reweighting analysis. U4_at_K0 approaches about 0.47 as L grows.'
     needs:
     - verify
     cluster: remote
@@ -249,6 +255,7 @@ nodes:
   - id: fss
     kind: shell
     title: 'Finite-size scaling: nu and Kc with jackknife errors (L >= 12)'
+    description: 'Histogram reweighting and finite-size scaling of all chains: nu from the maxima of the magnetization and cumulant derivatives, Kc from their locations, with jackknife errors. Read report.md: Kc and nu against the paper, and how they move with the smallest L.'
     environment: analysis
     timeout:
       total: 2h
@@ -273,6 +280,7 @@ nodes:
   - id: fss-preview
     kind: shell
     title: FSS on the chains finished so far (preview)
+    description: 'The same analysis on the chains finished so far; rerun it to refresh.'
     environment: analysis
     outputs:
       sizes: array

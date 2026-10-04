@@ -47,6 +47,7 @@ nodes:
     cluster: remote
     environment: qe
     title: Si atom 3p spin-orbit constant (QE ld1.x, all-electron)
+    description: 'All-electron Si atom: the 3p spin-orbit constant xi_p_eV, used by the DFTB+ step for its on-site spin-orbit term.'
     stage_in: ["${plan.dir}/si_valence.py"]
     run: python3 si_valence.py atom | tail -n 1 > "$FLOWER_OUTPUTS"
     outputs: {xi_p_eV: number, split_eV: number}
@@ -56,6 +57,7 @@ nodes:
     cluster: remote
     environment: qe
     title: Quantum ESPRESSO (PBE, PW, FR pseudopotential)
+    description: 'Quantum ESPRESSO bands with spin-orbit near Gamma: the spin-orbit splitting dso_meV, the Luttinger gamma1 and the strain splitting (eig.json). The compare step puts all methods side by side.'
     stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/Si_dojo_soc.upf"]
     run: |
       python3 si_valence.py qe Si_dojo_soc.upf ${inputs.mpi_ranks}
@@ -68,6 +70,7 @@ nodes:
     cluster: remote
     environment: abacus
     title: ABACUS (PBE, PW, FR pseudopotential)
+    description: 'The same quantities with ABACUS (plane waves).'
     stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/Si_dojo_soc.upf"]
     run: |
       python3 si_valence.py abacus Si_dojo_soc.upf ${inputs.mpi_ranks}
@@ -80,6 +83,7 @@ nodes:
     cluster: remote
     environment: pyscf
     title: PySCF (PBE, all-electron, X2C1E spin-orbit)
+    description: 'The same with PySCF, all-electron with X2C spin-orbit.'
     stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/run_pyscf.py"]
     env: {OMP_NUM_THREADS: "${inputs.pyscf_threads}"}
     run: |
@@ -94,6 +98,7 @@ nodes:
     cluster: remote
     environment: dftbplus
     title: DFTB+ (pbc-0-3 + on-site SOC from the atom)
+    description: 'The same with DFTB+, its on-site spin-orbit taken from atom-soc.'
     stage_in: ["${plan.dir}/si_valence.py"]
     env: {OMP_NUM_THREADS: "4"}
     run: |
@@ -107,6 +112,7 @@ nodes:
     cluster: remote
     environment: pyscf
     title: "Semi-empirical model (tb = tight binding, epm, kp = k·p)"
+    description: 'The same from one semi-empirical model (tight binding, empirical pseudopotential, or k.p).'
     foreach: [tb, epm, kp]
     stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/models.py"]
     run: python3 models.py ${item} > "$FLOWER_OUTPUTS"
@@ -118,6 +124,7 @@ nodes:
     kind: function
     environment: analysis
     title: Compare all methods with experiment (table + charts)
+    description: 'All methods against experiment in one table and charts (spin-orbit splitting, masses, strain). Read table.md.'
     python: ${inputs.analysis_python}
     call: compare:compare
     args:
@@ -138,6 +145,7 @@ nodes:
     cluster: remote
     environment: abacus
     title: ABACUS (PBE, LCAO dojo 6 au orbitals, FR pseudopotential)
+    description: 'The same with ABACUS on an atomic-orbital (LCAO) basis.'
     stage_in: ["${plan.dir}/si_valence.py", "${plan.dir}/Si_dojo_soc.upf", "${plan.dir}/Si_dojo_6au.orb"]
     run: |
       python3 si_valence.py abacus-lcao Si_dojo_soc.upf Si_dojo_6au.orb ${inputs.mpi_ranks}

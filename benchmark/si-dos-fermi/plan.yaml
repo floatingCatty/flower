@@ -37,6 +37,7 @@ nodes:
   - id: prepare
     kind: function
     title: Build Si structure, count electrons
+    description: 'Builds the silicon structure and counts the valence electrons ABACUS needs.'
     python: ${inputs.abacus_env}/bin/python
     call: abacus_si:prepare
     args: {pp_dir: "${inputs.pp_dir}", pseudo: "${inputs.pseudo}", orbital: "${inputs.orbital}",
@@ -47,6 +48,7 @@ nodes:
   - id: scf
     kind: shell
     title: ABACUS SCF (charge density)
+    description: 'Self-consistent ABACUS run for the charge density; converged must be true, and etot_eV and ef_abacus_eV are the reference values.'
     env: {OMP_NUM_THREADS: "1"}
     run: |
       PY=${inputs.abacus_env}/bin/python
@@ -60,6 +62,7 @@ nodes:
   - id: dos
     kind: shell
     title: ABACUS nscf DOS
+    description: 'Non-self-consistent density of states on one k-mesh, from the scf charge density.'
     foreach: "${inputs.dos_kmeshes}"
     when: "${scf.outputs.converged}"
     env: {OMP_NUM_THREADS: "1"}
@@ -76,6 +79,7 @@ nodes:
   - id: fermi
     kind: function
     title: E_F by Fermi-Dirac integration of the DOS
+    description: 'Finds the Fermi level by integrating the DOS with Fermi-Dirac occupations, and the band edges; for silicon ef_fd_eV lies in the gap (insulator true).'
     foreach: "${dos.outputs.items}"
     python: ${inputs.abacus_env}/bin/python
     call: abacus_si:fermi_from_dos
@@ -88,6 +92,7 @@ nodes:
   - id: converge
     kind: function
     title: k-point convergence of E_F
+    description: 'Checks that the Fermi level is converged with the k-mesh: delta_last_meV between the two densest meshes, converged true when it is small.'
     python: ${inputs.abacus_env}/bin/python
     call: abacus_si:converge
     args: {results: "${fermi.outputs.items}", tol_meV: "${inputs.ef_tol_meV}"}
@@ -98,6 +103,7 @@ nodes:
   - id: review
     kind: agent
     title: Physical sanity review
+    description: 'An agent reads the results and judges whether they are physically sensible (ok, concerns). It runs nothing.'
     when: "${inputs.agent_review}"
     needs: [converge]
     harness: {name: claude, model: sonnet, budget_usd: 1}
