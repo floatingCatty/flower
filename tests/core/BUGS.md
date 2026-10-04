@@ -454,6 +454,13 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** amendment `replace` with `settings_only: true` (allowed on finished nodes, refused if the cache
   identity changes, nothing becomes stale); the foreach re-expansion uses it for such edits.
 
+### 50. `flower add --in` turned lists and numbers into strings
+- **Test:** `tests/core/test_core_devloop.py::test_add_step_inputs_keep_json_types`
+- **Observed:** `--in elements='["Au", "Hg"]'` reached the step as a string, which then iterated over its
+  characters (looking for `[.cif`).
+- **Fix:** a value that is JSON (list, object, number, true/false/null) keeps its type, as in YAML; paths, words
+  and `${references}` stay strings.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

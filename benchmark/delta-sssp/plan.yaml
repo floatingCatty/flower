@@ -110,7 +110,7 @@ nodes:
     - ${plan.dir}/eos.sh
     - ${structures.outputs.local_dir}/inputs/${item.el}
     timeout:
-      total: 8h
+      total: 24h
     resources:
       cpus_per_task: 4
     foreach: ${structures.outputs.items}
@@ -120,8 +120,9 @@ nodes:
       E: array
       mag: array
       iterations: array
-    retry:
-      max_attempts: 2
+    retry:          # a time limit is retried too: each volume is checkpointed in $FLOWER_STATE_DIR
+      max_attempts: 3
+      on: [lost, node_fail, remote, transient, timeout]
     on_failure: continue
     run: bash eos.sh ${item.el} $FLOWER_CPUS | tail -n 1 > "$FLOWER_OUTPUTS"
 
@@ -162,5 +163,63 @@ nodes:
       report: report.md
     inputs:
       eos: ${eos.partial}
+      wien2k: ${sources.files.wien2k}
+    run: python3 ${plan.dir}/delta.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: structures-hicut
+    kind: shell
+    title: pw.x inputs at 1.5x the recommended cutoffs for the elements furthest from the published QE+SSSP entry
+    environment: ase
+    outputs:
+      items: array
+      n: integer
+    inputs:
+      wien2k: ${sources.files.wien2k}
+      sssp_json: ${sources.files.sssp_json}
+      kspacing: ${inputs.kspacing}
+      degauss: ${inputs.degauss}
+      ecut_scale: 1.5
+      elements: [Au, Hg, N, F, O, Cr, Fe, Ta, W]
+    run: python3 ${plan.dir}/structures.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: eos-hicut
+    kind: shell
+    title: EOS of ${item.el} at 1.5x the recommended cutoffs
+    cluster: remote
+    environment: qe
+    stage_in:
+    - ${plan.dir}/eos.sh
+    - ${structures-hicut.outputs.local_dir}/inputs/${item.el}
+    timeout:
+      total: 24h
+    resources:
+      cpus_per_task: 4
+    foreach: ${structures-hicut.outputs.items}
+    outputs:
+      el: string
+      V: array
+      E: array
+      mag: array
+      iterations: array
+    retry:
+      max_attempts: 3
+    on_failure: continue
+    run: bash eos.sh ${item.el} $FLOWER_CPUS | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: delta-hicut
+    kind: shell
+    title: Delta at 1.5x the cutoffs (is the gap to the paper the cutoff?)
+    environment: ase
+    outputs:
+      n_elements: integer
+      avg_delta: number
+      worst: array
+      failed: array
+    files:
+      report: report.md
+      data: delta.json
+    trigger: all_done
+    inputs:
+      eos: ${eos-hicut.outputs.items}
       wien2k: ${sources.files.wien2k}
     run: python3 ${plan.dir}/delta.py | tail -n 1 > "$FLOWER_OUTPUTS"

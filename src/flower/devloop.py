@@ -118,9 +118,21 @@ def node_from_args(a, command: list[str]) -> dict:
     if getattr(a, "trigger", None):
         n["trigger"] = a.trigger
     if getattr(a, "ins", None):   # step inputs (references keep their type), given to the command as $FLOWER_INPUTS
-        n["inputs"] = dict(x.split("=", 1) for x in a.ins)
+        n["inputs"] = {k: _typed(v) for k, v in (x.split("=", 1) for x in a.ins)}
     n["run"] = run
     return n
+
+
+def _typed(v: str):
+    """`--in elements='["Au", "Hg"]'` is a list and `--in scale=1.5` a number, as they would be in YAML;
+    anything that is not JSON (a path, a ${reference}, a word) stays a string."""
+    t = v.strip()
+    if t[:1] in "[{" or t in ("true", "false", "null") or re.fullmatch(r"-?\d+(\.\d*)?([eE][-+]?\d+)?", t):
+        try:
+            return json.loads(t)
+        except ValueError:
+            pass
+    return v
 
 
 def node_yaml(node: dict, indent: str) -> str:

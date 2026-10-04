@@ -482,6 +482,15 @@ def test_a_timeout_edit_keeps_finished_foreach_items(cli, home, tmp_path):
     assert len(st.nodes["g"].attempts) == 1 and st.graph().nodes["g"]["timeout"]["total"] == "2h"
 
 
+def test_add_step_inputs_keep_json_types():
+    """`--in elements='["Au", "Hg"]'` reached the step as a string (the step iterated its characters)."""
+    from flower.devloop import _typed
+    assert _typed('["Au", "Hg"]') == ["Au", "Hg"] and _typed("1.5") == 1.5 and _typed("3") == 3
+    assert _typed('{"a": 1}') == {"a": 1} and _typed("true") is True
+    for v in ("${scan.outputs.items}", "/path/x.json", "mp2-atz", "1.5.2", "[not json"):
+        assert _typed(v) == v
+
+
 def test_tune_clusters_amendment_refuses_placement_keys():
     from flower.plan import apply_amendment, PlanInvalid
     plan = {"flower": 1, "id": "x", "clusters": {"box": {"transport": "local", "cpus": 4}}, "nodes": []}
