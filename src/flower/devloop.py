@@ -199,6 +199,29 @@ If `FLOWER_INSIDE_RUN` is set you are inside a step: do its task and never call 
 """
 
 
+def ensure_gitignore(root: Path) -> Path | None:
+    """Inside a git repository, make sure the project's `.flower/` (run logs, outputs, and run inputs such as ssh
+    hosts) is not committed: append it to the project's .gitignore unless a line there already covers it. Returns
+    the .gitignore when it was written, None when nothing was needed (or not a git repository)."""
+    if not any((d / ".git").exists() for d in [root, *root.parents]):
+        return None
+    import subprocess
+    try:   # git's own answer covers every .gitignore up the tree (exit 0: ignored, 1: not ignored)
+        r = subprocess.run(["git", "check-ignore", "-q", ".flower/"], cwd=root, capture_output=True, timeout=20)
+        if r.returncode == 0:
+            return None
+    except (OSError, subprocess.SubprocessError):
+        pass
+    gi = root / ".gitignore"
+    text = gi.read_text() if gi.exists() else ""
+    if any(ln.strip() in (".flower", ".flower/", "/.flower", "/.flower/", "**/.flower/") for ln in text.splitlines()):
+        return None
+    block = ("" if not text or text.endswith("\n") else "\n") + \
+        "# flower: run logs, outputs and run inputs (e.g. ssh hosts) stay local\n.flower/\n"
+    gi.write_text(text + block)
+    return gi
+
+
 def write_agents_md(root: Path) -> Path:
     p = root / "AGENTS.md"
     text = p.read_text() if p.exists() else ""

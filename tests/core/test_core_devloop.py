@@ -232,6 +232,25 @@ def test_insert_node_keeps_the_rest_of_the_file():
     assert "\n    - id: b\n" in out and "run: |" in out and "# four-space list" in out
 
 
+def test_init_keeps_runs_out_of_git(tmp_path):
+    """BUGS #57: `flower init` left `.flower/` (run logs, outputs, run inputs such as ssh hosts) to be committed
+    in a new project; inside a git repository it is now ignored, once."""
+    from flower.devloop import ensure_gitignore
+    assert ensure_gitignore(tmp_path) is None and not (tmp_path / ".gitignore").exists()     # not a repository
+    (tmp_path / ".git").mkdir()
+    (tmp_path / ".gitignore").write_text("*.pyc")
+    assert ensure_gitignore(tmp_path) == tmp_path / ".gitignore"
+    assert (tmp_path / ".gitignore").read_text().splitlines()[-1] == ".flower/"
+    assert ensure_gitignore(tmp_path) is None and (tmp_path / ".gitignore").read_text().count(".flower/") == 1
+    import subprocess
+    repo = tmp_path / "repo"
+    (repo / "study").mkdir(parents=True)
+    subprocess.run(["git", "init", "-q", str(repo)], check=True)
+    (repo / ".gitignore").write_text(".flower/\n")
+    assert ensure_gitignore(repo / "study") is None             # the repository's own .gitignore already covers it
+    assert not (repo / "study" / ".gitignore").exists()
+
+
 def test_init_ships_the_instructions_with_the_project(cli, home, tmp_path):
     code, res = cli("init", str(tmp_path / "proj"), "--hook")
     assert code == 0, res

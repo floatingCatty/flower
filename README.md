@@ -49,9 +49,14 @@ outside the agent:
 ## Install
 
 ```bash
-pip install -e .            # Python ≥ 3.9; dependencies: pyyaml, jsonschema
-flower doctor            # which harnesses and Slurm tools are available
+pip install "git+https://github.com/floatingCatty/flower"   # Python ≥ 3.9; dependencies: pyyaml, jsonschema
+# from a clone, for development: pip install -e .
+flower doctor   # which agent harnesses and Slurm tools are available here
 ```
+
+Not on PyPI yet: `pip install flower` installs Celery Flower, an unrelated tool. To adopt flower in a project
+(setup, how agents and people work in it, machines, what it does not do yet), see
+[docs/USING.md](docs/USING.md).
 
 ## Quick start
 

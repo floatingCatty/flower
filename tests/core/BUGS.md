@@ -506,6 +506,13 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** the server's record carries a stamp of flower's code (Python and the page); `flower ui` replaces a
   server whose stamp differs, keeping its token and port.
 
+### 57. A new project could commit its runs
+- **Test:** `tests/core/test_core_devloop.py::test_init_keeps_runs_out_of_git`
+- **Observed:** `flower init` did not touch `.gitignore`; this repository ignores `.flower/` by hand, but a new
+  project would commit run logs, outputs and run inputs (ssh hosts and options) with its first `git add -A`.
+- **Fix:** inside a git repository, `flower init` adds `.flower/` to the project's `.gitignore` unless a line
+  already covers it.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

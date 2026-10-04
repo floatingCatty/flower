@@ -185,6 +185,10 @@ def cmd_init(args, out: Out) -> int:
     (root / ".flower" / "runs").mkdir(parents=True, exist_ok=True)
     msg = [f"initialised {root / '.flower'}"]
     files = []
+    gi = devloop.ensure_gitignore(root)
+    if gi:
+        files.append(str(gi))
+        msg.append(f"added .flower/ to {gi} (runs stay local, never committed)")
     if not args.no_skill:
         from .skill import install_skill
         for p in install_skill(root, args.skill or "project"):
