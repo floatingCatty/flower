@@ -40,10 +40,10 @@ results were produced with is never modified.
 | Command | What it does |
 |---|---|
 | `flower env new <name>` | creates `envs/<name>/` with commented template scripts |
-| `flower remote exec --plan P --cluster C --env <name> [--probe] -- <cmd>` | runs a command on the cluster defined by plan P, with the cluster's prelude, `FLOWER_ENV_PREFIX` set to an exploration prefix, and `activate.sh` sourced once it exists. Logged to `sessions/`. `--probe` marks look-only commands, which are not drafted into `setup.sh` |
+| `flower remote exec --run RUN --cluster C --env <name> [--probe] -- <cmd>` | runs a command on the cluster as run RUN has it (or `--plan P` with `-i`/`--inputs`: as a run of plan P would), with the cluster's prelude, `FLOWER_ENV_PREFIX` set to an exploration prefix, and `activate.sh` sourced once it exists. Logged to `sessions/`. `--probe` marks look-only commands, which are not drafted into `setup.sh` |
 | `flower env freeze <name>` | pins the recipe: hashes every file, snapshots it in `history/`, and drafts `setup.sh` from the successful non-probe commands if the agent didn't write one. Refuses template scripts |
-| `flower env replay <name> --plan P --cluster C [--fresh]` | uploads the frozen recipe and runs `check.sh`; if that fails, `setup.sh` then `check.sh`. `--fresh` installs into a new empty prefix: **proof that the recipe works from scratch**. Recorded in `FROZEN.json` |
-| `flower env check <name> --plan P --cluster C` | `check.sh` only |
+| `flower env replay <name> --run RUN --cluster C [--fresh]` | uploads the frozen recipe and runs `check.sh`; if that fails, `setup.sh` then `check.sh`. `--fresh` installs into a new empty prefix: **proof that the recipe works from scratch**. Recorded in `FROZEN.json` |
+| `flower env check <name> --run RUN --cluster C` | `check.sh` only |
 | `flower env show [name]` | state (draft / frozen / changed), hash, logged commands, recent replays |
 
 ### In a plan

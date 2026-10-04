@@ -132,9 +132,14 @@ def amendment_overview(rationale: str, ops: list, diff: dict, by: str) -> str:
     for c in diff.get("changed") or []:
         out.append(f"Changes:  {c['id']} ({', '.join(c['fields'])})")
     for op in ops:
-        for nd in op.get("nodes") or ([op.get("with")] if op.get("with") else []):
+        for nd in op.get("nodes") or ([{"id": op.get("node"), **op["with"]}] if op.get("with") else []):
             if isinstance(nd, dict):
                 out.append(f"  + {nd.get('id')}: {nd.get('kind')} — {what(nd)}")
+        for name, spec in (op.get("clusters") or {}).items() if op.get("op") in ("add_clusters", "tune_clusters") else ():
+            verb = "new cluster" if op["op"] == "add_clusters" else "cluster"
+            out.append(f"  {verb} {name}: " + ", ".join(f"{k}={v}" for k, v in (spec or {}).items()))
+        if op.get("op") == "add_inputs":
+            out.append("  new input " + ", ".join(sorted(op.get("inputs") or {})))
     return "\n".join(out)
 
 

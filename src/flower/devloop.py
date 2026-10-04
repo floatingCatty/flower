@@ -23,8 +23,9 @@ DRAFT_HEADER = """\
 # A draft started with `flower start`: the run exists from the first minute and grows step by step.
 # Each addition is a recorded amendment of the run (see `flower log RUN`).
 #   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
-#   or edit this file, then: flower rerun RUN ID --follow
-# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way.
+#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
+# existing cluster, only cpus / max_jobs / min_poll may change.
 """
 
 
@@ -97,6 +98,9 @@ def node_from_args(a, command: list[str]) -> dict:
         n["env"] = dict(x.split("=", 1) for x in a.setenv)
     if a.timeout_total:
         n["timeout"] = {"total": a.timeout_total}
+    res = {k: v for k, v in (("cpus_per_task", getattr(a, "cpus", None)), ("mem", getattr(a, "mem", None))) if v}
+    if res:   # cluster steps ask the scheduler (or the host's cpus budget) for these; $FLOWER_CPUS / $FLOWER_MEM_MB
+        n["resources"] = res
     if getattr(a, "foreach", None):
         f = a.foreach.strip()
         try:   # a JSON list (or object), else a reference like ${scan.outputs.items}
@@ -170,7 +174,7 @@ the project's UI (`flower ui`). The full guide is in `.claude/skills/flower/SKIL
 2. **Every computation is a step**, including the first quick test:
    `flower add RUN ID -- <command>` (remote: `--cluster C --env E --stage-in FILE`). It writes the step into
    the plan file and runs it. To fix a step: edit its code or the plan file, `flower rerun RUN ID --follow`.
-3. Explore a remote machine with `flower remote exec --plan P --cluster C [--env E] [--probe] -- <cmd>`
+3. Explore a remote machine with `flower remote exec --run RUN --cluster C [--env E] [--probe] -- <cmd>`
    (logged), not raw ssh.
 4. Reading files, papers and results directly is fine; *running* things beside the run is not, including a
    quick check whose answer you rely on (make it a one-line step).

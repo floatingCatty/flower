@@ -380,6 +380,27 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   ran `conda create` into it together ("critical libmamba filesystem error"); two runs' steps failed.
 - **Fix:** the install takes a lock per prefix (`flock`, else a lock directory) and re-checks after waiting.
 
+## Found reproducing the J1-J2 chain (Eggert 1996) (2026-10-04)
+
+### 41. A running plan's cluster could not be given a cpu budget
+- **Test:** `tests/core/test_core_devloop.py::test_sync_tunes_a_cluster_without_rerunning`
+- **Observed:** `cpus: 16` was added to the `remote` cluster of a running draft, then a step with
+  `--cpus 8` was added: three 8-core items started at once. A run's clusters were fixed at creation, and
+  the edit was reported only as a note that `--json` output dropped, and that a `| tail` cut off.
+- **Fix:** a cluster's pacing settings (`cpus`, `max_jobs`, `min_poll`) may change in a running plan
+  (amendment op `tune_clusters`); host, paths and prelude stay fixed. `flower sync RUN` applies the plan
+  file's edits without re-running anything (`rerun` would have restarted the step). Text notes now
+  appear in `--json` output as `message`. `flower add` gained `--cpus` / `--mem` (`resources:`).
+
+### 42. Finished steps with an environment were seen as edited
+- **Test:** `tests/core/test_core_devloop.py::test_an_added_environment_step_is_not_seen_as_edited`
+- **Observed:** `flower sync` proposed to re-run two finished, unedited steps, and asked for approval. In
+  the run, a step with `environment:` (on the implicit cluster `local`) carries `stage_in: []`,
+  `retrieve: []` and `resources: {}`; the plan file's copy does not. The proposal listed them as
+  "+ None".
+- **Fix:** the edit comparison treats empty values as absent. The amendment overview names replaced
+  steps, and lists tuned or new clusters and new inputs.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

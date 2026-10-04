@@ -644,7 +644,10 @@ class Graph:
 
 # ====================================================================== amendments
 
-AMEND_OPS = ("add", "replace", "drop", "detour", "set_needs", "stop", "add_clusters", "add_inputs")
+AMEND_OPS = ("add", "replace", "drop", "detour", "set_needs", "stop", "add_clusters", "tune_clusters", "add_inputs")
+# cluster settings that only pace the work (how much of the machine, how often to poll): a running plan may change
+# them (op tune_clusters); where and how a step runs (host, paths, prelude, scheduler) stays fixed
+CLUSTER_TUNABLE = ("cpus", "max_jobs", "min_poll")
 
 
 def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) -> tuple[dict, dict]:
@@ -767,6 +770,24 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
                                         "are fixed once defined", "use a new cluster name, or `flower fork` the run"))
                     continue
                 new.setdefault("clusters", {})[name] = copy.deepcopy(spec)
+        elif kind == "tune_clusters":
+            cl = op.get("clusters")
+            if not isinstance(cl, dict) or not cl:
+                issues.append(Issue("amend_clusters", p, "tune_clusters needs `clusters: {name: {cpus: N, ...}}`"))
+                continue
+            for name, spec in cl.items():
+                cur = (new.get("clusters") or {}).get(name)
+                bad = sorted(k for k in (spec or {}) if k not in CLUSTER_TUNABLE)
+                if cur is None or not isinstance(spec, dict) or bad:
+                    issues.append(Issue("amend_clusters", p, f"cannot tune cluster {name!r}" + (
+                        f": only {', '.join(CLUSTER_TUNABLE)} may change in a running plan, not {', '.join(bad)}"
+                        if bad else ": no such cluster"), "use a new cluster name, or `flower fork` the run"))
+                    continue
+                for k, v in spec.items():   # null removes the setting
+                    if v is None:
+                        cur.pop(k, None)
+                    else:
+                        cur[k] = copy.deepcopy(v)
         elif kind == "add_inputs":
             ins = op.get("inputs")
             if not isinstance(ins, dict) or not ins:

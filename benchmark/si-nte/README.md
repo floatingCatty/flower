@@ -52,6 +52,14 @@ pseudopotentials give B₀ ≈ 0.95–0.96 Mbar, as LDA usually does for Si; the
 separate equation-of-state calculation, their ref. [Rignanese95]) is the outlier. 15 of 18 claims reproduce with
 either pseudopotential; the zone-boundary anomaly comes out somewhat stronger with PseudoDojo.
 
+## Repeatable from a fresh clone
+
+The plan was run again from a fresh `git clone` (`flower run si-nte/plan.yaml`; QE installed from the frozen
+recipe) and compared with the first run: `flower compare si-nte-20261003-182638-4ba2 <fresh run dir> --rtol 1e-6`.
+Every quasi-harmonic result (`qha`) and the equation of state agree to 1e-6. Phonon frequencies differ by 1–2 ppm,
+and the acoustic frequencies at Γ before the acoustic sum rule differ by 3·10⁻⁴ (2.762 vs 2.763 cm⁻¹, numerical
+noise that the sum rule removes).
+
 ## How it ran (all inside one flower run, started with `flower start`)
 
 `paper` (arXiv source + PDF, sha256) → `pseudo` (sha256) → `env-qe-here` (the frozen QE recipe, on a second

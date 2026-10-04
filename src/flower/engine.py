@@ -334,7 +334,7 @@ class Engine:
                 self.emit("run.reopened", {"reason": f"rerun {node}", "by": by}, actor=by)
             return targets
 
-    def plan_edits(self, node: str, new_inputs: dict | None = None) -> dict:
+    def plan_edits(self, node: str | None, new_inputs: dict | None = None) -> dict:
         """Edits to the plan file that a rerun of ``node`` should pick up, as amendment ops.
 
         Considered: ``node`` (or its foreach collector), everything downstream of it, the generated
@@ -343,12 +343,12 @@ class Engine:
 
         New *inputs* (with a `default:`, or a value in ``new_inputs``) and new *clusters* in the file are picked
         up too (ops add_inputs / add_clusters), so a run started as a draft can reach a remote machine later.
-        Existing inputs and clusters are fixed for the life of a run: changes to them are reported in
-        ``res["ignored"]``."""
+        Existing inputs and clusters are fixed for the life of a run, except a cluster's pacing settings
+        (``plan.CLUSTER_TUNABLE``: op tune_clusters); other changes to them are reported in ``res["ignored"]``."""
         st = self.state()
         src = st.meta.get("plan_source")
         res = {"ops": [], "changed": [], "added": [], "touches_finished": False, "file": src, "ignored": [],
-               "new_inputs": [], "new_clusters": []}
+               "new_inputs": [], "new_clusters": [], "tuned_clusters": []}
         if not src or not Path(src).is_file():
             return res
         raw = planmod.load_plan_file(src)
@@ -373,7 +373,7 @@ class Engine:
         resolver = tpl.make_resolver({"inputs": values, "env": dict(os.environ),
                                       "plan": {"dir": str(Path(src).parent), "id": st.plan.get("id")}})
         cur_cl = st.plan.get("clusters") or {}
-        add_cl = {}
+        add_cl, tune_cl = {}, {}
         for name, spec in (raw.get("clusters") or {}).items():
             try:
                 rendered = tpl.render(spec, resolver)
@@ -383,31 +383,46 @@ class Engine:
             if name not in cur_cl:
                 add_cl[name] = rendered
             elif rendered != cur_cl[name]:
-                res["ignored"].append(f"cluster {name!r} changed in the plan file; a run's clusters are fixed "
-                                      "(use a new cluster name, or `flower fork`)")
+                keys = {k for k in set(rendered) | set(cur_cl[name]) if rendered.get(k) != cur_cl[name].get(k)}
+                fixed = sorted(keys - set(planmod.CLUSTER_TUNABLE))
+                if fixed:
+                    res["ignored"].append(f"cluster {name!r} changed in the plan file ({', '.join(fixed)}); only "
+                                          f"{', '.join(planmod.CLUSTER_TUNABLE)} may change in a running plan "
+                                          "(use a new cluster name, or `flower fork`)")
+                else:
+                    tune_cl[name] = {k: rendered.get(k) for k in sorted(keys)}
         if add_in:
             res["ops"].append({"op": "add_inputs", "inputs": add_in})
             res["new_inputs"] = sorted(add_in)
         if add_cl:
             res["ops"].append({"op": "add_clusters", "clusters": add_cl})
             res["new_clusters"] = sorted(add_cl)
+        if tune_cl:
+            res["ops"].append({"op": "tune_clusters", "clusters": tune_cl})
+            res["tuned_clusters"] = [f"{n} ({', '.join(f'{k}={v}' for k, v in c.items())})" for n, c in tune_cl.items()]
         # compare like with like: the run's plan has its defaults/clusters rendered at creation
-        raw["defaults"], raw["clusters"] = st.plan.get("defaults") or {}, {**cur_cl, **add_cl}
+        tuned = {n: {**{k: v for k, v in c.items() if k not in tune_cl.get(n, {})},
+                     **{k: v for k, v in tune_cl.get(n, {}).items() if v is not None}} for n, c in cur_cl.items()}
+        raw["defaults"], raw["clusters"] = st.plan.get("defaults") or {}, {**tuned, **add_cl}
         raw["inputs"] = {**cur_in, **add_in}
         new = {n["id"]: n for n in planmod.normalize(raw).get("nodes") or [] if isinstance(n, dict) and "id" in n}
         g = st.graph()
         cur = g.nodes
-        top = cur.get(node, {}).get("expanded_from") or node
-        if top not in cur and top not in new:
-            if res["ops"]:   # only new inputs/clusters
+        top = (cur.get(node, {}).get("expanded_from") or node) if node is not None else None
+        if node is not None and top not in cur and top not in new:
+            if res["ops"]:   # only new inputs/clusters, or tuned clusters
                 res["added"] = [nid for nid in new if nid not in cur]
                 if res["added"]:
                     res["ops"].append({"op": "add", "nodes": [new[nid] for nid in res["added"]]})
             return res
-        cone = [top] + [d for d in g.descendants(top) if not cur[d].get("expanded_from")] if top in cur else []
+        if node is None:   # the whole plan file (`flower sync`)
+            cone = [n for n in cur if not cur[n].get("expanded_from")]
+        else:
+            cone = [top] + [d for d in g.descendants(top) if not cur[d].get("expanded_from")] if top in cur else []
 
-        def canon(n: dict) -> dict:
-            c = {k: v for k, v in n.items() if k not in ("needs", "bind", "expanded_from", "title", "description")}
+        def canon(n: dict) -> dict:   # empty values are absent: the run's copy may carry `stage_in: []` and the like
+            c = {k: v for k, v in n.items() if k not in ("needs", "bind", "expanded_from", "title", "description")
+                 and v not in ({}, [], None)}
             kids = {x for x, s in cur.items() if s.get("expanded_from") == n.get("id")}
             c["needs"] = sorted(d for d in (n.get("needs") or []) if d not in kids)
             return c

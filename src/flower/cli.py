@@ -36,7 +36,9 @@ class Out:
 
     def done(self, data: Any = None, text: str | None = None, nxt: list[str] | None = None, code: int = 0) -> int:
         if self.json:
-            print(json.dumps({"ok": code in (0, 3), "data": data, "next": nxt or []}, default=str, ensure_ascii=False))
+            msg = {"message": text} if text else {}   # notes (e.g. an ignored edit) reach --json callers too
+            print(json.dumps({"ok": code in (0, 3), "data": data, **msg, "next": nxt or []}, default=str,
+                             ensure_ascii=False))
         else:
             if text:
                 print(text)
@@ -652,39 +654,64 @@ def cmd_cancel(args, out: Out) -> int:
     return out.done(summary_data(eng, st), f"cancel requested ({args.node or 'whole run'}); status now {st.status}")
 
 
+def _pick_up_edits(eng: Engine, args, out: Out, node: str | None, via: str) -> tuple[list, int | None]:
+    """The development loop: edits to the plan file become a recorded amendment. Returns (notes, exit code if the
+    edit waits for approval). ``node`` None: the whole file (`flower sync`)."""
+    by = args.actor or default_actor()
+    notes: list = []
+    eng.tick()  # apply approvals answered since the last pass (e.g. of an earlier edit)
+    ed = eng.plan_edits(node, new_inputs=parse_kv(getattr(args, "input", None)))
+    notes.extend(f"note: {x}" for x in ed.get("ignored") or [])
+    if not ed["ops"]:
+        return notes, None
+    st = eng.state()
+    policy = ((st.plan.get("policies") or {}).get("edits") or "ask")
+    auto = bool(args.yes) or policy == "all" or (policy == "unfinished" and not ed["touches_finished"])
+    what = ", ".join([f"changed {', '.join(ed['changed'])}"] * bool(ed["changed"])
+                     + [f"added {', '.join(ed['added'])}"] * bool(ed["added"])
+                     + [f"new input {', '.join(ed['new_inputs'])}"] * bool(ed.get("new_inputs"))
+                     + [f"new cluster {', '.join(ed['new_clusters'])}"] * bool(ed.get("new_clusters"))
+                     + [f"cluster {', '.join(ed['tuned_clusters'])}"] * bool(ed.get("tuned_clusters")))
+    waiting = next((a for a in st.amendments.values() if a.status == "proposed" and a.ops == ed["ops"]), None)
+    if waiting is not None and not auto:  # the same edit is already waiting for a decision
+        aid = waiting.id
+    else:
+        aid = eng.propose_amendment(ed["ops"], f"plan file edited ({what}); picked up by `{via}`", by=by,
+                                    auto_approve=auto)
+    st = eng.state()
+    am = st.amendments.get(aid)
+    if am is None or am.status != "approved":
+        return notes, out.done({"amendment_id": aid, "gate": f"amend-{aid}", "changed": ed["changed"],
+                                "added": ed["added"]},
+                               f"the plan file changed ({what}); that edit needs approval first:\n"
+                               f"  flower show {st.run_id} --gate amend-{aid}      # the diff\n"
+                               f"  flower approve {st.run_id} amend-{aid}\n"
+                               f"then run `{via}` again (or allow such edits: `policies: {{edits: unfinished}}` "
+                               f"in the plan, or `--yes` when you are the approver)", code=3)
+    notes.append(f"plan edits applied as amendment {aid} (generation {st.generation}): {what}")
+    return notes, None
+
+
+def cmd_sync(args, out: Out) -> int:
+    """Make the run follow its plan file: new steps and inputs, edited unfinished steps, a cluster's pacing settings
+    (cpus, max_jobs, min_poll). Nothing is re-run on purpose (that is `flower rerun`)."""
+    eng = get_engine(args)
+    notes, rc = _pick_up_edits(eng, args, out, None, f"flower sync {eng.state().run_id}")
+    if rc is not None:
+        return rc
+    if not any(n.startswith("plan edits applied") for n in notes):
+        notes.append("the run already follows its plan file")
+    return _record_and_continue(eng, args, out, "\n".join(notes))
+
+
 def cmd_rerun(args, out: Out) -> int:
     eng = get_engine(args)
     by = args.actor or default_actor()
     notes = []
-    if not args.no_edits:  # the development loop: edits to the plan file become a recorded amendment
-        eng.tick()  # apply approvals answered since the last pass (e.g. of an earlier edit)
-        ed = eng.plan_edits(args.node, new_inputs=parse_kv(getattr(args, "input", None)))
-        notes.extend(f"note: {x}" for x in ed.get("ignored") or [])
-        if ed["ops"]:
-            st = eng.state()
-            policy = ((st.plan.get("policies") or {}).get("edits") or "ask")
-            auto = bool(args.yes) or policy == "all" or (policy == "unfinished" and not ed["touches_finished"])
-            what = ", ".join([f"changed {', '.join(ed['changed'])}"] * bool(ed["changed"])
-                             + [f"added {', '.join(ed['added'])}"] * bool(ed["added"])
-                             + [f"new input {', '.join(ed['new_inputs'])}"] * bool(ed.get("new_inputs"))
-                             + [f"new cluster {', '.join(ed['new_clusters'])}"] * bool(ed.get("new_clusters")))
-            waiting = next((a for a in st.amendments.values() if a.status == "proposed" and a.ops == ed["ops"]), None)
-            if waiting is not None and not auto:  # the same edit is already waiting for a decision
-                aid = waiting.id
-            else:
-                aid = eng.propose_amendment(ed["ops"], f"plan file edited ({what}); picked up by "
-                                            f"`flower rerun {args.node}`", by=by, auto_approve=auto)
-            st = eng.state()
-            am = st.amendments.get(aid)
-            if am is None or am.status != "approved":
-                return out.done({"amendment_id": aid, "gate": f"amend-{aid}", "changed": ed["changed"],
-                                 "added": ed["added"]},
-                                f"the plan file changed ({what}); that edit needs approval first:\n"
-                                f"  flower show {st.run_id} --gate amend-{aid}      # the diff\n"
-                                f"  flower approve {st.run_id} amend-{aid}\n"
-                                f"then run this rerun again (or allow such edits: `policies: {{edits: unfinished}}` "
-                                f"in the plan, or `--yes` when you are the approver)", code=3)
-            notes.append(f"plan edits applied as amendment {aid} (generation {st.generation}): {what}")
+    if not args.no_edits:
+        notes, rc = _pick_up_edits(eng, args, out, args.node, f"flower rerun {args.node}")
+        if rc is not None:
+            return rc
     st = eng.state()
     ns = st.nodes.get(args.node)
     if ns is not None and ns.status in ("running", "waiting", "retrying"):
@@ -1162,9 +1189,23 @@ def cmd_open(args, out: Out) -> int:
 
 
 def _plan_cluster(args) -> tuple[dict, Path]:
-    """A cluster's settings as a run of ``args.plan`` would use them (inputs from -i / --inputs)."""
+    """A cluster's settings as a run of ``args.plan`` would use them (inputs from -i / --inputs), or as the run
+    ``args.run`` uses them (its clusters were rendered with its inputs when they were defined)."""
     from . import template as tpl
     from .engine import coerce_inputs
+    if bool(getattr(args, "run", None)) == bool(args.plan):
+        raise FlowerError("usage", "give --run RUN (a run's clusters) or --plan PLAN (a plan file's)",
+                          "inside a draft, --run RUN needs no -i / --inputs: the run has them")
+    if args.run:
+        eng = get_engine(args)
+        st = eng.state()
+        clusters = st.plan.get("clusters") or {}
+        if args.cluster not in clusters:
+            raise FlowerError("usage", f"run {st.run_id} has no cluster {args.cluster!r}",
+                              f"clusters: {', '.join(clusters) or 'none'} (a new one: add it to the plan file, "
+                              f"then `flower sync {st.run_id}`)")
+        src = Path((st.plan.get("_source") or {}).get("dir") or st.meta.get("plan_dir") or ".")
+        return {**clusters[args.cluster], "_name": args.cluster}, src
     raw = planmod.load_plan_file(args.plan)
     plan = planmod.normalize(raw)  # not validated: the environment being explored may not be frozen yet
     src = Path((plan.get("_source") or {}).get("dir") or ".")
@@ -1206,7 +1247,7 @@ def cmd_remote(args, out: Out) -> int:
     if cmd and cmd[0] == "--":
         cmd = cmd[1:]
     if not cmd:
-        raise FlowerError("usage", "no command given", "flower remote exec --plan P --cluster C -- <command>")
+        raise FlowerError("usage", "no command given", "flower remote exec --run RUN --cluster C -- <command>")
     c, src = _plan_cluster(args)
     tr = make_transport(c)
     text = " ".join(cmd) if len(cmd) > 1 else cmd[0]
@@ -1512,6 +1553,14 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-i", "--input", action="append", help="NAME=VALUE for an input newly declared in the plan file")
     s.add_argument("--timeout", type=float)
 
+    s = add("sync", cmd_sync, "apply the plan file's edits to a run (new steps, edited unfinished steps, a "
+                              "cluster's cpus/max_jobs/min_poll) without re-running anything")
+    s.add_argument("run")
+    s.add_argument("--no-continue", action="store_true")
+    s.add_argument("--wait", action="store_true", help="drive in the foreground afterwards")
+    s.add_argument("-y", "--yes", action="store_true", help="approve the plan-file edits (you are the approver)")
+    s.add_argument("-i", "--input", action="append", help="NAME=VALUE for an input newly declared in the plan file")
+
     s = add("start", cmd_start, "start a run for a goal now, with an empty draft plan that grows step by step")
     s.add_argument("goal", help="what the work is for, in a sentence")
     s.add_argument("--id", help="plan/run id (default: from the goal)")
@@ -1539,6 +1588,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--in", dest="ins", action="append", default=[],
                    help="NAME=VALUE step input, e.g. --in results='${scan.outputs.items}' (a JSON file at $FLOWER_INPUTS)")
     s.add_argument("--timeout-total", help="e.g. 2h")
+    s.add_argument("--cpus", type=int, help="cores per run of the step (resources.cpus_per_task; $FLOWER_CPUS)")
+    s.add_argument("--mem", help="memory per run of the step, e.g. 16G (resources.mem; $FLOWER_MEM_MB)")
     s.add_argument("--retry", type=int, help="max attempts (retries infrastructure failures: lost, node_fail, ...)")
     s.add_argument("--on-failure", choices=["continue"], help="continue: downstream proceeds if this step fails")
     s.add_argument("--trigger", choices=["all_success", "all_done", "any_success"],
@@ -1609,7 +1660,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-browser", action="store_true")
 
     def plan_cluster_args(sp):
-        sp.add_argument("--plan", required=True, help="the plan whose `clusters:` defines the cluster")
+        sp.add_argument("--plan", help="the plan whose `clusters:` defines the cluster (or --run)")
+        sp.add_argument("--run", help="the run whose cluster to use, with the run's inputs (instead of --plan)")
         sp.add_argument("--cluster", required=True)
         sp.add_argument("-i", "--input", action="append", help="NAME=VALUE for the plan's inputs (repeatable)")
         sp.add_argument("--inputs", help="JSON file with the plan's inputs")
@@ -1617,7 +1669,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = add("remote", cmd_remote, "run a command on a cluster, logged (e.g. to explore an environment)")
     rs = s.add_subparsers(dest="remote_action", required=True)
-    e = rs.add_parser("exec", parents=[common], help="flower remote exec --plan P --cluster C [--env E] -- <command>")
+    e = rs.add_parser("exec", parents=[common], help="flower remote exec --run RUN|--plan P --cluster C [--env E] -- <command>")
     plan_cluster_args(e)
     e.add_argument("--env", help="log the command in envs/<env>/sessions/ (exploration of that environment)")
     e.add_argument("--probe", action="store_true", help="a look-only command: not drafted into setup.sh")

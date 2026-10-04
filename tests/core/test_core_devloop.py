@@ -11,6 +11,7 @@ import os
 import socket
 import textwrap
 from pathlib import Path
+import pytest
 
 from flower.engine import Engine
 from flower.plan import normalize, validate
@@ -206,10 +207,13 @@ def test_new_inputs_and_clusters_reach_a_running_draft(cli, home, tmp_path, monk
     assert st.nodes["s"].result.outputs["g"] == "hello"
     assert st.plan["clusters"]["box"]["remote_root"] == str(tmp_path / "remote")
     assert (tmp_path / "remote").is_dir()
-    # an existing cluster is fixed: a change is reported, not applied
+    # an existing cluster's pacing may change (BUGS #41); where it runs is fixed: reported, not applied
     p.write_text(p.read_text().replace("scheduler: none,", "scheduler: none, max_jobs: 3,"))
     ed = _eng(home, rid).plan_edits("s")
-    assert ed["ignored"] and "fixed" in ed["ignored"][0]
+    assert not ed["ignored"] and ed["ops"][0] == {"op": "tune_clusters", "clusters": {"box": {"max_jobs": 3}}}
+    p.write_text(p.read_text().replace("scheduler: none,", "scheduler: none, prelude: 'module load x',"))
+    ed = _eng(home, rid).plan_edits("s")
+    assert ed["ignored"] and "prelude" in ed["ignored"][0]
 
 
 def test_new_input_without_a_value_is_refused(cli, home, tmp_path, monkeypatch):
@@ -304,6 +308,95 @@ def test_add_a_foreach_step(cli, home, tmp_path, monkeypatch):
     st = _eng(home, rid).state()
     assert [st.nodes[f"sq[{i}]"].result.outputs["v"] for i in (0, 1)] == [4, 9]
     assert "foreach:" in (tmp_path / "x" / "plan.yaml").read_text()
+
+
+def test_add_with_cpus_and_memory(cli, home, tmp_path, monkeypatch):
+    """`flower add --cpus/--mem` write `resources:` (a parallel step needed a hand edit before); they are for
+    cluster steps, and a local step is refused with the reason."""
+    from types import SimpleNamespace
+    from flower.devloop import node_from_args
+    keys = ("title needs cluster environment stage_in retrieve setenv timeout_total foreach outs files retry "
+            "on_failure trigger ins").split()
+    a = SimpleNamespace(id="ed", **{k: None for k in keys}, cpus=8, mem="16G")
+    assert node_from_args(a, ["--", "true"])["resources"] == {"cpus_per_task": 8, "mem": "16G"}
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    code, res = cli("add", res["data"]["run_id"], "par", "--cpus", "6", "--", "true")
+    assert code != 0 and "cluster" in res["error"]["message"]
+    assert "par" not in (tmp_path / "x" / "plan.yaml").read_text()
+
+
+def test_sync_tunes_a_cluster_without_rerunning(cli, home, tmp_path):
+    """BUGS #41: `cpus: 16` added to a running plan's cluster was ignored (a run's clusters were fixed), so three
+    8-core jobs started on a machine meant to give the study 16 cores. Pacing settings may now change mid-run
+    (`flower sync`, or any rerun/add); where a step runs stays fixed."""
+    head = ("flower: 1\nid: dev\npolicies: {edits: unfinished}\nclusters:\n"
+            "  box: {transport: local, scheduler: none, max_jobs: 2%s}\nnodes:\n" + A_OK)
+    p = tmp_path / "plan.yaml"
+    p.write_text(head % "")
+    rid = _start(cli, p)
+    assert _eng(home, rid).state().nodes["a"].status == "succeeded"
+    p.write_text(head % ", cpus: 16, min_poll: 2s")
+    code, res = cli("sync", rid)
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert st.plan["clusters"]["box"] == {"transport": "local", "scheduler": "none", "max_jobs": 2, "cpus": 16,
+                                          "min_poll": "2s"}
+    assert len(st.nodes["a"].attempts) == 1                  # nothing re-ran
+    p.write_text(head.replace("transport: local", "transport: ssh, host: elsewhere") % ", cpus: 16, min_poll: 2s")
+    code, res = cli("sync", rid)
+    assert code == 0 and "only cpus, max_jobs, min_poll may change" in res["message"], res
+    assert _eng(home, rid).state().plan["clusters"]["box"]["transport"] == "local"
+    code, res = cli("sync", rid)
+    assert "already follows" in res["message"] or "note:" in res["message"]
+
+
+def test_an_added_environment_step_is_not_seen_as_edited(cli, home, tmp_path, monkeypatch):
+    """BUGS #42: a step added with `--env` (implicit cluster `local`) carries `stage_in: []`, `retrieve: []`,
+    `resources: {}` in the run but not in the plan file, so `flower sync` proposed to re-run it, finished and
+    unedited."""
+    from flower import envs as envmod
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    monkeypatch.setenv("HOME", str(tmp_path / "userhome"))
+    proj = tmp_path / "proj"
+    d = proj / "envs" / "hello"
+    d.mkdir(parents=True)
+    (d / "setup.sh").write_text('mkdir -p "$FLOWER_ENV_PREFIX/bin"\n')
+    (d / "activate.sh").write_text('export PATH="$FLOWER_ENV_PREFIX/bin:$PATH"\n')
+    (d / "check.sh").write_text('[ -d "$FLOWER_ENV_PREFIX/bin" ]\n')
+    envmod.freeze(d, by="test")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(proj / "x"))
+    rid = res["data"]["run_id"]
+    code, res = cli("add", rid, "a", "--env", "hello", "--out", "v:integer", "--", 'echo "{\\"v\\": 1}" > "$FLOWER_OUTPUTS"')
+    assert code == 0 and _eng(home, rid).state().nodes["a"].status == "succeeded", res
+    code, res = cli("sync", rid)
+    assert code == 0 and "already follows" in res["message"], res
+
+
+def test_remote_exec_on_a_run_uses_its_inputs(cli, home, tmp_path, capsys):
+    """`flower remote exec --run RUN` takes the cluster as the run has it (rendered with the run's inputs); with
+    `--plan` every call had to repeat `-i`/`--inputs` (the ssh host and options of a draft)."""
+    p = tmp_path / "plan.yaml"
+    p.write_text("flower: 1\nid: dev\ninputs:\n  where: {type: string}\nclusters:\n"
+                 "  box: {transport: local, scheduler: none, prelude: 'export WHERE=${inputs.where}'}\nnodes:\n" + A_OK)
+    code, res = cli("run", str(p), "--yes", "-i", "where=over-there")
+    rid = res["data"]["run_id"]
+    capsys.readouterr()
+    code, res = cli("remote", "exec", "--run", rid, "--cluster", "box", "--", 'echo "at $WHERE"')
+    assert code == 0, res
+    assert "at over-there" in capsys.readouterr().out + json.dumps(res)
+    code, res = cli("remote", "exec", "--cluster", "box", "--", "true")
+    assert code != 0 and "--run" in res["error"]["message"]
+
+
+def test_tune_clusters_amendment_refuses_placement_keys():
+    from flower.plan import apply_amendment, PlanInvalid
+    plan = {"flower": 1, "id": "x", "clusters": {"box": {"transport": "local", "cpus": 4}}, "nodes": []}
+    new, _ = apply_amendment(plan, [{"op": "tune_clusters", "clusters": {"box": {"cpus": 8, "max_jobs": None}}}], {})
+    assert new["clusters"]["box"] == {"transport": "local", "cpus": 8}
+    for bad in ({"box": {"host": "h"}}, {"nope": {"cpus": 2}}):
+        with pytest.raises(PlanInvalid):
+            apply_amendment(plan, [{"op": "tune_clusters", "clusters": bad}], {})
 
 
 def test_an_edited_script_is_not_served_from_cache(cli, home, tmp_path):

@@ -57,6 +57,7 @@ flower add RUN fit --needs fetch --cluster box --env pyscf --stage-in fit.py -- 
 # fix the code (staged scripts are read at run time) and/or the step in plan.yaml, then:
 flower rerun RUN STEP --follow        # applies the plan-file edit, reruns STEP, streams it, exit 0/1
 flower rerun RUN NEWSTEP --follow     # a step written into plan.yaml by hand is added the same way
+flower sync RUN                       # apply plan-file edits without re-running anything (e.g. a cluster's cpus)
 ```
 
 Why this shape: agents (and people) drift outside a workflow tool when the early phase has nowhere to go
