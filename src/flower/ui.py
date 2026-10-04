@@ -524,14 +524,24 @@ def background_info(root: Path) -> dict | None:
     return info
 
 
+def code_stamp() -> list:
+    """flower's own code as the server would load it (Python and the page): newest mtime and file count."""
+    pkg = Path(__file__).resolve().parent
+    files = [p for p in pkg.rglob("*") if p.suffix in (".py", ".html") and "__pycache__" not in p.parts]
+    return [max((p.stat().st_mtime_ns for p in files), default=0), len(files)]
+
+
 def ensure_background(root: Path, actor: str | None = None, port: int | None = None,
                       wait_s: float = 15.0) -> dict:
-    """Start this project's UI server in the background, or return the one already running."""
+    """Start this project's UI server in the background, or return the one already running. A server started
+    with older flower code is replaced (same port and token), so an upgrade shows up on the next `flower ui`."""
     from .util import username
     root = Path(root).resolve()
     info = background_info(root)
-    if info:
+    if info and info.get("code") == code_stamp():
         return {**info, "reused": True}
+    if info:
+        stop_background(root)
     old = read_json(state_file(root)) or {}
     token = old.get("token") or secrets.token_urlsafe(16)  # kept across restarts: bookmarks keep working
     want = int(port or old.get("port") or stable_port(root))
@@ -557,7 +567,7 @@ def ensure_background(root: Path, actor: str | None = None, port: int | None = N
             raise FlowerError("ui_start", f"the UI server did not come up within {wait_s:.0f}s", f"see {log}")
         time.sleep(0.1)
     info = {"pid": proc.pid, "host": hostname(), "user": username(), "root": str(root), "socket": str(sock),
-            "port": port, "token": token, "started_at": now_iso(), "version": __version__}
+            "port": port, "token": token, "started_at": now_iso(), "version": __version__, "code": code_stamp()}
     atomic_write_json(state_file(root), info, mode=0o600)
     return {**info, "reused": False}
 

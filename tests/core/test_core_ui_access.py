@@ -115,6 +115,23 @@ def test_background_server_is_started_once_reused_and_stopped(project):
         stop_background(root)
 
 
+def test_a_server_running_older_code_is_replaced(project, monkeypatch):
+    """After an upgrade (or an edit of flower), `flower ui` reused the old server and the user kept seeing the old
+    page and API: a server whose code stamp differs is replaced, with the same token and port."""
+    from flower import ui as uimod
+    root, _ = project
+    first = ensure_background(root)
+    try:
+        real = uimod.code_stamp()
+        monkeypatch.setattr(uimod, "code_stamp", lambda: [real[0] + 1, real[1]])   # flower's code changed
+        second = ensure_background(root)
+        assert second["reused"] is False and second["pid"] != first["pid"]
+        assert second["token"] == first["token"] and second["port"] == first["port"]
+        assert ensure_background(root)["reused"] is True
+    finally:
+        stop_background(root)
+
+
 def test_cli_ui_start_status_stop(project, cli):
     root, _ = project
     try:

@@ -499,6 +499,13 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Observed:** "SSE L=${item.L} beta=8L chain ${item.seed} [3]" in the UI and `flower show`.
 - **Fix:** titles and descriptions of items are displayed with their own `${item...}` / `${index}` filled in.
 
+### 56. `flower ui` kept serving flower's old code
+- **Test:** `tests/core/test_core_ui_access.py::test_a_server_running_older_code_is_replaced`
+- **Observed:** after the new node panel was written, `flower ui` reused the project's running server, which still
+  served the old page and API; the change was invisible until the server was stopped by hand.
+- **Fix:** the server's record carries a stamp of flower's code (Python and the page); `flower ui` replaces a
+  server whose stamp differs, keeping its token and port.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses
