@@ -1,0 +1,287 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
+# existing cluster, only cpus / max_jobs / min_poll may change.
+
+flower: 1
+id: heisenberg-2d
+title: "Reproduce the ground-state parameters of the 2D S=1/2 Heisenberg antiferromagnet by stochastic series expansion QMC and finite-size scaling: E = -0.669437(5), M = 0.3070(3), rho_s = 0.175(2), chi = 0.0625(9), c = 1.673(7), and the per-size data of Table II (Sandvik, PRB 56, 11678 (1997), arXiv:cond-mat/9707123)"
+description: |
+  Reproduce the ground-state parameters of the 2D S=1/2 Heisenberg antiferromagnet by stochastic series expansion QMC and finite-size scaling: E = -0.669437(5), M = 0.3070(3), rho_s = 0.175(2), chi = 0.0625(9), c = 1.673(7), and the per-size data of Table II (Sandvik, PRB 56, 11678 (1997), arXiv:cond-mat/9707123)
+
+policies:
+  edits: unfinished
+
+inputs:
+  host: {type: string, required: true, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+
+clusters:
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           remote_root: ~/flower-runs, min_poll: 15s, cpus: 32}
+
+nodes:
+  - id: paper
+    kind: shell
+    title: The paper (arXiv PDF, sha256) and its Table II parsed from the text layer
+    outputs:
+      sha256_pdf: string
+      table2_rows: integer
+    files:
+      pdf: paper.pdf
+      table2: table2.json
+    run: curl -fsSL -A "Mozilla/5.0" -o paper.pdf https://arxiv.org/pdf/cond-mat/9707123v1 && pdftotext -layout paper.pdf paper.txt && python3 ${plan.dir}/table2.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: verify
+    kind: shell
+    title: 'SSE kernel vs exact diagonalization at 4x4 (energy, S(pi,pi), stiffness: the paper''s Table I)'
+    needs:
+    - ed-twist
+    cluster: remote
+    environment: numba
+    stage_in:
+    - ${plan.dir}/sse.py
+    timeout:
+      total: 1h
+    outputs:
+      ok: boolean
+    run: python3 sse.py check | tail -n 1 | tee "$FLOWER_OUTPUTS"
+
+  - id: ed-twist
+    kind: shell
+    title: Exact 4x4 stiffness from a twisted boundary (independent of the QMC estimator)
+    cluster: remote
+    environment: quspin
+    stage_in:
+    - ${plan.dir}/ed_twist.py
+    outputs:
+      rho_s: number
+      E0_per_site: number
+      Wx2_implied: number
+    run: OMP_NUM_THREADS=1 python3 ed_twist.py 32 | tail -n 1 | tee "$FLOWER_OUTPUTS"
+
+  - id: sse
+    kind: shell
+    title: 'SSE L=${item.L} beta=8L chain ${item.seed}: 250000 sweeps'
+    needs:
+    - verify
+    cluster: remote
+    environment: numba
+    stage_in:
+    - ${plan.dir}/sse.py
+    timeout:
+      total: 6h
+    foreach:
+    - L: 16
+      seed: 16000
+    - L: 16
+      seed: 16001
+    - L: 16
+      seed: 16002
+    - L: 16
+      seed: 16003
+    - L: 16
+      seed: 16004
+    - L: 16
+      seed: 16005
+    - L: 16
+      seed: 16006
+    - L: 16
+      seed: 16007
+    - L: 16
+      seed: 16008
+    - L: 16
+      seed: 16009
+    - L: 16
+      seed: 16010
+    - L: 16
+      seed: 16011
+    - L: 16
+      seed: 16012
+    - L: 16
+      seed: 16013
+    - L: 16
+      seed: 16014
+    - L: 16
+      seed: 16015
+    - L: 14
+      seed: 14000
+    - L: 14
+      seed: 14001
+    - L: 14
+      seed: 14002
+    - L: 14
+      seed: 14003
+    - L: 14
+      seed: 14004
+    - L: 14
+      seed: 14005
+    - L: 14
+      seed: 14006
+    - L: 14
+      seed: 14007
+    - L: 12
+      seed: 12000
+    - L: 12
+      seed: 12001
+    - L: 12
+      seed: 12002
+    - L: 12
+      seed: 12003
+    - L: 12
+      seed: 12004
+    - L: 12
+      seed: 12005
+    - L: 12
+      seed: 12006
+    - L: 12
+      seed: 12007
+    - L: 10
+      seed: 10000
+    - L: 10
+      seed: 10001
+    - L: 10
+      seed: 10002
+    - L: 10
+      seed: 10003
+    - L: 10
+      seed: 10004
+    - L: 10
+      seed: 10005
+    - L: 10
+      seed: 10006
+    - L: 10
+      seed: 10007
+    - L: 8
+      seed: 8000
+    - L: 8
+      seed: 8001
+    - L: 8
+      seed: 8002
+    - L: 8
+      seed: 8003
+    - L: 8
+      seed: 8004
+    - L: 8
+      seed: 8005
+    - L: 8
+      seed: 8006
+    - L: 8
+      seed: 8007
+    - L: 6
+      seed: 6000
+    - L: 6
+      seed: 6001
+    - L: 6
+      seed: 6002
+    - L: 6
+      seed: 6003
+    - L: 6
+      seed: 6004
+    - L: 6
+      seed: 6005
+    - L: 6
+      seed: 6006
+    - L: 6
+      seed: 6007
+    - L: 6
+      seed: 6008
+    - L: 6
+      seed: 6009
+    - L: 6
+      seed: 6010
+    - L: 6
+      seed: 6011
+    - L: 6
+      seed: 6012
+    - L: 6
+      seed: 6013
+    - L: 6
+      seed: 6014
+    - L: 6
+      seed: 6015
+    - L: 4
+      seed: 4000
+    - L: 4
+      seed: 4001
+    - L: 4
+      seed: 4002
+    - L: 4
+      seed: 4003
+    - L: 4
+      seed: 4004
+    - L: 4
+      seed: 4005
+    - L: 4
+      seed: 4006
+    - L: 4
+      seed: 4007
+    - L: 4
+      seed: 4008
+    - L: 4
+      seed: 4009
+    - L: 4
+      seed: 4010
+    - L: 4
+      seed: 4011
+    - L: 4
+      seed: 4012
+    - L: 4
+      seed: 4013
+    - L: 4
+      seed: 4014
+    - L: 4
+      seed: 4015
+    outputs:
+      L: integer
+      E: number
+      E_err: number
+      S: number
+      C: number
+      rho: number
+      chi: number
+      resumed: boolean
+      seconds: number
+    files:
+      bins: bins.npz
+    retry:
+      max_attempts: 2
+    run: python3 sse.py ${item.L} $((8 * ${item.L})) 250000 ${item.seed} | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: fits
+    kind: shell
+    title: Per-size data vs Table II; extrapolations of E, M, rho_s, chi, c (L >= 6)
+    environment: analysis
+    outputs:
+      n_claims: integer
+      n_reproduced: integer
+      E_inf: number
+      E_inf_err: number
+      M: number
+      M_err: number
+      sizes: array
+    files:
+      report: report.md
+      figure: fits.png
+      data: fits.json
+    inputs:
+      runs: ${sse.outputs.items}
+      table2: ${paper.files.table2}
+      lmin: 6
+    run: python3 ${plan.dir}/fits.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: fits-preview
+    kind: shell
+    title: The fits on the chains finished so far (preview)
+    environment: analysis
+    outputs:
+      sizes: array
+    files:
+      report: report.md
+    inputs:
+      runs: ${sse.partial}
+      table2: ${paper.files.table2}
+      lmin: 6
+    run: python3 ${plan.dir}/fits.py | tail -n 1 > "$FLOWER_OUTPUTS"
