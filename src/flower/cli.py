@@ -568,6 +568,7 @@ def cmd_logs(args, out: Out) -> int:
             p = local / name
             if p.exists():
                 parts.append(f"==> {p} <==\n" + p.read_text(errors="replace")[-20000:])
+        _outputs_part(parts, local / "outputs.json", a)
         text = "\n".join(parts) or "(no job output yet)"
     else:
         parts = []
@@ -575,8 +576,17 @@ def cmd_logs(args, out: Out) -> int:
             p = adir / "proc" / name
             if p.exists() and p.stat().st_size:
                 parts.append(f"==> {name} <==\n" + p.read_text(errors="replace")[-20000:])
+        _outputs_part(parts, adir / "outputs.json", a)
         text = "\n".join(parts) or "(no output)"
     return out.done({"text": text, "dir": str(adir)}, text)
+
+
+def _outputs_part(parts: list, path: Path, attempt) -> None:
+    """A failed attempt's outputs file: what the step wrote before failing, otherwise invisible (`flower output`
+    shows successful results only)."""
+    if attempt.status != "succeeded" and path.is_file() and path.stat().st_size:
+        parts.append(f"==> {path.name} (written by this attempt, which did not succeed) <==\n"
+                     + path.read_text(errors="replace")[-20000:])
 
 
 def cmd_output(args, out: Out) -> int:

@@ -408,6 +408,29 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   silently used the wrong fit.
 - **Fix:** a rerun names the edited steps it does not apply and points to `flower sync RUN`.
 
+## Found reproducing the SSSP Δ test (2026-10-04)
+
+### 44. A recipe for this machine could not be explored before a step used it
+- **Test:** `tests/core/test_core_devloop.py::test_remote_exec_on_a_run_uses_its_inputs`
+- **Observed:** `flower remote exec --cluster local` failed in a fresh draft: the `local` cluster only existed
+  once a step with an environment and no cluster had been added.
+- **Fix:** `remote exec` and `env` always offer the `local` cluster.
+
+### 45. The hook named the wrong run
+- **Test:** `tests/core/test_core_devloop.py::test_hook_names_the_run_being_worked_on`
+- **Observed:** with two runs active, a command run inside one run's directory was reported against the other,
+  the most recently touched one.
+- **Fix:** the run whose run directory or plan directory holds the working directory comes first.
+
+## Found reproducing the 3d Ising critical point (2026-10-04)
+
+### 46. A failed step's outputs were invisible
+- **Test:** `tests/core/test_core_devloop.py::test_logs_show_the_outputs_of_a_failed_attempt`
+- **Observed:** a verification step wrote its verdict (z-scores against exact enumeration) to `$FLOWER_OUTPUTS`
+  and exited 1 on the mismatch. `flower output` shows successful results only, `flower logs` only stdout and
+  stderr, so the verdict could only be read from the attempt directory by hand.
+- **Fix:** `flower logs` adds the outputs file of an attempt that did not succeed.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

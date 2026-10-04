@@ -238,17 +238,27 @@ def _project_root(cwd: Path) -> Path | None:
     return None
 
 
-def active_run(root: Path) -> tuple[str, float] | None:
-    best = None
+def active_run(root: Path, cwd: Path | None = None) -> tuple[str, float] | None:
+    """The run being worked on: among the recently active runs, the one whose run directory or plan directory holds
+    ``cwd``, else the most recently active one."""
+    recent = []
     for d in (root / ".flower" / "runs").iterdir():
         ev = d / "events.jsonl"
-        if ev.is_file():
-            t = ev.stat().st_mtime
-            if best is None or t > best[1]:
-                best = (d.name, t)
-    if best and time.time() - best[1] < RECENT_S:
-        return best
-    return None
+        if ev.is_file() and time.time() - ev.stat().st_mtime < RECENT_S:
+            recent.append((d.name, ev.stat().st_mtime))
+    if not recent:
+        return None
+    if cwd is not None:
+        here = Path(cwd).resolve()
+
+        def holds(rid: str) -> int:   # 2: inside the run's directory, 1: inside its plan's directory
+            if here.is_relative_to((root / ".flower" / "runs" / rid).resolve()):
+                return 2
+            pd = _plan_dir(root, rid)
+            return 1 if pd is not None and here.is_relative_to(pd.resolve()) else 0
+        ranked = sorted(recent, key=lambda r: (holds(r[0]), r[1]), reverse=True)
+        return ranked[0]
+    return max(recent, key=lambda r: r[1])
 
 
 _INLINE_PY = re.compile(r"(?:^|[;&|(]\s*|&&\s*|\s)(?:\S*/)?python[0-9.]*\s+(?:-c\b|-(?:\s|$))")
@@ -283,14 +293,14 @@ def reminder(command: str, cwd: Path, session: str | None) -> str | None:
     if _FLOWER_CMD.search(command):
         return None
     root0 = _project_root(cwd)
-    act0 = active_run(root0) if root0 else None
+    act0 = active_run(root0, cwd) if root0 else None
     dirs = [cwd] + ([d] if act0 and (d := _plan_dir(root0, act0[0])) else [])
     if not _COMPUTE.search(command) and not _uses_local_code(full, dirs):
         return None
     root = _project_root(cwd)
     if root is None:
         return None
-    act = active_run(root)
+    act = active_run(root, cwd)
     if act is None:
         return None
     rid = act[0]

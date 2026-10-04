@@ -275,6 +275,26 @@ def test_hook_reminds_only_about_compute_beside_an_active_run(cli, home, tmp_pat
     assert say("python3 - <<'EOF'\nfrom mymodel import X\nprint(X)\nEOF", "s8")   # same, as a heredoc
 
 
+def test_hook_names_the_run_being_worked_on(cli, home, tmp_path, monkeypatch):
+    """With two active runs the reminder named the most recently touched one, not the one whose directory the
+    command ran in."""
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, ra = cli("start", "a", "--id", "a", "--dir", str(tmp_path / "a"))
+    _, rb = cli("start", "b", "--id", "b", "--dir", str(tmp_path / "b"))
+    a, b = ra["data"]["run_id"], rb["data"]["run_id"]
+    root = devloop._project_root(Path.cwd()) or devloop._project_root(Path(os.environ["FLOWER_HOME"]))
+    import time
+    now = time.time()
+    os.utime(root / ".flower" / "runs" / a / "events.jsonl", (now - 60, now - 60))
+    os.utime(root / ".flower" / "runs" / b / "events.jsonl", (now, now))   # b touched last
+    assert devloop.active_run(root)[0] == b
+    assert devloop.active_run(root, tmp_path / "a")[0] == a            # in a's plan directory
+    inside = root / ".flower" / "runs" / a / "nodes"
+    inside.mkdir(parents=True, exist_ok=True)
+    assert devloop.active_run(root, inside)[0] == a                    # in a's run directory
+    assert a in (devloop.reminder("python3 analyse.py", inside, "s9") or "")
+
+
 def test_hook_command_never_fails(cli, home, monkeypatch):
     monkeypatch.setattr("sys.stdin", io.StringIO("not json"))
     code, text = cli("hook", "bash", as_json=False)
@@ -405,6 +425,17 @@ def test_rerun_names_edits_it_does_not_apply(cli, home, tmp_path):
     assert code == 0 and "also changes b" in res["message"] and "flower sync" in res["message"], res
     code, res = cli("sync", rid, "--yes")
     assert code == 0 and "changed b" in res["message"], res
+
+
+def test_logs_show_the_outputs_of_a_failed_attempt(cli, home, tmp_path):
+    """A check step that writes its verdict and exits 1 on a mismatch: the verdict was invisible (`flower output`
+    shows successful results only, `flower logs` only stdout/stderr)."""
+    plan = _plan(tmp_path, """\
+  - {id: chk, kind: shell, run: 'echo "{\\"z\\": 130}" > "$FLOWER_OUTPUTS"; exit 1', outputs: {z: number}}
+""")
+    rid = _start(cli, plan)
+    code, res = cli("logs", rid, "chk")
+    assert code == 0 and '"z": 130' in res["data"]["text"] and "did not succeed" in res["data"]["text"], res
 
 
 def test_tune_clusters_amendment_refuses_placement_keys():
