@@ -696,7 +696,7 @@ def _pick_up_edits(eng: Engine, args, out: Out, node: str | None, via: str) -> t
                      + [f"new cluster {', '.join(ed['new_clusters'])}"] * bool(ed.get("new_clusters"))
                      + [f"cluster {', '.join(ed['tuned_clusters'])}"] * bool(ed.get("tuned_clusters")))
     descs = [n.get("description") for op in ed["ops"] if op.get("op") == "add" for n in op.get("nodes") or []
-             if isinstance(n, dict) and n.get("description")]
+             if isinstance(n, dict) and n.get("description") and not n.get("generated")]
     if len(descs) == 1:
         what += f": {first_line(descs[0], 160)}"
     waiting = next((a for a in st.amendments.values() if a.status == "proposed" and a.ops == ed["ops"]), None)

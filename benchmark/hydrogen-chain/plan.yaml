@@ -1,0 +1,278 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
+# existing cluster, only cpus / max_jobs / min_poll may change.
+
+flower: 1
+id: hydrogen-chain
+title: "Reproduce the deterministic quantum-chemistry results of the Simons Collaboration hydrogen-chain benchmark in the minimal basis: the H10 potential energy curve (Table II: FCI, RHF, UHF, RCCSD, RCCSD(T), UCCSD, UCCSD(T)), the exact equilibrium and dissociation energies, and the thermodynamic-limit equation of state (Table V) (Motta et al., PRX 7, 031059 (2017), arXiv:1705.01608)"
+description: |
+  Reproduce the deterministic quantum-chemistry results of the Simons Collaboration hydrogen-chain benchmark in the minimal basis: the H10 potential energy curve (Table II: FCI, RHF, UHF, RCCSD, RCCSD(T), UCCSD, UCCSD(T)), the exact equilibrium and dissociation energies, and the thermodynamic-limit equation of state (Table V) (Motta et al., PRX 7, 031059 (2017), arXiv:1705.01608)
+
+policies:
+  edits: unfinished
+
+inputs:
+  host: {type: string, required: true, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+
+clusters:
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           remote_root: ~/flower-runs, min_poll: 10s, cpus: 32}
+
+nodes:
+  - id: paper
+    kind: shell
+    title: The paper (arXiv PDF, sha256) and its Tables II and V parsed from the text layer
+    description: 'Downloads the paper and parses Table II (H10, STO-6G) and Table V (infinite chain, STO-6G): energies per atom for every method and bond length. rows_II and rows_V should be 10; fci_1.8 should read -0.542439.'
+    outputs:
+      sha256_pdf: string
+      rows_II: integer
+      rows_V: integer
+      fci_1.8: number
+    files:
+      pdf: paper.pdf
+      tables: tables.json
+    run: curl -fsSL -A "Mozilla/5.0" -o paper.pdf https://arxiv.org/pdf/1705.01608v2 && pdftotext -layout paper.pdf paper.txt && python3 ${plan.dir}/tables.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: h10
+    kind: shell
+    title: 'H10 at R = ${item.R}: RHF, UHF, RCCSD(T), UCCSD(T), FCI (STO-6G)'
+    description: Every deterministic column of Table II for H10 at one bond length, energies per atom; FCI is exact in this basis. The analysis compares them with the paper to its printed 1e-6.
+    environment: pyscf
+    env:
+      OMP_NUM_THREADS: '2'
+    timeout:
+      total: 1h
+    foreach:
+    - N: 10
+      R: 1.0
+    - N: 10
+      R: 1.2
+    - N: 10
+      R: 1.4
+    - N: 10
+      R: 1.6
+    - N: 10
+      R: 1.8
+    - N: 10
+      R: 2.0
+    - N: 10
+      R: 2.4
+    - N: 10
+      R: 2.8
+    - N: 10
+      R: 3.2
+    - N: 10
+      R: 3.6
+    outputs:
+      RHF: number
+      UHF: number
+      FCI: number
+      RCCSD: number
+      RCCSD(T): number
+      UCCSD: number
+      UCCSD(T): number
+      UHF_S2: number
+      seconds: number
+    run: python3 ${plan.dir}/hchain.py ${item.N} ${item.R} | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: chains
+    kind: shell
+    title: 'H${item.N} at R = ${item.R}: RHF, UHF, RCCSD(T), UCCSD(T) (STO-6G)'
+    description: Longer open chains (N = 20..50 at every bond length, and N = 60..100 for R <= 2.0 where UHF breaks symmetry only in long chains), for the extrapolation to the infinite chain (Table V). Together with h10 they give E(N)/N for each method; RCCSD may break down at large R, as the paper reports.
+    environment: pyscf
+    env:
+      OMP_NUM_THREADS: '4'
+    timeout:
+      total: 3h
+    foreach:
+    - N: 50
+      R: 1.0
+    - N: 50
+      R: 1.2
+    - N: 50
+      R: 1.4
+    - N: 50
+      R: 1.6
+    - N: 50
+      R: 1.8
+    - N: 50
+      R: 2.0
+    - N: 50
+      R: 2.4
+    - N: 50
+      R: 2.8
+    - N: 50
+      R: 3.2
+    - N: 50
+      R: 3.6
+    - N: 40
+      R: 1.0
+    - N: 40
+      R: 1.2
+    - N: 40
+      R: 1.4
+    - N: 40
+      R: 1.6
+    - N: 40
+      R: 1.8
+    - N: 40
+      R: 2.0
+    - N: 40
+      R: 2.4
+    - N: 40
+      R: 2.8
+    - N: 40
+      R: 3.2
+    - N: 40
+      R: 3.6
+    - N: 30
+      R: 1.0
+    - N: 30
+      R: 1.2
+    - N: 30
+      R: 1.4
+    - N: 30
+      R: 1.6
+    - N: 30
+      R: 1.8
+    - N: 30
+      R: 2.0
+    - N: 30
+      R: 2.4
+    - N: 30
+      R: 2.8
+    - N: 30
+      R: 3.2
+    - N: 30
+      R: 3.6
+    - N: 20
+      R: 1.0
+    - N: 20
+      R: 1.2
+    - N: 20
+      R: 1.4
+    - N: 20
+      R: 1.6
+    - N: 20
+      R: 1.8
+    - N: 20
+      R: 2.0
+    - N: 20
+      R: 2.4
+    - N: 20
+      R: 2.8
+    - N: 20
+      R: 3.2
+    - N: 20
+      R: 3.6
+    - N: 60
+      R: 1.0
+    - N: 60
+      R: 1.2
+    - N: 60
+      R: 1.4
+    - N: 60
+      R: 1.6
+    - N: 60
+      R: 1.8
+    - N: 60
+      R: 2.0
+    - N: 80
+      R: 1.0
+    - N: 80
+      R: 1.2
+    - N: 80
+      R: 1.4
+    - N: 80
+      R: 1.6
+    - N: 80
+      R: 1.8
+    - N: 80
+      R: 2.0
+    - N: 100
+      R: 1.0
+    - N: 100
+      R: 1.2
+    - N: 100
+      R: 1.4
+    - N: 100
+      R: 1.6
+    - N: 100
+      R: 1.8
+    - N: 100
+      R: 2.0
+    outputs:
+      RHF: number
+      UHF: number
+      RCCSD: number
+      RCCSD(T): number
+      UCCSD: number
+      UCCSD(T): number
+      UHF_S2: number
+      seconds: number
+    on_failure: continue
+    run: python3 ${plan.dir}/hchain.py ${item.N} ${item.R} | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: fci-fine
+    kind: shell
+    title: H10 FCI at R = ${item}
+    description: Exact (FCI) energy of H10 on a fine grid around the minimum, to locate the equilibrium bond length R_e = 1.786 and the minimum energy -0.542457 per atom that the paper quotes.
+    environment: pyscf
+    env:
+      OMP_NUM_THREADS: '2'
+    timeout:
+      total: 1h
+    foreach:
+    - 1.7
+    - 1.72
+    - 1.74
+    - 1.76
+    - 1.78
+    - 1.8
+    - 1.82
+    - 1.84
+    - 1.86
+    - 1.88
+    - 1.9
+    outputs:
+      FCI: number
+      RHF: number
+    run: python3 ${plan.dir}/hchain.py 10 ${item} fci-only | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: h-atom
+    kind: shell
+    title: The hydrogen atom in STO-6G (the dissociation limit)
+    description: 'The energy of one H atom in this basis, exact for one electron: the limit of the energy per atom as R grows, which the paper quotes as -0.471039.'
+    environment: pyscf
+    outputs:
+      FCI: number
+      RHF: number
+    run: python3 ${plan.dir}/hchain.py 1 10.0 fci-only | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: analysis
+    kind: shell
+    title: Tables II and V, the exact minimum and the dissociation limit, against the paper
+    description: 'Compares H10 with Table II to the printed 1e-6, locates the exact minimum from the fine FCI grid, checks the dissociation limit, and extrapolates every method to the infinite chain for Table V. Read report.md: n_reproduced of n_claims.'
+    environment: analysis
+    outputs:
+      n_claims: integer
+      n_reproduced: integer
+      Re: number
+      E0: number
+      table2_agree: integer
+    files:
+      report: report.md
+      figure: hchain.png
+      data: analysis.json
+    trigger: all_done
+    inputs:
+      tables: ${paper.files.tables}
+      h10: ${h10.outputs.items}
+      chains: ${chains.outputs.items}
+      fine: ${fci-fine.outputs.items}
+      atom: ${h-atom.outputs}
+    run: python3 ${plan.dir}/analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"
