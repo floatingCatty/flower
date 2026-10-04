@@ -728,7 +728,8 @@ def cmd_rerun(args, out: Out) -> int:
         notes.append(f"{args.node} is already {ns.status}")
     elif ns is not None:
         try:
-            targets = eng.rerun(args.node, downstream=not args.only, force=not args.cached, by=by, reason=args.reason)
+            targets = eng.rerun(args.node, downstream=not args.only, force=not args.cached, by=by, reason=args.reason,
+                                keep_state=getattr(args, "keep_state", False))
             notes.append(f"queued again: {', '.join(targets)}")
         except FlowerError as exc:
             if not (args.cached and exc.code == "node_running" and notes):
@@ -1554,6 +1555,9 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("node")
     s.add_argument("--only", action="store_true", help="do not re-run downstream nodes")
     s.add_argument("--cached", action="store_true", help="allow reuse if definition+inputs are unchanged")
+    s.add_argument("--keep-state", action="store_true",
+                   help="continue in the last attempt's $FLOWER_STATE_DIR (e.g. a checkpointed job that hit its "
+                        "time limit) instead of a fresh one")
     s.add_argument("--reason")
     s.add_argument("--no-continue", action="store_true")
     s.add_argument("--wait", action="store_true", help="drive in the foreground afterwards")

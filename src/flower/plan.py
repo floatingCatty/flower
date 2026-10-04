@@ -693,6 +693,19 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
             if nid not in by_id or not isinstance(spec, dict):
                 issues.append(Issue("amend_replace", p, f"replace needs an existing `node` and a `with:` spec (got {nid!r})"))
                 continue
+            if op.get("settings_only"):
+                # scheduling and cosmetics only (timeout, retry, resources, ...): allowed whatever the node's state,
+                # nothing becomes stale, as long as what the node does (its cache identity) is unchanged
+                nn = normalize_node({**dict(spec), "id": nid}, defaults)
+                if decl_hash(nn) != decl_hash(by_id[nid]):
+                    issues.append(Issue("amend_replace", p, f"settings_only replace of {nid!r} changes what it does",
+                                        "use `supersede: true` to re-run it"))
+                    continue
+                idx = next(j for j, n in enumerate(new["nodes"]) if n["id"] == nid)
+                new["nodes"][idx] = nn
+                by_id[nid] = nn
+                effects["changed"].append(nid)
+                continue
             if not is_pending(nid) and not op.get("supersede"):
                 issues.append(Issue("amend_history", p, f"node {nid!r} is {node_status.get(nid)}; history is immutable",
                                     "add `supersede: true` to re-run it (it and its downstream become stale)"))

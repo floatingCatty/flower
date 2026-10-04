@@ -65,6 +65,7 @@ class NodeState:
     gate_id: str | None = None
     rerun_count: int = 0     # how many times a gate's on_reject re-ran it
     retry_base: int = 0      # attempts made before the last reset (retry budget counts from here)
+    state_series: int = 0    # which FLOWER_STATE_DIR the attempts use: new on a rerun, kept with --keep-state
     force_next: bool = False # next start must not reuse a cached result
     feedback: str | None = None  # last gate rejection text that sent this node back (${feedback})
 
@@ -419,6 +420,8 @@ def apply(st: RunState, ev: dict) -> None:  # noqa: C901 - one switch, kept flat
         ns.retry_not_before = None
         ns.gate_id = None
         ns.retry_base = len(ns.attempts)
+        if not p.get("keep_state"):   # a deliberate rerun starts a fresh state dir; --keep-state continues it
+            ns.state_series = len(ns.attempts)
         ns.force_next = bool(p.get("force"))
         if p.get("feedback") is not None:
             ns.feedback = p["feedback"]

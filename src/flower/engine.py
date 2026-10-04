@@ -309,7 +309,9 @@ class Engine:
                       node=node, attempt=ns.last.n if ns.last else None, actor=by)
 
     def rerun(self, node: str, downstream: bool = True, force: bool = True, by: str | None = None,
-              reason: str | None = None) -> list[str]:
+              reason: str | None = None, keep_state: bool = False) -> list[str]:
+        """``keep_state``: the node's (and its foreach items') next attempt continues in the FLOWER_STATE_DIR of
+        their last attempt, e.g. a checkpointed job that reached its time limit."""
         by = by or default_actor()
         with self.lock():
             st = self.state()
@@ -329,7 +331,9 @@ class Engine:
                                      "cancel them or wait for them to finish")
             for t in targets:
                 self.emit("node.stale", {"reason": reason or f"rerun of {node} requested by {by}", "by": by,
-                                         "force": force and t in own}, node=t, actor=by)
+                                         "force": force and t in own,
+                                         **({"keep_state": True} if keep_state and t in own else {})},
+                          node=t, actor=by)
             if st.status in TERMINAL_RUN or st.status == "parked":
                 self.emit("run.reopened", {"reason": f"rerun {node}", "by": by}, actor=by)
             return targets
@@ -448,6 +452,10 @@ class Engine:
         status = {k: v.status for k, v in st.nodes.items()}
         for nid in changed:
             spec = {k: v for k, v in new[nid].items() if k != "id"}
+            if not new[nid].get("foreach") and planmod.decl_hash(new[nid]) == planmod.decl_hash(cur[nid]):
+                # timeout / retry / resources / title ...: applied without re-running a finished step (#49)
+                res["ops"].append({"op": "replace", "node": nid, "with": spec, "settings_only": True})
+                continue
             pending = status.get(nid, "pending") == "pending"
             res["ops"].append({"op": "replace", "node": nid, "with": spec, **({} if pending else {"supersede": True})})
             if status.get(nid) == "succeeded":
@@ -668,7 +676,7 @@ class Engine:
                        workdir=Path(attempt.workdir or adir / "work"), inputs=attempt.inputs, plan=st.plan,
                        emit=emit, handle=attempt.handle, progress=attempt.progress, job=attempt.job,
                        session=attempt.session, repairs=attempt.repairs,
-                       series=(st.nodes[nid].retry_base if nid in st.nodes else 0) or 0)
+                       series=(st.nodes[nid].state_series if nid in st.nodes else 0) or 0)
 
     def _resolver(self, st: RunState, spec: dict):
         ctx = st.template_context()
@@ -1095,8 +1103,13 @@ class Engine:
             for i, it in enumerate(items[:len(children)]):
                 if it != old_items[i] or i in reshaped:
                     cid = children[i]
+                    new_child = child(i, it)
+                    if it == old_items[i] and planmod.decl_hash(new_child) == planmod.decl_hash(g.nodes[cid]):
+                        # only timeout / retry / resources / ... changed: finished items keep their results (#49)
+                        ops.append({"op": "replace", "node": cid, "with": new_child, "settings_only": True})
+                        continue
                     done = st.nodes.get(cid, NodeState(cid)).status not in ("pending",)
-                    ops.append({"op": "replace", "node": cid, "with": child(i, it), **({"supersede": True} if done else {})})
+                    ops.append({"op": "replace", "node": cid, "with": new_child, **({"supersede": True} if done else {})})
             drop = [c for c in children[len(items):]]
             if drop:
                 ops.append({"op": "drop", "nodes": drop})

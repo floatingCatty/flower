@@ -438,6 +438,22 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   with the plan or the recipe.
 - **Fix:** edit detection compares a generated environment step by its recipe hash and cluster only.
 
+### 48. A checkpointed step that reached its time limit could not be continued
+- **Test:** `tests/core/test_core_devloop.py::test_rerun_keep_state_continues_from_the_checkpoint`
+- **Observed:** the Δ test's Na equation of state (7 volumes, checkpointed per volume in `$FLOWER_STATE_DIR`)
+  had done 2 of 7 volumes when it reached its 8 h limit. A timeout is not retried by default, and a rerun starts
+  a fresh state directory, so the only way on was to start over.
+- **Fix:** `flower rerun RUN NODE --keep-state` continues in the last attempt's state directory (the run is
+  recorded with `keep_state` on the `node.stale` event). A step can also list `timeout` in `retry.on`.
+
+### 49. Raising a foreach step's timeout re-ran all its finished items
+- **Test:** `tests/core/test_core_devloop.py::test_a_timeout_edit_keeps_finished_foreach_items`
+- **Observed:** checked before giving the Δ test's last, slow element more time: an edit of `timeout` alone made
+  the re-expansion supersede every finished item (69 elements would have been recomputed), although `timeout`,
+  like `retry` and `resources`, is not part of a step's cache identity.
+- **Fix:** amendment `replace` with `settings_only: true` (allowed on finished nodes, refused if the cache
+  identity changes, nothing becomes stale); the foreach re-expansion uses it for such edits.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

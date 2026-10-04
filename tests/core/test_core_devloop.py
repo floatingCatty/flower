@@ -438,6 +438,50 @@ def test_logs_show_the_outputs_of_a_failed_attempt(cli, home, tmp_path):
     assert code == 0 and '"z": 130' in res["data"]["text"] and "did not succeed" in res["data"]["text"], res
 
 
+def test_rerun_keep_state_continues_from_the_checkpoint(cli, home, tmp_path):
+    """BUGS #48: a checkpointed step that reached its time limit (not retried by default) could only be re-run
+    from scratch: a rerun starts a fresh $FLOWER_STATE_DIR. `--keep-state` continues in the last one."""
+    plan = _plan(tmp_path, """\
+  - {id: long, kind: shell, outputs: {n: integer},
+     run: 'n=$(cat "$FLOWER_STATE_DIR/n" 2>/dev/null || echo 0); echo $((n+1)) > "$FLOWER_STATE_DIR/n"; [ "$n" -ge 1 ] || exit 3; echo "{\\"n\\": $((n+1))}" > "$FLOWER_OUTPUTS"'}
+""")
+    rid = _start(cli, plan)
+    assert _eng(home, rid).state().nodes["long"].status == "failed"        # first part done, then "out of time"
+    cli("rerun", rid, "long", "--wait")
+    assert _eng(home, rid).state().nodes["long"].status == "failed"        # a plain rerun starts from scratch
+    code, res = cli("rerun", rid, "long", "--keep-state", "--wait")
+    st = _eng(home, rid).state()
+    assert st.nodes["long"].status == "succeeded" and st.nodes["long"].result.outputs["n"] == 2, res
+
+
+def test_a_timeout_edit_keeps_finished_foreach_items(cli, home, tmp_path):
+    """BUGS #49: raising the timeout of a foreach step (to let its last, slow item finish) re-ran every finished
+    item, although timeout is not part of what a step does (not in its cache key)."""
+    body = """\
+  - {id: f, kind: shell, foreach: [1, 2], timeout: {total: TT}, run: 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
+"""
+    plan = _plan(tmp_path, body.replace("TT", "1h"), policy="unfinished")
+    rid = _start(cli, plan)
+    _plan(tmp_path, body.replace("TT", "24h"), policy="unfinished")
+    code, res = cli("sync", rid, "--yes")
+    assert code == 0, res
+    _eng(home, rid).drive(until="settled", timeout=30)
+    st = _eng(home, rid).state()
+    for i in (0, 1):
+        assert len(st.nodes[f"f[{i}]"].attempts) == 1 and st.nodes[f"f[{i}]"].status == "succeeded"
+        assert st.graph().nodes[f"f[{i}]"]["timeout"]["total"] == "24h"
+    assert st.status == "succeeded", st.status
+    # the same for a plain step: a finished step takes the new timeout without running again
+    one = "  - {id: g, kind: shell, timeout: {total: TT}, run: 'true'}\n"
+    plan = _plan(tmp_path, one.replace("TT", "1h"), policy="unfinished")
+    rid = _start(cli, plan)
+    _plan(tmp_path, one.replace("TT", "2h"), policy="unfinished")
+    code, res = cli("sync", rid)          # no approval needed: nothing finished is touched
+    assert code == 0 and "changed g" in res["message"], res
+    st = _eng(home, rid).state()
+    assert len(st.nodes["g"].attempts) == 1 and st.graph().nodes["g"]["timeout"]["total"] == "2h"
+
+
 def test_tune_clusters_amendment_refuses_placement_keys():
     from flower.plan import apply_amendment, PlanInvalid
     plan = {"flower": 1, "id": "x", "clusters": {"box": {"transport": "local", "cpus": 4}}, "nodes": []}

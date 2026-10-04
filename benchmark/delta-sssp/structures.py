@@ -2,7 +2,7 @@
 
 FLOWER_INPUTS {"wien2k": path to delta/WIEN2k.txt (the Delta package beside it), "sssp_json": path (the pseudopotentials in sssp/ beside it),
                "kspacing": k-point spacing in 1/A (2pi included), "degauss": Marzari-Vanderbilt smearing in Ry,
-               "elements": optional list}
+               "elements": optional list, "ecut_scale": optional factor on the recommended cutoffs (default 1)}
 Writes inputs/<El>/<El>_<pct>.in and the pseudopotential beside them; prints {"items": [...]} for the fan-out.
 
 Structures: the package's primCIFs reduced to primitive cells with spglib (some are conventional), except O, Cr
@@ -72,14 +72,14 @@ def kmesh(cell, spacing):
     return [max(1, math.ceil(np.linalg.norm(b) / spacing)) for b in rec]
 
 
-def pw_input(el, atoms, sp, pseudo, lib, scale_cell, kpts, degauss):
+def pw_input(el, atoms, sp, pseudo, lib, scale_cell, kpts, degauss, ecut_scale=1.0):
     magnetic = any(sp)
     labels = [el + ("1" if s > 0 else "2") if el in AFM else el for s in sp]
     species = sorted(set(labels))
     mass = atomic_masses[atomic_numbers[el]]
     nat = len(atoms)
     sysl = ["  ibrav = 0", "  nat = %d" % nat, "  ntyp = %d" % len(species),
-            "  ecutwfc = %.1f" % lib["cutoff_wfc"], "  ecutrho = %.1f" % lib["cutoff_rho"],
+            "  ecutwfc = %.1f" % (lib["cutoff_wfc"] * ecut_scale), "  ecutrho = %.1f" % (lib["cutoff_rho"] * ecut_scale),
             "  occupations = 'smearing'", "  smearing = 'mv'", "  degauss = %g" % degauss]
     if magnetic:
         sysl.append("  nspin = 2")
@@ -127,8 +127,9 @@ def main():
         shutil.copy(Path(I["sssp_json"]).parent / "sssp" / pseudo, d / pseudo)
         for s in SCALES:
             (d / ("%s_%03d.in" % (el, round(100 * s)))).write_text(
-                pw_input(el, atoms, sp, pseudo, lib[el], base * s ** (1 / 3), kpts, I["degauss"]))
-        items.append({"el": el, "nat": nat, "kpts": kpts, "ecutwfc": lib[el]["cutoff_wfc"],
+                pw_input(el, atoms, sp, pseudo, lib[el], base * s ** (1 / 3), kpts, I["degauss"],
+                         float(I.get("ecut_scale") or 1.0)))
+        items.append({"el": el, "nat": nat, "kpts": kpts, "ecutwfc": lib[el]["cutoff_wfc"] * float(I.get("ecut_scale") or 1.0),
                       "magnetic": "FM" if el in FM else "AFM" if el in AFM else "",
                       "cost": nat ** 3 * kpts[0] * kpts[1] * kpts[2] * lib[el]["cutoff_wfc"] ** 1.5})
     items.sort(key=lambda x: -x["cost"])                       # the most expensive first
