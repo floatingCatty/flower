@@ -1,0 +1,32 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "3928141b21051ed90016dab390a1ab5e3880a19bb640947ad41c331cf0850db8",
+    "check.sh": "65cfb609dad449a334a3aa7686fe0568799c98eda71b6f7dfef1e1addaea00d7",
+    "conda-explicit.txt": "7fe27f6b12703dc06fe63b924d79fdc0115c9c53e334d35da0e3b18e7b7b82e3",
+    "env.yaml": "92c578e70b1ddca38f293da6e20013a36bcc1249aa534af4fe6b4fc46bac185f",
+    "setup.sh": "61cc655b7196e334801d0f80302a54a3e735028a0e644ee031d1d56ddcdb95ec"
+  },
+  "frozen_at": "2026-10-04T01:29:32.235Z",
+  "hash": "sha256:080cf3369663e5e11040e14a3235d45f76f941ee6c170ef8a31d179b0e2240c9",
+  "name": "numba",
+  "previous": null,
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-04T01:29:44.135Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/home/zhanghao/.flower/envs/numba-080cf3369663-replay-20261004-012934-2928",
+      "rc": 0,
+      "seconds": 9.3,
+      "tail": "numba 0.68.0 numpy 2.4.6 scipy 1.17.1 2d Ising <s s> at K=0.1: 0.1019 (tanh K 0.0997) OK\nenvironment numba installed in /home/zhanghao/.flower/envs/numba-080cf3369663-replay-20261004-012934-2928\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-04.jsonl"
+  ]
+}

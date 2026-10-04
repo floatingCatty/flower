@@ -1,0 +1,33 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "2b5cc08fd936605b79ca64b7ceb27f6a77f5df37555b033981e9c0340e39a07b",
+    "check.sh": "eff9023c46104e79ab3328c79dbddb6b49414dc450eb4f7ae97991788f8eef9f",
+    "conda-explicit.txt": "18549d0c8cbaa66670686e6dec6c382f75aad6cd9f3034308ac354949d6bc504",
+    "env.yaml": "f8eb773025d70773be51e90eaa1b3863359b38dccb8101da062659fc3969eccf",
+    "requirements.txt": "52206c7dd281ebd34659b793d221c5eaafc26d506ef6f55e5c6891842b6b9b2e",
+    "setup.sh": "f3c218c6ceb6f726000c5b2e93f22218edf9c99757908e9290a073159b6c1c6b"
+  },
+  "frozen_at": "2026-10-04T00:50:08.921Z",
+  "hash": "sha256:a00ce319c08bcc7f3bba7da548911c655c8247fc418ef3fea7be9871b000047a",
+  "name": "ase",
+  "previous": "sha256:6a09bbe477e04bef74e01fa85d757290a65c2413585c582278b3334774029127",
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-04T00:51:15.376Z",
+      "by": "human:zhanghao",
+      "cluster": "local",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/nessa/users/zhanghao/.flower/envs/ase-a00ce319c08b-replay-20261004-005011-a10b",
+      "rc": 0,
+      "seconds": 64.1,
+      "tail": "ase 3.29.0 spglib 2.7.0 numpy 2.4.6 CIF -> bcc Fe, Im-3m (229) OK\nenvironment ase installed in /nessa/users/zhanghao/.flower/envs/ase-a00ce319c08b-replay-20261004-005011-a10b\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-04.jsonl"
+  ]
+}

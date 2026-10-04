@@ -1,0 +1,285 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
+# existing cluster, only cpus / max_jobs / min_poll may change.
+
+flower: 1
+id: ising-3d
+title: "Reproduce the critical coupling Kc = 0.221654626(5) and correlation-length exponent nu = 0.629912(86) of the simple-cubic Ising model by Wolff cluster Monte Carlo, histogram reweighting and finite-size scaling (Ferrenberg, Xu, Landau, PRE 97, 043301 (2018), arXiv:1806.03558), at smaller lattices (L <= 64)"
+description: |
+  Reproduce the critical coupling Kc = 0.221654626(5) and correlation-length exponent nu = 0.629912(86) of the simple-cubic Ising model by Wolff cluster Monte Carlo, histogram reweighting and finite-size scaling (Ferrenberg, Xu, Landau, PRE 97, 043301 (2018), arXiv:1806.03558), at smaller lattices (L <= 64)
+
+policies:
+  edits: unfinished
+
+inputs:
+  host: {type: string, required: true, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+
+clusters:
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           remote_root: ~/flower-runs, min_poll: 15s, cpus: 28}
+
+nodes:
+  - id: paper
+    kind: shell
+    title: The paper (arXiv PDF, sha256)
+    outputs:
+      sha256_pdf: string
+    files:
+      pdf: paper.pdf
+      text: paper.txt
+    run: 'curl -fsSL -A "Mozilla/5.0" -o paper.pdf https://arxiv.org/pdf/1806.03558v1 && pdftotext -layout paper.pdf paper.txt && grep -q "0.221 654 626" paper.txt && printf "{\"sha256_pdf\": \"%s\"}" "$(sha256sum paper.pdf | cut -c1-64)" > "$FLOWER_OUTPUTS"'
+
+  - id: mc-smoke
+    kind: shell
+    title: 'Smoke: Wolff L=${item.L} seed ${item.seed}, 5000 measurements'
+    needs:
+    - verify
+    cluster: remote
+    environment: numba
+    stage_in:
+    - ${plan.dir}/wolff.py
+    timeout:
+      total: 1h
+    foreach:
+    - L: 8
+      seed: 1
+    - L: 8
+      seed: 2
+    - L: 12
+      seed: 1
+    - L: 12
+      seed: 2
+    - L: 16
+      seed: 1
+    - L: 16
+      seed: 2
+    outputs:
+      L: integer
+      seed: integer
+      n_meas: integer
+      U4_at_K0: number
+      seconds: number
+      resumed: boolean
+    files:
+      series: series.npz
+    run: python3 wolff.py ${item.L} ${item.seed} 5000 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: fss-smoke
+    kind: shell
+    title: FSS analysis on the smoke runs (checks the pipeline)
+    environment: analysis
+    outputs:
+      Kc: number
+      Kc_err: number
+      nu: number
+      nu_err: number
+      n_reproduced: integer
+      n_claims: integer
+      sizes: array
+      measurements: integer
+    files:
+      report: report.md
+      figure: fss.png
+      data: fss.json
+    inputs:
+      runs: ${mc-smoke.outputs.items}
+      lmin: '8'
+    run: python3 ${plan.dir}/fss.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: verify
+    kind: shell
+    title: The Wolff kernel vs exact enumeration at L=3 (2^27 states), neighbour-table symmetry
+    cluster: remote
+    environment: numba
+    stage_in:
+    - ${plan.dir}/wolff.py
+    timeout:
+      total: 1h
+    outputs:
+      ok: boolean
+    run: python3 wolff.py check | tail -n 1 | tee "$FLOWER_OUTPUTS"
+
+  - id: rngcheck
+    kind: shell
+    title: Is numba's np.random.randint(n) uniform?
+    cluster: remote
+    environment: numba
+    stage_in:
+    - ${plan.dir}/rngcheck.py
+    run: python3 rngcheck.py | tail -n 1 | tee "$FLOWER_OUTPUTS"
+
+  - id: mc
+    kind: shell
+    title: Wolff L=${item.L} seed ${item.seed}, ${item.n} measurements at K0 = 0.221654
+    needs:
+    - verify
+    cluster: remote
+    environment: numba
+    stage_in:
+    - ${plan.dir}/wolff.py
+    timeout:
+      total: 6h
+    foreach:
+    - L: 64
+      seed: 101
+      n: 100000
+    - L: 64
+      seed: 102
+      n: 100000
+    - L: 64
+      seed: 103
+      n: 100000
+    - L: 64
+      seed: 104
+      n: 100000
+    - L: 64
+      seed: 105
+      n: 100000
+    - L: 64
+      seed: 106
+      n: 100000
+    - L: 64
+      seed: 107
+      n: 100000
+    - L: 64
+      seed: 108
+      n: 100000
+    - L: 48
+      seed: 101
+      n: 100000
+    - L: 48
+      seed: 102
+      n: 100000
+    - L: 48
+      seed: 103
+      n: 100000
+    - L: 48
+      seed: 104
+      n: 100000
+    - L: 48
+      seed: 105
+      n: 100000
+    - L: 48
+      seed: 106
+      n: 100000
+    - L: 48
+      seed: 107
+      n: 100000
+    - L: 48
+      seed: 108
+      n: 100000
+    - L: 32
+      seed: 101
+      n: 400000
+    - L: 32
+      seed: 102
+      n: 400000
+    - L: 32
+      seed: 103
+      n: 400000
+    - L: 32
+      seed: 104
+      n: 400000
+    - L: 24
+      seed: 101
+      n: 400000
+    - L: 24
+      seed: 102
+      n: 400000
+    - L: 24
+      seed: 103
+      n: 400000
+    - L: 24
+      seed: 104
+      n: 400000
+    - L: 16
+      seed: 101
+      n: 400000
+    - L: 16
+      seed: 102
+      n: 400000
+    - L: 16
+      seed: 103
+      n: 400000
+    - L: 16
+      seed: 104
+      n: 400000
+    - L: 12
+      seed: 101
+      n: 400000
+    - L: 12
+      seed: 102
+      n: 400000
+    - L: 12
+      seed: 103
+      n: 400000
+    - L: 12
+      seed: 104
+      n: 400000
+    - L: 8
+      seed: 101
+      n: 400000
+    - L: 8
+      seed: 102
+      n: 400000
+    - L: 8
+      seed: 103
+      n: 400000
+    - L: 8
+      seed: 104
+      n: 400000
+    outputs:
+      L: integer
+      seed: integer
+      n_meas: integer
+      clusters_per_measurement: integer
+      U4_at_K0: number
+      seconds: number
+      resumed: boolean
+    files:
+      series: series.npz
+    retry:
+      max_attempts: 2
+    run: python3 wolff.py ${item.L} ${item.seed} ${item.n} | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: fss
+    kind: shell
+    title: 'Finite-size scaling: nu and Kc with jackknife errors (L >= 12)'
+    environment: analysis
+    timeout:
+      total: 2h
+    outputs:
+      Kc: number
+      Kc_err: number
+      nu: number
+      nu_err: number
+      n_reproduced: integer
+      n_claims: integer
+      sizes: array
+      measurements: integer
+    files:
+      report: report.md
+      figure: fss.png
+      data: fss.json
+    inputs:
+      runs: ${mc.outputs.items}
+      lmin: '12'
+    run: python3 ${plan.dir}/fss.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: fss-preview
+    kind: shell
+    title: FSS on the chains finished so far (preview)
+    environment: analysis
+    outputs:
+      sizes: array
+    files:
+      report: report.md
+      figure: fss.png
+    inputs:
+      runs: ${mc.partial}
+      lmin: '12'
+    run: python3 ${plan.dir}/fss.py | tail -n 1 > "$FLOWER_OUTPUTS"

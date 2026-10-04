@@ -13,7 +13,15 @@ description: |
 policies:
   edits: unfinished
 
+inputs:
+  host: {type: string, required: true, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+
 clusters:
+  # a remote workstation (32 cores, local NVMe disk) for the CCSD(T) items that ran out of time here: PySCF's
+  # integral files were on the network-mounted home, and the jobs were I/O-bound at one core
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           remote_root: ~/flower-runs, min_poll: 30s, cpus: 30}
   # this machine as a target (96 cores, 125 GB), environments from frozen recipes, no batch system
   here: {transport: local, scheduler: none, remote_root: "${env.HOME}/flower-local-runs", max_jobs: 6, min_poll: 3s}
   # the same machine, one job at a time, for the largest MP2/aug-cc-pVTZ calculations (~60 GB each)
@@ -211,6 +219,7 @@ nodes:
     inputs:
       calc: ${calc.outputs.items}
       calc_big: ${calc-big.outputs.items}
+      calc_remote: ${calc-remote.outputs.items}
       data: ${data.files.s22}
     environment: analysis    # numpy/scipy/matplotlib from envs/analysis (no interpreter paths)
     run: python3 ${plan.dir}/s22_report.py | tail -n 1 > "$FLOWER_OUTPUTS"
@@ -241,6 +250,50 @@ nodes:
     - i: 21
       level: mp2-atz
     - i: 22
+      level: mp2-atz
+    outputs:
+      hf_int_kcal: number
+      seconds: number
+    files:
+      result: result.json
+    retry:
+      max_attempts: 2
+    on_failure: continue
+    run: python3 s22.py calc s22.json ${item.i} ${item.level} 60000 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: calc-remote
+    kind: shell
+    title: 'Complex ${item.i} at ${item.level} on the remote (in core, local disk): timed out or out of memory here'
+    needs:
+    - data
+    cluster: remote
+    environment: pyscf
+    stage_in:
+    - ${plan.dir}/s22.py
+    - ${data.files.s22}
+    env:
+      OMP_NUM_THREADS: '16'
+    timeout:
+      total: 12h
+    resources:
+      cpus_per_task: 16
+      mem: 60G
+    foreach:
+    - i: 5
+      level: ccsdt-dz
+    - i: 6
+      level: ccsdt-dz
+    - i: 7
+      level: ccsdt-dz
+    - i: 11
+      level: ccsdt-dz
+    - i: 12
+      level: ccsdt-dz
+    - i: 13
+      level: ccsdt-dz
+    - i: 7
+      level: mp2-atz
+    - i: 15
       level: mp2-atz
     outputs:
       hf_int_kcal: number

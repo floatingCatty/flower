@@ -421,6 +421,10 @@ class Engine:
             cone = [top] + [d for d in g.descendants(top) if not cur[d].get("expanded_from")] if top in cur else []
 
         def canon(n: dict) -> dict:   # empty values are absent: the run's copy may carry `stage_in: []` and the like
+            if str(n.get("generated", "")).startswith("env:"):
+                # a generated environment step is its recipe (hash) on its cluster; its script is flower's own and
+                # changes with flower's version, which is not an edit of the plan (BUGS #47)
+                return {"generated": n.get("generated"), "cluster": n.get("cluster")}
             c = {k: v for k, v in n.items() if k not in ("needs", "bind", "expanded_from", "title", "description")
                  and v not in ({}, [], None)}
             kids = {x for x, s in cur.items() if s.get("expanded_from") == n.get("id")}

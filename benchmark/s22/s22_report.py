@@ -16,7 +16,8 @@ def main():
     I = json.loads(Path(os.environ["FLOWER_INPUTS"]).read_text())
     recs = {r["index"]: r for r in json.loads(Path(I["data"]).read_text())}
     lev = {}
-    for it in list(I.get("calc") or []) + list(I.get("calc_big") or []):   # calc_big: the large ones, more memory
+    # calc_big: the large ones with more memory; calc_remote: those re-run on another machine (later ones win)
+    for it in list(I.get("calc") or []) + list(I.get("calc_big") or []) + list(I.get("calc_remote") or []):
         d = Path((it or {}).get("local_dir") or "")
         if (d / "result.json").is_file():
             r = json.loads((d / "result.json").read_text())

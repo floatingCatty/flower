@@ -281,6 +281,26 @@ def test_an_amendment_adds_a_local_step_with_an_environment(ff, tmp_path, home_d
     assert st.nodes["b"].result.outputs["v"] == "hello v1", ff.why(eng)
 
 
+def test_a_changed_env_script_is_not_a_plan_edit(ff, tmp_path, home_dir, monkeypatch):
+    """BUGS #47: the generated environment step's script is flower's own; when flower changes it, the plan is not
+    edited (a new recipe version still is)."""
+    src = tmp_path / "proj"
+    _recipe(src)
+    plan = {"flower": 1, "id": "loc", "nodes": [
+        {"id": "a", "kind": "shell", "environment": "hello", "run": 'echo "{\\"v\\": 1}" > "$FLOWER_OUTPUTS"',
+         "outputs": {"v": "integer"}}]}
+    p = src / "plan.yaml"
+    p.write_text(json.dumps(plan))
+    from flower.plan import load_plan_file
+    eng = ff.run(load_plan_file(str(p)))
+    assert ff.drive(eng, timeout=60).status == "succeeded", ff.why(eng)
+    real = envmod.setup_script
+    monkeypatch.setattr(envmod, "setup_script", lambda *a, **k: real(*a, **k) + "\n# a newer flower\n")
+    assert eng.plan_edits(None)["ops"] == []
+    _recipe(src, check='hello-tool | grep -q "hello v1" && echo "hello v1 OK (v2)"\n')   # a new recipe version
+    assert "env-hello-local" in eng.plan_edits(None)["changed"]
+
+
 def test_concurrent_installs_of_one_environment_wait_for_each_other(tmp_path):
     """BUGS #40: three runs found the same recipe missing at once and ran `conda create` into one prefix together."""
     import subprocess

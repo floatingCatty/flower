@@ -431,6 +431,13 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   stderr, so the verdict could only be read from the attempt directory by hand.
 - **Fix:** `flower logs` adds the outputs file of an attempt that did not succeed.
 
+### 47. A flower upgrade looked like an edit of every environment step
+- **Test:** `tests/hpc/test_envs.py::test_a_changed_env_script_is_not_a_plan_edit`
+- **Observed:** `flower sync` on the S22 run (started before the install lock of #40) proposed re-running its
+  finished environment steps, asking for approval: their generated script had changed with flower's code, not
+  with the plan or the recipe.
+- **Fix:** edit detection compares a generated environment step by its recipe hash and cluster only.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

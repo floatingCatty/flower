@@ -1,0 +1,33 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "2b5cc08fd936605b79ca64b7ceb27f6a77f5df37555b033981e9c0340e39a07b",
+    "check.sh": "eff9023c46104e79ab3328c79dbddb6b49414dc450eb4f7ae97991788f8eef9f",
+    "conda-explicit.txt": "18549d0c8cbaa66670686e6dec6c382f75aad6cd9f3034308ac354949d6bc504",
+    "env.yaml": "f8eb773025d70773be51e90eaa1b3863359b38dccb8101da062659fc3969eccf",
+    "requirements.txt": "ad67ae7e5c99022ef8b9f1d87875788bbce6122c26c4381edf53175cb567cffc",
+    "setup.sh": "f3c218c6ceb6f726000c5b2e93f22218edf9c99757908e9290a073159b6c1c6b"
+  },
+  "frozen_at": "2026-10-04T00:49:40.072Z",
+  "hash": "sha256:6a09bbe477e04bef74e01fa85d757290a65c2413585c582278b3334774029127",
+  "name": "ase",
+  "previous": null,
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-04T00:50:02.131Z",
+      "by": "human:zhanghao",
+      "cluster": "local",
+      "fresh": true,
+      "ok": false,
+      "prefix": "/nessa/users/zhanghao/.flower/envs/ase-6a09bbe477e0-replay-20261004-004940-2c1e",
+      "rc": 3,
+      "seconds": 21.3,
+      "tail": "setup.sh failed; last lines:\nLinking libblas-3.11.0-11_h4a7cf45_openblas\nLinking python-3.11.16-h5f976f7_2_cpython\nLinking libcblas-3.11.0-11_h0358290_openblas\nLinking liblapack-3.11.0-11_h47877c9_openblas\nLinking packaging-26.3-pyhc364b38_0\nLinking setuptools-84.0.0-pyh332efcf_0\nLinking numpy-2.4.6-py311h2e04523_0\nLinking wheel-0.48.0-pyhd8ed1ab_0\nLinking pip-26.2.1-pyh8b19718_0\nLinking scipy-1.17.1-py311hbe70eeb_1\n\nTransaction finished\n\n\nTo activate this environment, use:\n\n    mamba activate /homes/nessa/zhanghao/.flower/envs/ase-6a09bbe477e0-replay-20261004-004940-2c1e\n\nOr to execute a single command in this environment, use:\n\n    mamba run -p /homes/nessa/zhanghao/.flower/envs/ase-6a09bbe477e0-replay-20261004-004940-2c1e mycommand\n\nERROR: Invalid requirement: '=====': Expected package name at the start of dependency specifier\n    =====\n    ^ (from line 1 of /nessa/users/zhanghao/.flower/envs/ase-6a09bbe477e0-replay-20261004-004940-2c1e.recipe/requirements.txt)\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-04.jsonl"
+  ]
+}

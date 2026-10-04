@@ -1,0 +1,166 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
+# existing cluster, only cpus / max_jobs / min_poll may change.
+
+flower: 1
+id: delta-sssp
+title: "Reproduce the Delta-factor verification of the SSSP efficiency pseudopotential library against all-electron WIEN2k equations of state for the 71 elemental crystals (Lejaeghere et al., Science 351, aad3000 (2016); Prandini et al., npj Comput. Mater. 4, 72 (2018), arXiv:1806.05609) with Quantum ESPRESSO"
+description: |
+  Reproduce the Delta-factor verification of the SSSP efficiency pseudopotential library against all-electron WIEN2k equations of state for the 71 elemental crystals (Lejaeghere et al., Science 351, aad3000 (2016); Prandini et al., npj Comput. Mater. 4, 72 (2018), arXiv:1806.05609) with Quantum ESPRESSO
+
+policies:
+  edits: unfinished
+
+inputs:
+  kspacing: {type: number, default: 0.1, description: "k-point spacing in 1/A (2pi included)"}
+  degauss: {type: number, default: 0.01, description: "Marzari-Vanderbilt smearing in Ry"}
+  host: {type: string, required: true, description: "ssh alias of the remote machine"}
+  ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}
+
+clusters:
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           remote_root: ~/flower-runs, min_poll: 15s, cpus: 30}
+
+nodes:
+  - id: sources
+    kind: shell
+    title: Delta package (pinned commit), SSSP 1.1 PBE efficiency, the SSSP paper (sha256)
+    outputs:
+      delta_zip_sha256: string
+      sssp_tar_sha256: string
+      sssp_json_sha256: string
+      paper_sha256: string
+      n_cifs: integer
+      n_pseudos: integer
+      n_wien2k: integer
+    files:
+      sssp_json: sssp.json
+      wien2k: delta/WIEN2k.txt
+      paper: paper.pdf
+    run: python3 ${plan.dir}/sources.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: structures
+    kind: shell
+    title: 'pw.x inputs: 71 crystals x 7 volumes (94-106 % of V0 WIEN2k), SSSP cutoffs, magnetism per the Delta protocol'
+    environment: ase
+    outputs:
+      items: array
+      n: integer
+    inputs:
+      wien2k: ${sources.files.wien2k}
+      sssp_json: ${sources.files.sssp_json}
+      kspacing: ${inputs.kspacing}
+      degauss: ${inputs.degauss}
+    run: python3 ${plan.dir}/structures.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: eos-smoke
+    kind: shell
+    title: 'Smoke test: EOS of ${item.el}'
+    cluster: remote
+    environment: qe
+    stage_in:
+    - ${plan.dir}/eos.sh
+    - ${structures.outputs.local_dir}/inputs/${item.el}
+    timeout:
+      total: 2h
+    resources:
+      cpus_per_task: 4
+    foreach:
+    - el: Si
+    - el: Fe
+    outputs:
+      el: string
+      V: array
+      E: array
+      mag: array
+      iterations: array
+    run: bash eos.sh ${item.el} $FLOWER_CPUS | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: delta-smoke
+    kind: shell
+    title: Delta on the smoke-test elements (checks the analysis and its port of calcDelta.py)
+    environment: ase
+    outputs:
+      n_elements: integer
+      avg_delta: number
+      paper_avg_delta: number
+      avg_delta_history_entry: number
+      port_max_diff: number
+      worst: array
+      n_outside_96_104: integer
+      failed: array
+    files:
+      report: report.md
+      table: ours.txt
+      figure: delta.png
+    inputs:
+      eos: ${eos-smoke.outputs.items}
+      wien2k: ${sources.files.wien2k}
+    run: python3 ${plan.dir}/delta.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: eos
+    kind: shell
+    title: 'EOS of ${item.el}: 7 volumes with pw.x (SSSP 1.1 efficiency)'
+    cluster: remote
+    environment: qe
+    stage_in:
+    - ${plan.dir}/eos.sh
+    - ${structures.outputs.local_dir}/inputs/${item.el}
+    timeout:
+      total: 8h
+    resources:
+      cpus_per_task: 4
+    foreach: ${structures.outputs.items}
+    outputs:
+      el: string
+      V: array
+      E: array
+      mag: array
+      iterations: array
+    retry:
+      max_attempts: 2
+    on_failure: continue
+    run: bash eos.sh ${item.el} $FLOWER_CPUS | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: delta
+    kind: shell
+    title: Delta factor vs WIEN2k over all elements, and vs the published QE + SSSP efficiency entry
+    environment: ase
+    outputs:
+      n_elements: integer
+      avg_delta: number
+      paper_avg_delta: number
+      avg_delta_history_entry: number
+      port_max_diff: number
+      worst: array
+      n_outside_96_104: integer
+      failed: array
+    files:
+      report: report.md
+      table: ours.txt
+      figure: delta.png
+      data: delta.json
+    trigger: all_done
+    inputs:
+      eos: ${eos.outputs.items}
+      wien2k: ${sources.files.wien2k}
+    run: python3 ${plan.dir}/delta.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: delta-preview
+    kind: shell
+    title: Delta on the elements finished so far (preview)
+    environment: ase
+    outputs:
+      n_elements: integer
+      avg_delta: number
+      worst: array
+      failed: array
+    files:
+      report: report.md
+    inputs:
+      eos: ${eos.partial}
+      wien2k: ${sources.files.wien2k}
+    run: python3 ${plan.dir}/delta.py | tail -n 1 > "$FLOWER_OUTPUTS"

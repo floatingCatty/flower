@@ -334,13 +334,15 @@ def test_installed_executable_envelope_and_codes(tmp_path, home):
 
 def test_detached_driver_killed_then_tick_resumes(tmp_path, home):
     env = dict(os.environ)
-    p = write_plan(tmp_path, [sh("a", "sleep 1"), sh("b", "echo after", needs=["a"])])
+    # `a` must outlast the CLI's own exit: on a loaded machine with a network-mounted home a 1 s step let the whole
+    # run (and its driver) finish before the test looked at the driver
+    p = write_plan(tmp_path, [sh("a", "sleep 5"), sh("b", "echo after", needs=["a"])])
     r = _exe(["run", str(p), "--yes", "--detach", "--json"], env, tmp_path)
     assert r.returncode == 0, r.stderr
     out = json.loads(r.stdout)
     rid = out["data"]["run_id"]
     pid = out["data"]["driver"]["pid"]
-    assert pid_alive(pid)
+    assert pid_alive(pid), Engine(RunPaths(home, rid)).state().status
     os.kill(pid, signal.SIGKILL)
     assert wait_for(lambda: not pid_alive(pid), 5)
     eng = Engine(RunPaths(home, rid))

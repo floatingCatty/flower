@@ -12,3 +12,5 @@ in this folder holds the runs and is gitignored.
 | [`s22`](s22/README.md) | S22 interaction energies, Jurečka *et al.* PCCP 2006: PySCF MP2/CBS + ΔCCSD(T), 72 jobs | running (heavy CCSD(T) items) |
 | [`water-diffusion`](water-diffusion/README.md) | Water self-diffusion and viscosity, Tazi *et al.* JPCM 2012: OpenMM, Yeh–Hummer | TIP4P/2005 reproduced; SPC/E D −4 % |
 | [`j1j2-chain`](j1j2-chain/README.md) | Frustrated spin-1/2 chain, Eggert PRB 1996: exact diagonalization (QuSpin) up to L = 32, J2crit | 6/6, J2crit = 0.241167 as in the paper |
+| [`ising-3d`](ising-3d/README.md) | 3d Ising critical point, Ferrenberg–Xu–Landau PRE 2018: Wolff Monte Carlo (numba), histogram reweighting, FSS, L ≤ 64 | K_c = 0.2216505(51) (0.8σ); ν = 0.607(11), not at the paper's precision; a kernel bug caught by exact enumeration first |
+| [`delta-sssp`](delta-sssp/README.md) | Δ test of SSSP efficiency vs WIEN2k, Lejaeghere *et al.* Science 2016 / Prandini *et al.* 2018: 71 crystals × 7 volumes with QE | running |
