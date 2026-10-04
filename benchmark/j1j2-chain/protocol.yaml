@@ -1,0 +1,158 @@
+# A reproducibility protocol exported from run j1j2-chain-20261004-000321-0850 (`flower export`): the steps behind
+# analysis. Run it with `flower run protocol.yaml`, then `flower compare RUN expected.json`.
+flower: 1
+id: j1j2-chain
+title: 'Reproduce the exact-diagonalization results for the frustrated spin-1/2 J1-J2 Heisenberg chain: spin correlations
+  at r=L/2 for L<=32 (Table I) and the critical coupling J2c/J = 0.241167(5) where the marginal operator vanishes
+  (Eggert, PRB 54, R9612 (1996), arXiv:cond-mat/9602026)'
+description: |
+  Reproduce the exact-diagonalization results for the frustrated spin-1/2 J1-J2 Heisenberg chain: spin correlations at r=L/2 for L<=32 (Table I) and the critical coupling J2c/J = 0.241167(5) where the marginal operator vanishes (Eggert, PRB 54, R9612 (1996), arXiv:cond-mat/9602026)
+policies:
+  edits: unfinished
+inputs:
+  host:
+    type: string
+    required: true
+    description: ssh alias of the remote machine
+  ssh_options:
+    type: array
+    required: true
+    description: extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]
+clusters:
+  remote:
+    transport: ssh
+    host: ${inputs.host}
+    ssh_options: ${inputs.ssh_options}
+    scheduler: none
+    remote_root: ~/flower-runs
+    min_poll: 10s
+    cpus: 16
+nodes:
+- id: paper
+  kind: shell
+  title: The paper (arXiv PDF, sha256) and its Table I parsed from the text layer
+  description: Downloads the paper and parses its Table I (<Sz(0)Sz(L/2)> for L = 8..32 at five J2) from the text
+    layer; table1_rows should be 13.
+  outputs:
+    sha256_pdf: string
+    table1_rows: integer
+  files:
+    pdf: paper.pdf
+    text: paper.txt
+    table1: table1.json
+  run: python3 ${plan.dir}/paper.py | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: sectors
+  kind: shell
+  title: Symmetry blocks of the low-lying states, L=${item}
+  description: 'Exact diagonalization of every symmetry block at one small L (8..20): which block holds the ground
+    state, the lowest excited singlet and the lowest triplet (identified by <S^2>).'
+  cluster: remote
+  environment: quspin
+  stage_in:
+  - ${plan.dir}/ed.py
+  foreach:
+  - 8
+  - 10
+  - 12
+  - 14
+  - 16
+  - 18
+  - 20
+  outputs:
+    L: integer
+    gs: array
+    singlet: array
+    triplet: array
+  run: OMP_NUM_THREADS=1 python3 ed.py sectors ${item} | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: rule
+  kind: shell
+  title: The block rule for L = 0, 2 (mod 4), required to hold at every scanned L
+  description: Checks that those blocks follow one rule for L = 0 and one for L = 2 (mod 4) at every scanned size,
+    and hands the rule to the big diagonalizations. Fails if any size breaks it.
+  environment: analysis
+  outputs:
+    by_mod4: object
+    sizes: array
+  inputs:
+    sectors: ${sectors.outputs.items}
+  run: python3 ${plan.dir}/analysis.py rule | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: ed
+  kind: shell
+  title: 'ED L=${item}: <Sz(0)Sz(L/2)> at nine J2, singlet and triplet levels on a J2 grid'
+  description: 'Lanczos at one L: ground-state energy and <Sz(0)Sz(L/2)> at nine J2, and the singlet and triplet
+    levels on a J2 grid (result.json). E0_per_site_J2_0 approaches the Bethe-ansatz -0.4431 from below.'
+  cluster: remote
+  environment: quspin
+  stage_in:
+  - ${plan.dir}/ed.py
+  timeout:
+    total: 12h
+  resources:
+    cpus_per_task: 8
+  foreach:
+  - 8
+  - 10
+  - 12
+  - 14
+  - 16
+  - 18
+  - 20
+  - 22
+  - 24
+  - 26
+  - 28
+  - 30
+  - 32
+  outputs:
+    L: integer
+    dim_gs: integer
+    E0_per_site_J2_0: number
+    resumed: boolean
+    seconds: number
+  files:
+    result: result.json
+  retry:
+    max_attempts: 3
+  inputs:
+    rule: ${rule.outputs.by_mod4}
+  run: OMP_NUM_THREADS=$FLOWER_CPUS python3 ed.py run ${item} | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: analysis
+  kind: shell
+  title: Table I, Table II, Figs. 3-4 and J2crit against the paper
+  description: 'Compares with the paper: Table I to the printed digits, Table II and Figs. 3-4 (with the fit choices
+    from fitscan), and J2crit where the splitting falls as 1/L^3. Read report.md: n_reproduced of n_claims.'
+  environment: analysis
+  outputs:
+    n_claims: integer
+    n_reproduced: integer
+    J2crit: number
+    J2crit_crossing: number
+    table1_agree: integer
+    a: number
+    r1: number
+  files:
+    report: report.md
+    claims: claims.json
+    figure: j1j2.png
+  inputs:
+    table1: ${paper.files.table1}
+    ed: ${ed.outputs.items}
+    fit: ${fitscan.outputs.best}
+  run: python3 ${plan.dir}/analysis.py final | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: fitscan
+  kind: shell
+  title: Which fit choices turn the paper's Table I into its Table II
+  description: Tries 144 fitting choices the paper does not state on the paper's own Table I, and keeps the one
+    that best reproduces its Table II (best_err_* about 1 %); the analysis uses it.
+  environment: analysis
+  outputs:
+    n_choices: integer
+    best: object
+    best_err_ln_r0: number
+    best_err_a_lambda0: number
+    top5: array
+  files:
+    scan: scan.json
+  inputs:
+    table1: ${paper.files.table1}
+  run: python3 ${plan.dir}/fitscan.py | tail -n 1 > "$FLOWER_OUTPUTS"

@@ -73,8 +73,12 @@ The same commands, plus:
   description, what it ran, and what it found (outputs, files, reports rendered in place).
 - **Decisions:** plan approvals, plan changes that touch finished work, and `gate` steps wait for a person. Answer
   them in the UI or with `flower approve RUN [GATE]` / `flower reject RUN [GATE] --text "…"`.
-- **Results to share:** `flower report RUN` (Markdown and HTML), `flower export RUN` (a provenance package,
-  RO-Crate), `flower compare RUN_A RUN_B` (do two runs agree within a tolerance?).
+- **Results to share:** `flower report RUN` (Markdown and HTML), and `flower compare RUN_A RUN_B` (do two runs
+  agree within a tolerance?).
+- **A finished workflow as a protocol:** `flower export RUN STEP` writes, next to the plan, `protocol.yaml` (the
+  plan's own definitions of STEP and everything it depends on; probes, previews and side studies drop out),
+  `expected.json` (those steps' results) and `PROTOCOL.md` (what it does, needs and took). Anyone can then
+  reproduce it with `flower run protocol.yaml` and check with `flower compare RUN expected.json`.
 - **History:** `flower log RUN` (every event, actor and decision); the UI's Timeline and Plan history tabs show
   the same.
 

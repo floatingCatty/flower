@@ -8,7 +8,6 @@ import sys
 import textwrap
 
 from flower.engine import Engine, create_run
-from flower.provenance import build_crate, export_crate
 from flower.rundir import RunPaths
 
 from core_helpers import drive
@@ -103,29 +102,6 @@ def test_fork_does_not_reuse_function_result_after_its_module_changed(home, tmp_
     st = e3.state()
     assert st.nodes["f"].result.reused_from is None and st.nodes["f"].result.outputs == {"v": 20}
     assert st.nodes["b"].result.reused_from == f"{rid}:b#a1"
-
-
-def test_ro_crate_export_is_valid_json_ld_with_provenance(home, tmp_path):
-    plan = {"flower": 1, "id": "crate", "title": "Crate test",
-            "nodes": [{"id": "a", "kind": "shell", "run": 'echo hi > out.txt; echo "{}" > "$FLOWER_OUTPUTS"',
-                       "files": {"out": "out.txt"}},
-                      {"id": "g", "kind": "gate", "needs": ["a"], "message": "ok?"}]}
-    eng = create_run(plan, {}, root=home, approve=True)
-    drive(eng, timeout=20)
-    eng.answer("g#a1", "approve", text="looks good", by="human:rev")
-    drive(eng, timeout=20)
-    crate = build_crate(eng)
-    assert crate["@context"] == "https://w3id.org/ro/crate/1.1/context"
-    graph = {e["@id"]: e for e in crate["@graph"]}
-    assert graph["./"]["mainEntity"] == {"@id": "plan.yaml"}
-    assert "ComputationalWorkflow" in graph["plan.yaml"]["@type"]
-    files = [e for e in crate["@graph"] if e.get("@type") == "File" and e.get("sha256")]
-    assert files and files[0]["@id"].endswith("out.txt")
-    decisions = [e for e in crate["@graph"] if str(e.get("@id", "")).startswith("#decision-")]
-    assert any(d.get("disambiguatingDescription") == "looks good" for d in decisions)
-    assert any(e.get("@type") == "Person" and e.get("name") == "human:rev" for e in crate["@graph"])
-    path = export_crate(eng)
-    assert json.loads(path.read_text())["@graph"]
 
 
 def test_generated_files_respect_umask(home, tmp_path):

@@ -896,11 +896,13 @@ def cmd_audit(args, out: Out) -> int:
 
 
 def cmd_export(args, out: Out) -> int:
-    from .provenance import export_crate
+    """A finished run as a reproducibility protocol (protocol.yaml, expected.json, PROTOCOL.md)."""
+    from .protocol import export
     eng = get_engine(args)
-    path = export_crate(eng)
-    return out.done({"ro_crate": str(path)}, f"RO-Crate (Provenance Run Crate) metadata: {path}\n"
-                    f"the run directory {eng.paths.dir} is now a self-describing research object")
+    res = export(eng, args.steps)
+    return out.done(res, f"protocol of {', '.join(args.steps)} ({len(res['steps'])} steps, {res['expected']} expected "
+                         f"results) in {res['dir']}:\n  " + "\n  ".join(res["files"]),
+                    ["flower run protocol.yaml", "flower compare RUN expected.json"])
 
 
 def _engine_at(ref: str) -> Engine:
@@ -929,33 +931,31 @@ def _diff_values(a, b, rtol: float, atol: float, path: str, out: list) -> None:
 
 
 # outputs that name places or processes, not results
-COMPARE_SKIP = {"job_id", "job_dir", "local_dir", "dir", "prefix", "seconds", "seconds_opt", "summary", "rationale"}
+from .protocol import SKIP as COMPARE_SKIP   # paths, ids and timings differ between runs by nature
 
 
 def cmd_compare(args, out: Out) -> int:
     """Do two runs of a workflow (a rerun, a fork, a fresh clone on another machine) give the same results?
     Compares the outputs of every step both have, numbers within --rtol, everything else exactly."""
-    ea, eb = _engine_at(args.a), _engine_at(args.b)
-    sa, sb = ea.state(), eb.state()
+    sides = [_outputs_of(x) for x in (args.a, args.b)]
+    (ida, oa_all), (idb, ob_all) = sides
     rows, same, missing = [], 0, []
-    for nid in sorted(set(sa.nodes) | set(sb.nodes)):
-        ra = sa.nodes[nid].result if nid in sa.nodes and sa.nodes[nid].status == "succeeded" else None
-        rb = sb.nodes[nid].result if nid in sb.nodes and sb.nodes[nid].status == "succeeded" else None
-        if ra is None or rb is None:
+    expected = [x for x in (args.a, args.b) if str(x).endswith(".json")]
+    # against an expected.json: exactly the steps it lists; two runs: every step either has
+    names = sorted(ob_all if args.b in expected else oa_all) if expected else sorted(set(oa_all) | set(ob_all))
+    for nid in names:
+        if oa_all.get(nid) is None or ob_all.get(nid) is None:
             missing.append(nid)
             continue
-        g = sa.graph().nodes.get(nid) or {}
-        if g.get("foreach") is not None:   # a collector repeats its items' outputs: compare the items themselves
-            continue
-        oa = {k: v for k, v in (ra.outputs or {}).items() if k not in COMPARE_SKIP and k not in set(args.ignore or [])}
-        ob = {k: v for k, v in (rb.outputs or {}).items() if k not in COMPARE_SKIP and k not in set(args.ignore or [])}
+        oa = {k: v for k, v in oa_all[nid].items() if k not in COMPARE_SKIP and k not in set(args.ignore or [])}
+        ob = {k: v for k, v in ob_all[nid].items() if k not in COMPARE_SKIP and k not in set(args.ignore or [])}
         diffs: list = []
         _diff_values(oa, ob, args.rtol, args.atol, "", diffs)
         if diffs:
             rows.append({"node": nid, "diffs": diffs})
         else:
             same += 1
-    lines = [f"{sa.run_id}  vs  {sb.run_id}: {same} step(s) agree within rtol {args.rtol:g}, "
+    lines = [f"{ida}  vs  {idb}: {same} step(s) agree within rtol {args.rtol:g}, "
              f"{len(rows)} differ, {len(missing)} not succeeded in both"]
     for r in rows:
         for d in r["diffs"][:6]:
@@ -965,7 +965,19 @@ def cmd_compare(args, out: Out) -> int:
     if missing:
         lines.append(f"  not compared: {', '.join(missing[:12])}" + (" ..." if len(missing) > 12 else ""))
     return out.done({"same": same, "differ": rows, "not_compared": missing}, "\n".join(lines),
-                    code=0 if not rows else 1)
+                    code=0 if not rows and not (expected and missing) else 1)
+
+
+def _outputs_of(ref: str) -> tuple[str, dict]:
+    """(a name, {step: outputs}) of a run (id or run directory) or of an expected.json from `flower export`.
+    A foreach step repeats its items' outputs, so it is left out: its items are compared themselves."""
+    if str(ref).endswith(".json") and Path(ref).is_file():
+        from .protocol import load_expected
+        return str(ref), load_expected(Path(ref))["steps"]
+    st = _engine_at(ref).state()
+    g = st.graph().nodes
+    return st.run_id, {n: (ns.result.outputs or {}) for n, ns in st.nodes.items()
+                       if ns.status == "succeeded" and ns.result and (g.get(n) or {}).get("foreach") is None}
 
 
 def cmd_skill(args, out: Out) -> int:
@@ -1525,7 +1537,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--raw", action="store_true", help="agent: raw JSON stream instead of the readable transcript")
 
     s = add("compare", cmd_compare, "do two runs give the same results? (a rerun, a fork, a fresh clone)")
-    s.add_argument("a", help="run id, or the path of a run directory (another project)")
+    s.add_argument("a", help="run id, the path of a run directory (another project), or an expected.json")
     s.add_argument("b")
     s.add_argument("--rtol", type=float, default=1e-6, help="relative tolerance for numbers (default 1e-6)")
     s.add_argument("--atol", type=float, default=0.0, help="absolute tolerance for numbers")
@@ -1670,8 +1682,10 @@ def build_parser() -> argparse.ArgumentParser:
     s = add("audit", cmd_audit, "full machine-readable record of a run (stable JSON)")
     s.add_argument("run", nargs="?")
 
-    s = add("export", cmd_export, "export the run as a Workflow Run RO-Crate (provenance)")
-    s.add_argument("run", nargs="?")
+    s = add("export", cmd_export, "a finished run as a reproducibility protocol: protocol.yaml (the steps behind "
+                                  "STEP), expected.json (their results), PROTOCOL.md")
+    s.add_argument("run")
+    s.add_argument("steps", nargs="+", help="the step(s) whose result the protocol reproduces, e.g. the report")
 
     s = add("skill", cmd_skill, "install the flower skill for coding agents")
     s.add_argument("target", choices=["claude", "codex", "agents", "project", "all"], nargs="?", default="project")

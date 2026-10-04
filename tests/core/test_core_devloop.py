@@ -629,6 +629,35 @@ def test_a_description_edit_applies_without_rerunning(cli, home, tmp_path):
     assert st.status == "succeeded"
 
 
+def test_export_a_protocol_and_reproduce_it(cli, home, tmp_path):
+    """A finished run as a reproducibility protocol: the steps behind a result (a side step drops out), the values
+    to expect, and a re-run that compares clean against them; a plan file that no longer matches is refused."""
+    body = """\
+  - {id: a, kind: shell, description: Makes x., run: 'echo "{\\"x\\": 2}" > "$FLOWER_OUTPUTS"', outputs: {x: integer}}
+  - {id: b, kind: shell, description: Doubles x., run: 'echo "{\\"y\\": $((${a.outputs.x} * 2))}" > "$FLOWER_OUTPUTS"', outputs: {y: integer}}
+  - {id: c, kind: shell, needs: [a], description: A look on the side., run: 'true'}
+"""
+    plan = _plan(tmp_path, body)
+    rid = _start(cli, plan)
+    code, res = cli("export", rid, "b")
+    assert code == 0 and res["data"]["steps"] == ["a", "b"], res
+    import yaml
+    proto = yaml.safe_load((tmp_path / "protocol.yaml").read_text())
+    assert [n["id"] for n in proto["nodes"]] == ["a", "b"] and proto["nodes"][1]["description"] == "Doubles x."
+    exp = json.loads((tmp_path / "expected.json").read_text())
+    assert exp["steps"] == {"a": {"x": 2}, "b": {"y": 4}}
+    assert "Doubles x." in (tmp_path / "PROTOCOL.md").read_text()
+    rid2 = _start(cli, tmp_path / "protocol.yaml")
+    code, res = cli("compare", rid2, str(tmp_path / "expected.json"))
+    assert code == 0 and res["data"]["same"] == 2 and not res["data"]["differ"], res
+    (tmp_path / "expected.json").write_text(json.dumps({"steps": {"a": {"x": 2}, "b": {"y": 5}}}))
+    code, res = cli("compare", rid2, str(tmp_path / "expected.json"))
+    assert code == 1 and res["data"]["differ"][0]["node"] == "b"
+    _plan(tmp_path, body.replace("* 2", "* 3"))
+    code, res = cli("export", rid, "b")
+    assert code != 0 and res["error"]["code"] == "plan_drift", res
+
+
 def test_tune_clusters_amendment_refuses_placement_keys():
     from flower.plan import apply_amendment, PlanInvalid
     plan = {"flower": 1, "id": "x", "clusters": {"box": {"transport": "local", "cpus": 4}}, "nodes": []}
