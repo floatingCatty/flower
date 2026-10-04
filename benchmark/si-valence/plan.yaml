@@ -21,7 +21,6 @@ inputs:
   mpi_ranks: {type: integer, default: 8, description: MPI ranks for QE and ABACUS}
   pyscf_threads: {type: integer, default: 12}
   pyscf_kmesh: {type: integer, default: 4, description: n of the n x n x n SCF mesh for all-electron PySCF}
-  analysis_python: {type: string, default: python3, description: "the Python of the local analysis steps (envs/analysis provides it)"}
 
 defaults:
   timeout: {total: 1h, idle: 30m}
@@ -38,7 +37,6 @@ clusters:
     min_poll: 3s
     env: {OMP_NUM_THREADS: "1"}
 
-results: [compare]
 
 nodes:
   # ---------------------------------------------------------------- first principles (remote)
@@ -121,13 +119,19 @@ nodes:
 
   # ---------------------------------------------------------------- comparison (local)
   - id: compare
-    kind: function
+    kind: shell
     environment: analysis
     title: Compare all methods with experiment (table + charts)
     description: 'All methods against experiment in one table and charts (spin-orbit splitting, masses, strain). Read table.md.'
-    python: ${inputs.analysis_python}
-    call: compare:compare
-    args:
+    run: |
+      python3 - <<'EOF'
+      import json, os, sys
+      sys.path.insert(0, "${plan.dir}")
+      from compare import compare
+      args = json.load(open(os.environ["FLOWER_INPUTS"]))
+      json.dump(compare(**args, ctx={"workdir": os.getcwd()}), open(os.environ["FLOWER_OUTPUTS"], "w"), default=str)
+      EOF
+    inputs:
       eig_files:
         qe: "${qe.outputs.local_dir}/eig.json"
         abacus: "${abacus.outputs.local_dir}/eig.json"

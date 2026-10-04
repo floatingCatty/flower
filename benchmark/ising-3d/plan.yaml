@@ -11,9 +11,6 @@ title: "Reproduce the critical coupling Kc = 0.221654626(5) and correlation-leng
 description: |
   Reproduce the critical coupling Kc = 0.221654626(5) and correlation-length exponent nu = 0.629912(86) of the simple-cubic Ising model by Wolff cluster Monte Carlo, histogram reweighting and finite-size scaling (Ferrenberg, Xu, Landau, PRE 97, 043301 (2018), arXiv:1806.03558), at smaller lattices (L <= 64)
 
-policies:
-  edits: unfinished
-
 inputs:
   host: {type: string, required: true, description: "ssh alias of the remote machine"}
   ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}

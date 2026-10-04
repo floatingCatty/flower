@@ -155,18 +155,13 @@ def test_ssh_retrieve_blip_does_not_discard_completed_job(ff, fakessh):
     assert len(st.nodes["a"].attempts) == 1 and len(ff.jobs()) == 1
 
 
-def test_ssh_direct_job_and_remote_function_end_to_end(ff, fakessh, tmp_path):
-    """scheduler: none over ssh: a detached process on the host, outputs/logs fetched back with rsync, and a
-    function node whose local module is shipped and run in the host's own Python."""
-    src = tmp_path / "plansrc"
-    src.mkdir()
-    (src / "calc.py").write_text("import os\ndef f(n, ctx):\n    return {'sq': n * n, 'cwd': os.getcwd()}\n")
+def test_ssh_direct_job_end_to_end(ff, fakessh, tmp_path):
+    """scheduler: none over ssh: a detached process on the host, outputs/logs fetched back with rsync."""
     clusters = _ssh_cluster(ff, scheduler="none", min_poll="0.2s")
     eng = ff.run(ff.plan([
         ff.job("a", "echo hi\n" + OUT, files={"res": "result.txt"}, outputs={"x": "integer"}),
-        {"id": "f", "kind": "function", "cluster": "c", "call": "calc:f", "args": {"n": "${a.outputs.x}"},
-         "python": sys.executable, "outputs": {"sq": "integer"}},
-    ], clusters=clusters, _source={"dir": str(src)}))
+        ff.job("b", 'echo "{\\"y\\": ${a.outputs.x}}" > "$FLOWER_OUTPUTS"', outputs={"y": "integer"}),
+    ], clusters=clusters))
     st = ff.drive(eng, timeout=40)
     assert st.status == "succeeded", ff.why(eng)
     a = st.nodes["a"].result
@@ -176,15 +171,14 @@ def test_ssh_direct_job_and_remote_function_end_to_end(ff, fakessh, tmp_path):
     assert a.outputs["local_dir"] == str(local)  # where the fetched files are, for local analysis steps
     assert (local / "job.out").read_text().strip() == "hi" and (local / "outputs.json").exists()
     assert Path(a.files["res"]["path"]) == (local / "result.txt").resolve()
-    f = st.nodes["f"].result
-    assert f.outputs["sq"] == 1 and f.outputs["cwd"] == f.outputs["job_dir"]
-    assert (Path(f.outputs["job_dir"]) / ".flower" / "code" / "calc.py").exists()
     assert ff.jobs() == []  # no Slurm
     calls = [c for c in (fakessh / "log").read_text().split("\0") if c]
     assert any("nohup $L bash job.sh" in c for c in calls)
     # few round trips: the job dir's content goes up in ONE rsync (which also creates it), then ONE launch call;
     # $HOME is asked once per run, not per step
-    for d in (str(remote_dir), f.outputs["job_dir"]):
+    b = st.nodes["b"].result
+    assert b.outputs["y"] == 1
+    for d in (str(remote_dir), b.outputs["job_dir"]):
         launch = [c for c in calls if d in c and "@@EV" not in c and "--sender" not in c]
         assert len(launch) == 2, launch
     assert sum(1 for c in calls if c.endswith("echo $HOME'") or "echo $HOME" in c) == 1

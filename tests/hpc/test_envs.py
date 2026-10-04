@@ -95,8 +95,8 @@ def test_freeze_refuses_template_scripts(tmp_path):
 def test_plan_gets_one_env_step_per_env_and_cluster(ff, tmp_path):
     src = tmp_path / "proj"
     d = _recipe(src)
-    plan = _plan(ff, src, extra=[{"id": "use2", "kind": "job", "cluster": "box", "environment": "hello",
-                                  "script": "hello-tool"}])
+    plan = _plan(ff, src, extra=[{"id": "use2", "kind": "shell", "cluster": "box", "environment": "hello",
+                                  "run": "hello-tool"}])
     p = plan_check(plan)
     ids = [n["id"] for n in p["nodes"]]
     assert ids.count("env-hello-box") == 1 and ids[0] == "env-hello-box"

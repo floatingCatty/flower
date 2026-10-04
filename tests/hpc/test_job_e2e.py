@@ -412,22 +412,20 @@ def _cli(ff, *args, timeout=90, cwd=None):
     return r
 
 
-def test_cli_fake_slurm_run_tick_status(ff, tmp_path):
-    r = _cli(ff, "fake-slurm", str(tmp_path / "cli-fs"), "--json")
-    assert r.returncode == 0, r.stderr
-    bindir = json.loads(r.stdout)
-    bindir = bindir.get("bin_dir") or bindir.get("data", {}).get("bin_dir")
-    assert bindir and Path(bindir, "sbatch").exists()
+def test_cli_fake_slurm_run_follow_status(ff, tmp_path):
+    from flower.testing.fakeslurm import install
+    bindir = str(install(tmp_path / "cli-fs"))
+    assert Path(bindir, "sbatch").exists()
     plan = {"flower": 1, "id": "cli-job",
             "clusters": {"c": {"transport": "local", "bin_dir": bindir, "min_poll": "0.5s"}},
-            "nodes": [{"id": "a", "kind": "job", "cluster": "c", "script": OUT_X, "outputs": {"x": "integer"}}]}
+            "nodes": [{"id": "a", "kind": "shell", "cluster": "c", "run": OUT_X, "outputs": {"x": "integer"}}]}
     pf = tmp_path / "plan.yaml"
     pf.write_text(yaml.safe_dump(plan))
     r = _cli(ff, "run", str(pf), "-y", "--no-prompt", "--detach", "--json")
     assert r.returncode == 0, r.stdout + r.stderr
     rid = next(e for e in Path(ff.home, ".flower", "runs").iterdir()).name
     eng = Engine(RunPaths(ff.home, rid))
-    r = _cli(ff, "wait", rid, "--timeout", "40", "--json")
+    r = _cli(ff, "status", rid, "--follow", "--timeout", "40", "--json")
     st = eng.state()
     assert st.status == "succeeded", (r.stdout, r.stderr)
     assert st.nodes["a"].result.outputs["x"] == 41

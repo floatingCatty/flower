@@ -11,9 +11,6 @@ title: "Reproduce the Delta-factor verification of the SSSP efficiency pseudopot
 description: |
   Reproduce the Delta-factor verification of the SSSP efficiency pseudopotential library against all-electron WIEN2k equations of state for the 71 elemental crystals (Lejaeghere et al., Science 351, aad3000 (2016); Prandini et al., npj Comput. Mater. 4, 72 (2018), arXiv:1806.05609) with Quantum ESPRESSO
 
-policies:
-  edits: unfinished
-
 inputs:
   kspacing: {type: number, default: 0.1, description: "k-point spacing in 1/A (2pi included)"}
   degauss: {type: number, default: 0.01, description: "Marzari-Vanderbilt smearing in Ry"}

@@ -19,8 +19,7 @@ def ui_server(home):
     plan = {"flower": 1, "id": "ui", "title": "UI test",
             "nodes": [{"id": "a", "kind": "shell", "run": 'echo hi > out.txt; echo "{\\"v\\": 1}" > "$FLOWER_OUTPUTS"',
                        "files": {"out": "out.txt"}, "outputs": {"v": "integer"}},
-                      {"id": "g", "kind": "gate", "needs": ["a"], "message": "v is ${a.outputs.v}. ok?"},
-                      {"id": "w", "kind": "wait", "signal": "go"}]}
+                      {"id": "g", "kind": "gate", "needs": ["a"], "message": "v is ${a.outputs.v}. ok?"}]}
     eng = create_run(plan, {}, root=home, approve=True)
     drive(eng, timeout=20)
     box = {}
@@ -64,14 +63,13 @@ def test_token_required_for_page_and_api(ui_server):
     assert e.value.code == 403
 
 
-def test_run_view_lists_nodes_gates_and_waits(ui_server):
+def test_run_view_lists_nodes_and_gates(ui_server):
     eng, base = ui_server
     runs = json.loads(get(base + "/api/runs")[1])["runs"]
     assert runs[0]["id"] == eng.paths.run_id and runs[0]["decisions"] == 1
     run = json.loads(get(f"{base}/api/runs/{eng.paths.run_id}")[1])["run"]
-    assert [n["id"] for n in run["nodes"]][:1] == ["a"] and {n["id"] for n in run["nodes"]} == {"a", "g", "w"}
+    assert [n["id"] for n in run["nodes"]][:1] == ["a"] and {n["id"] for n in run["nodes"]} == {"a", "g"}
     assert run["gates"][0]["id"] == "g#a1" and "v is 1" in run["gates"][0]["message"]
-    assert run["waits"] == [{"node": "w", "signal": "go", "deadline_at": None}]
     node = json.loads(get(f"{base}/api/runs/{eng.paths.run_id}/node/a")[1])["node"]
     assert node["attempts"][0]["outputs"] == {"v": 1} and node["attempts"][0]["files"][0]["name"] == "out"
     tl = json.loads(get(f"{base}/api/runs/{eng.paths.run_id}/timeline")[1])["events"]
@@ -83,14 +81,12 @@ def test_run_view_lists_nodes_gates_and_waits(ui_server):
 def test_actions_go_through_the_engine_and_are_attributed(ui_server):
     eng, base = ui_server
     rid = eng.paths.run_id
-    post(f"{base}/api/runs/{rid}/signal", {"name": "go", "data": '{"x": 2}'})
     r = post(f"{base}/api/runs/{rid}/answer", {"gate": "g#a1", "decision": "approve", "text": "fine"})
     assert r["ok"]
     st = drive(eng, timeout=20)
     assert st.status == "succeeded"
     s = eng.state()
     assert s.gates["g#a1"].by == "human:ui-tester" and s.gates["g#a1"].text == "fine"
-    assert s.nodes["w"].result.outputs["data"] == {"x": 2}
     with pytest.raises(urllib.error.HTTPError) as e:
         post(f"{base}/api/runs/{rid}/answer", {"gate": "g#a1", "decision": "approve"})
     assert e.value.code == 400  # already answered -> clean error, not a crash

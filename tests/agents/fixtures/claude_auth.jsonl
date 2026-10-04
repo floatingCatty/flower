@@ -1,2 +1,0 @@
-{"type": "system", "subtype": "init", "session_id": "1f0c9e7a-3b7e-4a51-9d55-6c1e1d2f0a11", "model": "claude-sonnet-4-5", "cwd": "/work", "tools": ["Bash", "Read"], "permissionMode": "bypassPermissions"}
-{"type": "result", "subtype": "success", "is_error": true, "num_turns": 1, "result": "Invalid API key · Please run /login", "session_id": "1f0c9e7a-3b7e-4a51-9d55-6c1e1d2f0a11", "total_cost_usd": 0, "usage": {}}

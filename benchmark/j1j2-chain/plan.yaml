@@ -11,9 +11,6 @@ title: "Reproduce the exact-diagonalization results for the frustrated spin-1/2 
 description: |
   Reproduce the exact-diagonalization results for the frustrated spin-1/2 J1-J2 Heisenberg chain: spin correlations at r=L/2 for L<=32 (Table I) and the critical coupling J2c/J = 0.241167(5) where the marginal operator vanishes (Eggert, PRB 54, R9612 (1996), arXiv:cond-mat/9602026)
 
-policies:
-  edits: unfinished
-
 inputs:
   host: {type: string, required: true, description: "ssh alias of the remote machine"}
   ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}

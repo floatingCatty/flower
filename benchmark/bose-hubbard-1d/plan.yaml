@@ -11,9 +11,6 @@ title: "Reproduce the Kosterlitz-Thouless point t_c = 0.297(10) of the Mott insu
 description: |
   Reproduce the Kosterlitz-Thouless point t_c = 0.297(10) of the Mott insulator at density 1 in the one-dimensional Bose-Hubbard model, and its dependence on the correlation-function fit interval (Table I), by finite DMRG (Kuhner, White, Monien, PRB 61, 12474 (2000), arXiv:cond-mat/9906019)
 
-policies:
-  edits: unfinished
-
 inputs:
   host: {type: string, required: true, description: "ssh alias of the remote machine"}
   ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}

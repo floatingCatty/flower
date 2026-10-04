@@ -67,7 +67,6 @@ def test_run_yes_succeeded_exit_0(cli, tmp_path):
     assert code == 0 and envelope(out)["ok"]
     d = out["data"]
     assert d["status"] == "succeeded" and [n["status"] for n in d["nodes"]] == ["succeeded", "succeeded"]
-    assert any("report" in n for n in out["next"])
 
 
 def test_run_failed_exit_1(cli, tmp_path):
@@ -104,11 +103,11 @@ def test_run_without_approval_exit_3_then_approve(cli, tmp_path, home):
     assert out["data"]["status"] == "awaiting_approval"
     assert any("approve" in n for n in out["next"])
     rid = out["data"]["run_id"]
-    code, out = cli("wait", rid, "--timeout", "2")
+    code, out = cli("status", rid, "--follow", "--timeout", "2")
     assert code == 3
     code, out = cli("approve", rid, "--no-continue", "--note", "ok by me")
     assert code == 0 and envelope(out)["ok"]
-    code, out = cli("wait", rid, "--timeout", "30")
+    code, out = cli("status", rid, "--follow", "--timeout", "30")
     assert code == 0 and out["data"]["status"] == "succeeded"
     st = Engine(RunPaths(home, rid)).state()
     assert st.approved_by == "human:tester"
@@ -121,70 +120,71 @@ def test_reject_plan(cli, tmp_path, home):
     code, out = cli("reject", rid, "--text", "too big", "--no-continue")
     assert code == 0
     assert out["data"]["status"] == "rejected"
-    code, out = cli("wait", rid)
+    code, out = cli("status", rid, "--follow")
     assert code == 1 and out["data"]["status"] == "rejected"
 
 
 def test_gate_parks_exit_3_answer_resumes(cli, tmp_path, home):
     p = write_plan(tmp_path, [sh("a", "true"), {"id": "review", "kind": "gate", "needs": ["a"]},
-                              sh("b", "echo ${review.outputs.text}", needs=["review"])])
+                              sh("b", "echo ${review.outputs.text}", needs=["review"]),
+                              {"id": "pick", "kind": "gate", "needs": ["b"], "decisions": ["small", "large"]}])
     code, out = cli("run", str(p), "--yes", "--timeout", "30")
     assert code == 3 and out["ok"] and out["data"]["status"] == "parked"
     gates = out["data"]["open_gates"]
     assert [g["id"] for g in gates] == ["review#a1"]
-    assert any("answer" in n for n in out["next"])
+    assert any(n.startswith("flower approve") for n in out["next"])
     rid = out["data"]["run_id"]
     code, out = cli("show", rid, "--gate", "review")
     assert code == 0 and out["data"]["status"] == "open"
-    code, out = cli("answer", rid, "review", "maybe", "--no-continue")
+    code, out = cli("approve", rid, "review", "maybe", "--no-continue")
     assert code == 2 and out["error"]["code"] == "bad_decision"
-    code, out = cli("answer", rid, "review", "approve", "--text", "lgtm", "--wait")
+    code, out = cli("approve", rid, "review", "--note", "lgtm", "--wait", "--timeout", "30")
+    assert code == 3 and out["data"]["status"] == "parked"
+    code, out = cli("show", rid, "b")
+    assert code == 0 and out["data"]["attempts"][-1]["summary"] == "lgtm"
+    code, out = cli("approve", rid, "pick", "large", "--wait", "--timeout", "30")   # a gate's own decisions
     assert code == 0 and out["data"]["status"] == "succeeded"
-    code, out = cli("output", rid, "b")
-    assert code == 0 and out["data"]["summary"] == "lgtm"
-    code, out = cli("answer", rid, "review", "approve", "--no-continue")
-    assert code == 2 and out["error"]["code"] in ("gate_closed", "gate_not_found")
+    assert Engine(RunPaths(home, rid)).state().nodes["pick"].result.outputs["decision"] == "large"
+    code, out = cli("approve", rid, "review", "--no-continue")
+    assert code == 2 and out["error"]["code"] in ("gate_closed", "gate_not_found", "which_gate")
 
 
-def test_status_wait_ls_show_output_log(cli, tmp_path, home):
+def test_status_follow_list_show_log(cli, tmp_path, home):
     p = write_plan(tmp_path, [sh("a", out_json({"v": {"deep": [10, 20]}, "s": "hi"}) + "\necho data > f.txt",
                                  files={"f": "f.txt"})])
     cli("run", str(p), "--yes", "--timeout", "30")
     rid = latest_run(home)
     code, out = cli("status", rid)
     assert code == 0 and out["data"]["status"] == "succeeded" and out["data"]["run_id"] == rid
-    code, out = cli("status")                       # default: latest run
-    assert out["data"]["run_id"] == rid
-    code, out = cli("wait", rid)
+    code, out = cli("status", rid, "--follow")
     assert code == 0
-    code, out = cli("ls")
+    code, out = cli("status")                       # without a run: the project's runs
     assert code == 0 and out["data"][0]["run_id"] == rid and out["data"][0]["done"] == 1
     code, out = cli("show", rid, "a")
     assert code == 0 and out["data"]["spec"]["id"] == "a" and len(out["data"]["attempts"]) == 1
-    code, out = cli("output", rid, "a")
     assert out["data"]["outputs"]["s"] == "hi"
-    code, out = cli("output", rid, "a", "v.deep.1")
+    code, out = cli("show", rid, "a", "v.deep.1")
     assert code == 0 and out["data"] == 20
-    code, out = cli("output", rid, "a", "f")
+    code, out = cli("show", rid, "a", "f")
     assert out["data"].endswith("f.txt")
     code, out = cli("log", rid)
     assert code == 0 and out["data"][0]["eventType"] == "run.created"
     code, out = cli("log", rid, "--node", "a")
     assert out["data"] and all(e["nodeId"] == "a" for e in out["data"])
+    code, out = cli("log", rid, "--note", "looked at it")
+    assert code == 0 and Engine(RunPaths(home, rid)).journal.read()[-1]["payload"]["text"] == "looked at it"
     code, out = cli("logs", rid, "a")
-    assert code == 0 and "stdout.log" not in out["data"]["text"] or True
+    assert code == 0
     code, out = cli("show", rid, "zz")
     assert code == 2 and out["error"]["code"] == "node_not_found"
-    code, out = cli("output", rid, "zz")
-    assert code == 2 and out["error"]["code"] == "no_result"
 
 
-def test_output_unknown_key_is_a_clean_error(cli, tmp_path, home):
+def test_show_unknown_key_is_a_clean_error(cli, tmp_path, home):
     p = write_plan(tmp_path, [sh("a", out_json({"v": [1]}))])
     cli("run", str(p), "--yes", "--timeout", "30")
     rid = latest_run(home)
     for key in ("nope", "v.x", "v.5"):
-        code, out = cli("output", rid, "a", key)
+        code, out = cli("show", rid, "a", key)
         assert code == 2 and out["ok"] is False
 
 
@@ -214,72 +214,51 @@ def test_rerun_cli(cli, tmp_path, home):
     assert code == 2 and out["error"]["code"] == "node_not_found"
 
 
-def test_amend_cli_propose_then_approve(cli, tmp_path, home):
-    p = write_plan(tmp_path, [{"id": "g", "kind": "gate"}])
+def test_an_edit_of_finished_work_waits_for_approval(cli, tmp_path, home):
+    p = write_plan(tmp_path, [sh("a", "echo one"), {"id": "g", "kind": "gate", "needs": ["a"]}])
     cli("run", str(p), "--yes", "--timeout", "30")
     rid = latest_run(home)
-    am = tmp_path / "amend.yaml"
-    am.write_text(yaml.safe_dump({"rationale": "need x", "ops": [{"op": "add", "nodes": [sh("x", "echo added")]}]}))
-    code, out = cli("amend", rid, str(am))
+    write_plan(tmp_path, [sh("a", "echo two"), {"id": "g", "kind": "gate", "needs": ["a"]},
+                          sh("x", "echo added")])
+    code, out = cli("sync", rid)
     assert code == 3 and out["ok"] and out["data"]["gate"].startswith("amend-")
-    gate = out["data"]["gate"]
-    code, out = cli("approve", rid, gate, "--no-continue")
-    assert code == 0
-    code, out = cli("answer", rid, "g", "approve", "--wait", "--timeout", "30")
-    assert code == 0 and out["data"]["status"] == "succeeded" and out["data"]["generation"] == 1
-    bad = tmp_path / "bad_amend.yaml"
-    bad.write_text(yaml.safe_dump([{"op": "replace", "node": "g", "with": {"kind": "shell", "run": "x"}}]))
-    code, out = cli("amend", rid, str(bad), "--yes", "--no-continue")
-    assert code == 2 and out["error"]["code"] == "plan_invalid"
+    code, out = cli("approve", rid, out["data"]["gate"], "--no-continue")
+    assert code == 0 and Engine(RunPaths(home, rid)).state().generation == 1
 
 
-def test_signal_and_cancel_cli(cli, tmp_path, home):
-    p = write_plan(tmp_path, [{"id": "w", "kind": "wait", "signal": "go"}, sh("slow", "sleep 30")])
-    code, out = cli("run", str(p), "--yes", "--timeout", "2")
+def test_cancel_cli(cli, tmp_path, home):
+    p = write_plan(tmp_path, [sh("slow", "sleep 30")])
+    code, out = cli("run", str(p), "--yes", "--detach")
     rid = latest_run(home)
-    assert code == 3
-    code, out = cli("signal", rid, "go", "--data", '{"k": 1}', "--no-continue")
-    assert code == 0
-    st = Engine(RunPaths(home, rid)).state()
-    assert st.nodes["w"].status == "succeeded" and st.nodes["w"].result.outputs["data"] == {"k": 1}
     code, out = cli("cancel", rid, "--reason", "enough")
     assert code == 0 and out["data"]["status"] == "cancelled"
-    code, out = cli("wait", rid)
+    code, out = cli("status", rid, "--follow")
     assert code == 1
     code, out = cli("cancel", rid)
     assert code == 2 and out["error"]["code"] == "run_finished"
 
 
-def test_report_and_audit(cli, tmp_path, home):
+def test_approve_note_is_recorded(cli, tmp_path, home):
     p = write_plan(tmp_path, [sh("a", out_json({"v": 1})), {"id": "g", "kind": "gate", "needs": ["a"]}])
     cli("run", str(p), "--yes", "--timeout", "30")
     rid = latest_run(home)
-    cli("answer", rid, "g", "approve", "--text", "fine", "--wait", "--timeout", "30")
-    code, out = cli("report", rid)
-    assert code == 0
-    md = out["data"]["md"]
-    assert os.path.exists(md) and os.path.exists(out["data"]["html"])
-    assert "fine" in open(md).read() or "approve" in open(md).read()
-    code, out = cli("audit", rid)
-    assert code == 0 and out["ok"]
-    blob = json.dumps(out["data"])
-    assert rid in blob and "approve" in blob
+    cli("approve", rid, "g", "--note", "fine", "--wait", "--timeout", "30")
+    code, out = cli("log", rid)
+    assert code == 0 and any(e["eventType"] == "gate.answered" and e["payload"]["text"] == "fine" for e in out["data"])
 
 
-def test_tick_cli(cli, tmp_path, home):
+def test_status_makes_a_pass(cli, tmp_path, home):
     p = write_plan(tmp_path, [sh("a", "true")])
     _, out = cli("run", str(p), "--no-prompt")
     rid = out["data"]["run_id"]
     Engine(RunPaths(home, rid)).answer("plan", "approve")
-    code, out = cli("tick", rid)
-    assert code == 0 and out["data"][0]["started"] == ["a"]
-    code, out = cli("tick", "--all")
-    assert code == 0
+    code, out = cli("status", rid)
+    assert code == 0 and Engine(RunPaths(home, rid)).state().nodes["a"].attempts
 
 
 def test_unknown_run_and_no_runs(cli, home, tmp_path):
     code, out = cli("status")
-    assert code == 2 and out["error"]["code"] == "no_runs"
+    assert code == 0 and out["data"] == []
     p = write_plan(tmp_path, [sh("a", "true")])
     cli("run", str(p), "--no-prompt")
     code, out = cli("status", "does-not-exist")
@@ -288,7 +267,7 @@ def test_unknown_run_and_no_runs(cli, home, tmp_path):
 
 def test_usage_error_exit_2(cli):
     with pytest.raises(SystemExit) as ei:
-        cli("answer")
+        cli("approve", "a", "b", "c", "d")
     assert ei.value.code == 2
     from flower.cli import main
     assert main([]) == 2
@@ -332,7 +311,7 @@ def test_installed_executable_envelope_and_codes(tmp_path, home):
     assert r.returncode == 2 and "error [plan_not_found]" in r.stderr
 
 
-def test_detached_driver_killed_then_tick_resumes(tmp_path, home):
+def test_detached_driver_killed_then_status_resumes(tmp_path, home):
     env = dict(os.environ)
     # `a` must outlast the CLI's own exit: on a loaded machine with a network-mounted home a 1 s step let the whole
     # run (and its driver) finish before the test looked at the driver
@@ -348,7 +327,7 @@ def test_detached_driver_killed_then_tick_resumes(tmp_path, home):
     eng = Engine(RunPaths(home, rid))
     deadline = time.time() + 20
     while time.time() < deadline and eng.state().status not in ("succeeded", "failed"):
-        r = _exe(["tick", rid, "--json"], env, tmp_path)
+        r = _exe(["status", rid, "--json"], env, tmp_path)
         assert r.returncode == 0, r.stderr
         time.sleep(0.2)
     st = eng.state()
@@ -357,12 +336,51 @@ def test_detached_driver_killed_then_tick_resumes(tmp_path, home):
 
 
 def test_status_exit_code_is_informational(cli, tmp_path, home):
-    """`status` always exits 0 (the *command* worked); `wait`/`run` carry the run verdict in the exit code."""
+    """`status` always exits 0 (the *command* worked); `status --follow` / `run` carry the run verdict."""
     p = write_plan(tmp_path, [sh("a", "exit 1")])
     cli("run", str(p), "--yes", "--timeout", "30")
     rid = latest_run(home)
     code, out = cli("status", rid)
     assert out["data"]["status"] == "failed"
     assert code == 0
-    code, _ = cli("wait", rid)
+    code, _ = cli("status", rid, "--follow")
     assert code == 1
+
+
+def test_a_step_cannot_answer_the_users_gate(cli, tmp_path, home):
+    """A step's process runs with FLOWER_INSIDE_RUN; `flower approve` from inside it is refused, so work under way
+    can never sign off a decision that belongs to the user."""
+    p = write_plan(tmp_path, [{"id": "review", "kind": "gate", "message": "is the structure right?"},
+                              sh("sneaky", f"{FLOWER_EXE} approve $FLOWER_RUN_ID review --note lgtm --no-continue "
+                                           "|| true")])
+    cli("run", str(p), "--yes", "--timeout", "30")
+    st = Engine(RunPaths(home, latest_run(home))).state()
+    assert st.nodes["sneaky"].status == "succeeded"
+    assert st.gates["review#a1"].status == "open", f"answered from inside a step by {st.gates['review#a1'].by}"
+
+
+def test_run_reuse_takes_the_earlier_runs_inputs(cli, tmp_path, home):
+    p = write_plan(tmp_path, [sh("a", 'echo "{\\"h\\": \\"${inputs.host}\\"}" > "$FLOWER_OUTPUTS"')],
+                   inputs={"host": {"type": "string", "required": True}})
+    code, out = cli("run", str(p), "--yes", "-i", "host=box", "--timeout", "30")
+    assert code == 0, out
+    first = out["data"]["run_id"]
+    code, out = cli("run", str(p), "--yes", "--reuse", first, "--timeout", "30")   # no -i: the inputs come along
+    assert code == 0, out
+    st = Engine(RunPaths(home, out["data"]["run_id"])).state()
+    assert st.inputs == {"host": "box"} and st.nodes["a"].result.reused_from == f"{first}:a#a1"
+    write_plan(tmp_path, [sh("a", "true")])                     # the plan no longer declares `host`
+    code, out = cli("run", str(p), "--yes", "--reuse", first, "--timeout", "30")
+    assert code == 0, out
+
+
+def test_a_driver_does_not_switch_to_code_that_does_not_import(tmp_path, monkeypatch):
+    """BUGS #59: the drivers of running studies reloaded flower's code while it was being edited and failed on every
+    tick until it was whole again. A changed code base is now imported in a fresh interpreter first."""
+    from flower.cli import _new_code_broken
+    assert _new_code_broken() is None
+    bad = tmp_path / "shadow" / "flower"
+    bad.mkdir(parents=True)
+    (bad / "__init__.py").write_text("raise ImportError('half-written edit')\n")
+    monkeypatch.setenv("PYTHONPATH", str(bad.parent))
+    assert "half-written edit" in _new_code_broken()

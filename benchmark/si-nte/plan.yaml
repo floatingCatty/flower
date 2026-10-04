@@ -10,9 +10,6 @@ title: "Reproduce the ab initio volume dependence of Si phonons and its negative
 description: |
   Reproduce the ab initio volume dependence of Si phonons and its negative thermal expansion (Rignanese, Michenaud, Gonze, PRB 53, 4488, 1996)
 
-policies:
-  edits: unfinished
-
 inputs:
   pseudo: {type: string, default: vbc, description: "vbc (classic QE LDA, the first run) | dojo-lda (PseudoDojo, ONCVPSP)"}
   ecut_ry: {type: number, default: 20, description: "plane-wave cutoff for eos and phonons (the paper: 10 Ha)"}

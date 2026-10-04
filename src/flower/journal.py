@@ -1,6 +1,6 @@
 """Append-only event journal (``events.jsonl``) — the single source of truth of a run.
 
-Design (see docs/DEV_PLAN.md D2/D3, borrowed from LabFlow's envelope, yak's journal-only state and
+Design (see context/notes/DEV_PLAN.md D2/D3, borrowed from LabFlow's envelope, yak's journal-only state and
 Smithers' producer idempotency):
 
 * one JSON object per line, appended under an exclusive ``flock`` and fsync'd before returning;
@@ -34,13 +34,11 @@ EVENT_TYPES = {
     # nodes
     "node.started", "node.progress", "node.succeeded", "node.failed", "node.skipped",
     "node.cancelled", "node.stale", "node.retry_scheduled", "node.held", "node.released",
-    # agent specifics
-    "agent.session", "agent.repair", "agent.decision",
     # hpc job specifics
     "job.submit_intent", "job.staged", "job.submitted", "job.observed", "job.exited", "job.retrieved",
     "job.remote_error", "job.lost", "job.cancel_requested", "job.orphan_detected",
-    # gates / waits / signals
-    "gate.requested", "gate.answered", "wait.armed", "signal.received", "wait.expired",
+    # gates
+    "gate.requested", "gate.answered",
 }
 
 

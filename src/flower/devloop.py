@@ -48,10 +48,9 @@ def input_type(v) -> str:
     return "string"
 
 
-def draft_plan_text(pid: str, goal: str, inputs: dict, edits: str = "unfinished") -> str:
+def draft_plan_text(pid: str, goal: str, inputs: dict) -> str:
     lines = [DRAFT_HEADER, "flower: 1", f"id: {pid}", f"title: {json.dumps(goal, ensure_ascii=False)}",
-             "description: |", *("  " + ln for ln in goal.strip().splitlines()), "",
-             "policies:", f"  edits: {edits}", ""]
+             "description: |", *("  " + ln for ln in goal.strip().splitlines()), ""]
     if inputs:
         lines.append("inputs:")
         for k, v in inputs.items():
@@ -193,6 +192,8 @@ the project's UI (`flower ui`). The full guide is in `.claude/skills/flower/SKIL
    (logged), not raw ssh.
 4. Reading files, papers and results directly is fine; *running* things beside the run is not, including a
    quick check whose answer you rely on (make it a one-line step).
+5. When it is done, `flower export RUN STEP` turns the steps behind STEP into a protocol that anyone re-runs
+   with `flower run protocol.yaml -y` and checks with `flower compare RUN expected.json`.
 
 If `FLOWER_INSIDE_RUN` is set you are inside a step: do its task and never call flower.
 {AGENTS_END}

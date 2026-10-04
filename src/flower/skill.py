@@ -1,103 +1,82 @@
-"""Plan reference, starter template, and the skill that teaches coding agents to drive flower."""
+"""The plan reference and the skill that teaches coding agents to work in flower."""
 from __future__ import annotations
 
 from pathlib import Path
 
 PLAN_REFERENCE = r"""# flower plan reference (flower: 1)
 
-A plan is a YAML contract. `flower plan validate plan.yaml` lists every problem with a fix hint.
+A plan is a YAML file of steps. `flower plan validate plan.yaml` lists every problem with a fix hint.
 
 ```yaml
-flower: 1                 # required
+flower: 1                    # required
 id: my-study                 # required: [A-Za-z0-9_.-]
 title: Human title
-description: |               # the goal, shown at approval and in the report
+description: |               # the goal, shown at approval and at the top of the UI
   What this workflow is for.
-inputs:                      # given at `flower run plan.yaml -i name=value`
+inputs:                      # given at `flower run plan.yaml -i name=value` (or --inputs file.json)
   structure: {type: path, required: true, description: POSCAR file}
   strain:    {type: number, default: 0.01}
-policies:
-  edits: unfinished          # plan-file edits picked up by `flower rerun`: ask (default) | unfinished | all
 defaults:
-  harness: {name: claude, model: sonnet}   # default for agent nodes
   timeout: {total: 2h, idle: 30m}          # killed if exceeded (idle = no output)
-  retry:   {max_attempts: 2, backoff: 30s} # retries infrastructure failures (lost, node_fail, …)
-  concurrency: 4                           # max local processes (shell/function/agent) at once
-clusters:                    # for job nodes, and shell/function nodes with `cluster:`
+  retry:   {max_attempts: 2, backoff: 30s} # retries infrastructure failures (lost, node_fail, ...)
+  concurrency: 4                           # max local processes at once
+clusters:                    # machines a step can run on (`cluster: name`)
   hpc:  {transport: ssh, host: myhpc, remote_root: ~/flower-runs, max_jobs: 20, min_poll: 60s,
          modules: [vasp/6.4], prelude: ["source ~/env.sh"], resources: {partition: cpu, account: abc}}
-  here: {transport: local}   # flower runs on the login node itself
+  here: {transport: local}   # Slurm on the machine flower runs on
   box:  {transport: ssh, host: mybox, scheduler: none, cpus: 32}   # no batch system: run directly on the host;
                              # cpus: the cores flower may use there, shared by all runs of the project
                              # (each step counts resources.cpus_per_task, default 1)
                              # install: never  -> environment steps only check, never run setup.sh
 nodes:                       # `nodes: []` is a valid draft (`flower start`): the run parks until steps are added
   - id: name                 # unique; letters, digits, - _
-    kind: shell|function|agent|job|gate|wait
+    kind: shell              # shell (a command) | gate (a person's decision)
     title: optional label
     description: |           # what the step establishes and how to read its result (shown first in the UI;
                              # a missing one warns; editing it never re-runs the step)
+    run: |                   # bash (set -euo pipefail); write outputs as JSON to $FLOWER_OUTPUTS
+      python3 ${plan.dir}/fit.py > "$FLOWER_OUTPUTS"
     needs: [other]           # explicit dependencies (references ${x...} add edges automatically)
     when: "${scan.outputs.n} > 0"           # optional condition; false -> skipped
     trigger: all_success     # all_success (default) | all_done | any_success
-    inputs: {k: "${other.outputs.key}"}     # resolved values: $FLOWER_INPUTS / FLOWER_IN_K / prompt contract
+    inputs: {k: "${other.outputs.key}"}     # resolved values, as JSON in $FLOWER_INPUTS
     outputs: {energy: number, converged: boolean}   # declared result contract (validated)
-    files: {report: report.md}              # declared files (relative to the node dir), hashed
+    files: {report: report.md}              # declared files (relative to the step's directory), hashed
     retry: {max_attempts: 3, on: [lost, node_fail, exit_nonzero]}
     timeout: {total: 1h}
-    cache: true              # reuse result when definition+inputs unchanged (default true; agents false)
-    on_failure: continue     # downstream proceeds, run does not fail on this node
-    foreach: "${scan.outputs.items}"        # fan-out: one child per item; ${item}, ${index}
-    env: {OMP_NUM_THREADS: "4"}
-    cwd: some/dir            # default: a fresh per-attempt work dir
-    tmpdir: job              # TMPDIR in the attempt's directory (or a path); not part of the cache key
+    on_failure: continue     # downstream proceeds, the run does not fail on this step
+    foreach: "${scan.outputs.items}"        # fan-out: one item per element; ${item}, ${index}
+    env: {OMP_NUM_THREADS: "4"}             # environment variables
+    tmpdir: job              # TMPDIR inside the attempt's directory (or a path): scratch files off /tmp
+    # on a cluster:
+    cluster: hpc             # a Slurm job there, or a process on the host with `scheduler: none`
+    environment: pyscf       # the frozen software recipe envs/pyscf/ (see below)
+    resources: {nodes, ntasks, ntasks_per_node, cpus_per_task, mem, time, partition, account, qos, gpus, extra: [...]}
+    stage_in: [{from: local/path, to: name}, {from: "remote:${relax.outputs.job_dir}/CHGCAR", to: CHGCAR, mode: link}]
+    retrieve: [glob, ...]    # fetched back next to the step's outputs
 ```
 
-## Node kinds
-* **shell** — `run: |` bash script (`set -euo pipefail`). Write outputs as JSON to `$FLOWER_OUTPUTS`.
-  Add `cluster: name` to run it on that cluster instead (as a Slurm job, or directly on the host with
-  `scheduler: none`), in its own attempt directory there; `stage_in`, `retrieve`, `resources`, `modules`,
-  `prelude` work as for `job`.
-* **environment** — on any node that runs on a cluster: `environment: abacus` uses the frozen recipe
-  `envs/abacus/` (setup.sh / activate.sh / check.sh, see `docs/ENVIRONMENTS.md`). A generated step
-  `env-abacus-<cluster>` checks it there (installs it if missing) before the node, which runs with it
-  activated. A shell/function step with `environment:` and no `cluster:` runs on this machine with it (the
-  implicit cluster `local`): use that for local analysis instead of naming an interpreter path. Recipes are made with `flower env new|freeze|replay` and `flower remote exec --env`.
-* **function** — `call: package.module:function`; kwargs = `args:` (or `inputs:`); returns a dict.
-  `python: /path/to/python` to use another environment; `pythonpath: [dir]`. The cache key includes the
-  source of the called module (its whole top-level package) when it lives on `pythonpath` or next to the
-  plan, so editing the code invalidates cached and forked results; installed libraries are not tracked.
-  With `cluster: name` the call runs on that cluster: the local module (or package) is shipped with it,
-  `python:` is the interpreter *there* (default `python3`), and `ctx["workdir"]` is the remote attempt
-  directory. A module that is not local must already be importable in the remote environment.
-* **agent** — `prompt: |` (or `prompt_file:`), `harness: {name: claude|codex|pi|script, model, effort,
-  permission: bypass|edits, tools: {allow: [...], deny: [...]}, budget_usd, command: [...]}`, `system:`.
-  The agent must end with a JSON object matching `outputs` + `summary` + `rationale`; invalid answers
-  get `repair_attempts` (default 2) correction turns. `effects: {amend: {auto_approve: true, max_nodes: 3,
-  kinds: [shell, job], ops: [add, detour]}}` lets it propose plan changes (otherwise not allowed).
-* **job** — batch job on a cluster: `cluster:`, `script: |` (payload, `set -eo pipefail`), `resources: {nodes,
-  ntasks, ntasks_per_node, cpus_per_task, mem, time, partition, account, qos, gpus, extra: [...]}`,
-  `stage_in: [{from: local/path, to: name}, {from: "remote:${relax.outputs.job_dir}/CHGCAR", to: CHGCAR, mode: link}]`,
-  `retrieve: [glob, ...]`. Write `outputs.json` (`$FLOWER_OUTPUTS`) in the job dir. Outputs always include
-  `job_id`, `job_dir` (on the cluster) and `local_dir` (where the declared `files:` / `retrieve:` were fetched
-  on this machine — what a local analysis node should read). Parks while queued/running — no process is held. On a `scheduler: none`
-  cluster the payload is a detached process on the host (`job_id` is its PID, logs are `job.out` /
-  `job.err`); `resources.time` (else the node's `timeout.total`) is enforced; a process that dies without
-  an exit code is `lost`; cancel stops its whole process tree.
-* **gate** — human decision: `message:` (templated), `decisions: [approve, reject]`,
-  `on_reject: {rerun: [node, ...], max_attempts: 3}` — a rework loop: the re-run nodes see the
-  reviewer's text as `${feedback}` (empty on the first pass).
-  Outputs `{decision, text, by}`.
-* **wait** — `signal: name` (send with `flower signal RUN name --data '{...}'` or a file in
-  `signals/`), `timer: 10m`, `deadline: 2d` (expiry succeeds with `expired: true`).
+## Steps
+* **shell** — `run:` is a bash script. With `cluster:` it runs in its own attempt directory on that machine,
+  as a Slurm job or (`scheduler: none`) a detached process; nothing is held while it runs. Outputs then also
+  include `job_id`, `job_dir` (on the cluster) and `local_dir` (where `files:` / `retrieve:` were fetched on
+  this machine: what a local analysis step should read).
+* **environment** — `environment: NAME` uses the frozen recipe `envs/NAME/` (setup.sh / activate.sh /
+  check.sh, see `docs/REFERENCE.md`). A generated step `env-NAME-<cluster>` checks it there (installs it if
+  missing) before the step, which runs with it activated. Without `cluster:` the step runs on this machine
+  with it (the implicit cluster `local`). Recipes are made with `flower env new|freeze|replay` and
+  `flower remote exec --env`.
+* **gate** — a person's decision: `message:` (templated), `decisions: [approve, reject]`,
+  `on_reject: {rerun: [node, ...], max_attempts: 3}` — a rework loop: the re-run steps see the reviewer's
+  text as `${feedback}`. Outputs `{decision, text, by}`.
 
 ## In a step's environment
 `FLOWER_OUTPUTS` (write the outputs JSON here) · `FLOWER_INPUTS` (the resolved `inputs:` as JSON) ·
 `FLOWER_IN_<NAME>` (scalar inputs) · `FLOWER_STATE_DIR`: a directory kept across the *retries* of one start of the
 step (write checkpoints here and resume from them when present); a deliberate `flower rerun` or an edit of the
 step starts a new, empty one, and `flower rerun --keep-state` continues the last one (a checkpointed job that
-reached its time limit; `retry: {on: [timeout]}` retries it automatically) · `FLOWER_JOB_DIR` (cluster steps: this attempt's directory there) ·
-`FLOWER_RUN_ID`, `FLOWER_NODE_ID`, `FLOWER_ATTEMPT`.
+reached its time limit; `retry: {on: [timeout]}` retries it automatically) · `FLOWER_JOB_DIR` (cluster steps: this
+attempt's directory there) · `FLOWER_CPUS`, `FLOWER_MEM_MB` · `FLOWER_RUN_ID`, `FLOWER_NODE_ID`, `FLOWER_ATTEMPT`.
 
 ## References
 `${inputs.x}` · `${node.outputs.key.sub}` · `${node.files.name}` · `${node.dir}` · `${node.summary}` ·
@@ -106,151 +85,84 @@ reached its time limit; `retry: {on: [timeout]}` retries it automatically) · `F
 the others) *without* waiting for the step, for a preview of a long campaign (rerun the preview to refresh it).
 A value that is exactly one reference keeps its type (list, number…). `$${` is a literal `${`.
 
-## Amendments (change a running plan)
-`flower amend RUN change.yaml` with
-```yaml
-rationale: why the plan must change
-ops:
-  - {op: add, nodes: [{id: extra, kind: shell, needs: [a], run: "..."}]}
-  - {op: detour, after: relax, nodes: [{id: kconv, kind: job, ...}]}   # inserted before relax's children
-  - {op: replace, node: pending-node, with: {kind: shell, run: "..."}}
-  - {op: replace, node: done-node, supersede: true, with: {...}}       # re-runs it + downstream
-  - {op: stop, nodes: [pending-node]}
-  - {op: drop, nodes: [pending-node]}
-  - {op: set_needs, node: n, needs: [a, b]}
-  - {op: add_clusters, clusters: {box: {transport: ssh, host: mybox, scheduler: none}}}   # new names only
-  - {op: tune_clusters, clusters: {box: {cpus: 16, max_jobs: 4}}}     # pacing only: cpus, max_jobs, min_poll
-  - {op: add_inputs, inputs: {host: {type: string, default: mybox}}}                       # value as default
-```
-History is immutable: finished nodes can only be superseded, never edited in place. Edits to the plan file become such
-amendments with `flower add` / `flower rerun RUN NODE` (which also re-runs NODE) or `flower sync RUN` (nothing re-runs).
-"""
-
-PLAN_TEMPLATE = """flower: 1
-id: {id}
-title: Describe the study in a few words
-description: |
-  The goal of this workflow, in plain language. It is shown when you approve the plan and at the top
-  of the final report.
-
-inputs:
-  topic: {type: string, default: "example"}
-
-defaults:
-  harness: {name: claude, model: sonnet}
-  timeout: {total: 1h}
-  retry: {max_attempts: 2}
-
-nodes:
-  - id: prepare
-    kind: shell
-    run: |
-      echo "preparing ${inputs.topic}"
-      echo '{"items": ["a", "b"], "summary": "prepared 2 items"}' > "$FLOWER_OUTPUTS"
-    outputs: {items: array}
-
-  - id: work
-    kind: shell
-    foreach: "${prepare.outputs.items}"
-    run: |
-      echo "working on ${item}"
-      echo '{"value": 1}' > "$FLOWER_OUTPUTS"
-    outputs: {value: number}
-
-  - id: review
-    kind: gate
-    needs: [work]
-    message: "work produced ${work.outputs.count} results. Continue?"
-    decisions: [approve, reject]
+## Changing a running plan
+Edit the plan file. `flower sync RUN` applies the edits without re-running anything; `flower rerun RUN STEP`
+applies them and re-runs STEP and what depends on it; `flower add` appends a step. New and unfinished steps
+change at once; an edit of a finished step waits for approval, and history is never rewritten: the step runs
+again. Of an existing cluster only `cpus`, `max_jobs` and `min_poll` may change; new clusters and inputs may be
+added.
 """
 
 SKILL_MD = r"""---
 name: flower
-description: Plan, run, monitor and grow long multi-step workflows (agent steps, shell/python steps, Slurm/HPC jobs, human approvals) with the `flower` CLI. Use when work is multi-step, long-running (hours to days), must survive session restarts, needs HPC jobs, human sign-off, or an auditable record. Not for one-off quick tasks.
+description: Run multi-step computational work (shell commands, Slurm/HPC jobs, human approvals) as a recorded, re-runnable workflow with the `flower` CLI. Use when work has several steps, runs for hours to days, must survive session restarts, needs HPC jobs or human sign-off, or should end as a protocol others can re-run. Not for one-off quick tasks.
 ---
 
-# flower — durable workflows you can drive across sessions
+# flower — long computational work, recorded as you go
 
-flower keeps the *state* of long work outside your context: a plan file (the contract the user
-approves) and an append-only journal. Any new session can pick up a run with `flower status`.
+flower keeps the *state* of long work outside your context: a plan file of steps (each with a description)
+and an append-only journal of what ran. A person can follow it in `flower ui`; any new session picks it up with
+`flower status`; a finished study becomes a protocol anyone re-runs with one command.
 
 ## Rule 0
-If the environment variable `FLOWER_INSIDE_RUN` is set, you are *inside* a flower node.
-Do the node's task and answer with its JSON contract. Never run flower commands from inside a node.
-
-## When to use it
-Use flower when the work has several steps with dependencies, any step can take long (Slurm jobs,
-long agent tasks), a human should approve the plan or key decisions, or the user wants a record of
-what was done and why. For a single quick command, just do it directly.
+If the environment variable `FLOWER_INSIDE_RUN` is set, you are *inside* a flower step. Do the step's task;
+never run flower commands from inside a step.
 
 ## The loop: the run first, then everything as steps
-**Start the run before you explore.** `flower start "<goal>"` creates an empty draft plan
-(`<id>/plan.yaml`) and a run that parks until it has steps, and starts the project's UI so the user can
-watch. Nothing is too early to be a step: downloading inputs, the first quick test, a parameter probe.
-- **One command per step:** `flower add RUN ID --title T --description D [--needs X] [--out NAME:TYPE]
-  [--file NAME=PATH] [--cluster C --env E --stage-in FILE --retrieve GLOB --cpus N --mem 16G] -- <command>` writes the
-  step into plan.yaml and runs it, streaming its output. The command writes outputs as JSON to `$FLOWER_OUTPUTS`.
+**Start the run before you explore.** `flower start "<goal>"` creates an empty draft plan (`<id>/plan.yaml`)
+and a run, and starts the project's UI so the user can watch. Nothing is too early to be a step: downloading
+inputs, the first quick test, a parameter probe.
+- **One command per step:** `flower add RUN ID --description D [--needs X] [--out NAME:TYPE] [--file NAME=PATH]
+  [--cluster C --env E --stage-in FILE --retrieve GLOB --cpus N --mem 16G] -- <command>` writes the step into
+  plan.yaml and runs it, streaming its output. The command writes outputs as JSON to `$FLOWER_OUTPUTS`.
 - **Describe every step** (`--description`, one or two sentences): what it establishes, and how to read its
-  result (which output or file answers the question, what a good value looks like). The run is read by people who
-  were not there; the UI shows the description first. Missing ones only warn; add them later in plan.yaml and
-  `flower sync RUN` (a description edit re-runs nothing).
-- **Fix and repeat:** edit the code or the step in plan.yaml, then `flower rerun RUN ID --follow`. Edits are
-  picked up as recorded amendments (`policies: {edits: unfinished}` lets new/unfinished steps through).
-- **A new machine later:** add an `inputs:` entry (value with `-i NAME=VALUE` on add/rerun) and a
-  `clusters:` entry to plan.yaml; the next add/rerun picks them up. Existing clusters/inputs are fixed,
-  except a cluster's `cpus`, `max_jobs`, `min_poll`: edit them and run `flower sync RUN` (nothing re-runs).
-- **Explore a remote host** with `flower remote exec` (logged), not raw ssh.
-- Reading papers, files and results directly is fine. *Running* computations beside the run is not: they
-  are unrecorded and invisible to the user. That includes the quick check whose answer you rely on (a symmetry
-  test, a unit conversion with the study's code): make it a one-line `flower add` step. If a hook reminds you,
-  move the work into a step.
-For a workflow that is already known end to end, writing the whole plan first (below) is fine too.
+  result (which output or file answers the question, what a good value looks like). The run is read by people
+  who were not there; the UI shows the description first. Missing ones only warn; add them later in plan.yaml
+  and `flower sync RUN` (a description edit re-runs nothing).
+- **Fix and repeat:** edit the code or the step in plan.yaml, then `flower rerun RUN ID --follow`.
+  `flower sync RUN` applies plan edits without re-running anything (a new step, a description, a cluster's
+  `cpus`). An edit of a *finished* step waits for the user's approval.
+- **A new machine later:** add an `inputs:` entry (value with `-i NAME=VALUE`) and a `clusters:` entry to
+  plan.yaml; the next add/rerun/sync picks them up.
+- **Explore a remote host** with `flower remote exec --run RUN --cluster C -- <cmd>` (logged), not raw ssh.
+- Reading papers, files and results directly is fine. *Running* computations beside the run is not: they are
+  unrecorded and invisible to the user. That includes the quick check whose answer you rely on: make it a
+  one-line `flower add` step. If a hook reminds you, move the work into a step.
 
-1. **Draft the plan** with the user: `flower plan new plan.yaml` or write YAML
-   (`flower plan reference` prints the full format). Prefer deterministic `shell`/`function`/`job`
-   nodes for computation and `agent` nodes for judgement (analysis, choosing parameters, writing).
-   Declare `outputs` for every node whose result is used later.
-2. **Validate until clean:** `flower plan validate plan.yaml --json` — fix every listed issue.
-3. **Show the plan to the user:** `flower plan show plan.yaml`. Explain it in your own words.
-4. **Create the run:** `flower run plan.yaml -i name=value --json` → status `awaiting_approval`
-   (exit code 3). **The decision is the user's. Never approve on your own judgement.** Only after the
-   user explicitly says yes: `flower approve RUN --note "approved by <user> in chat"`.
-   (If the user tells you up front they approve, `flower run plan.yaml --yes --detach --json`.)
-5. **Let it run in the background:** approval starts a background driver. Monitor with
-   `flower wait RUN --timeout 600 --json` (run it as a background task if your harness supports it;
-   don't poll in a tight loop). Exit code 0 = succeeded, 1 = failed, 3 = needs a decision / still running.
-   **Software on a cluster:** if a step needs software on a remote target, make an environment recipe
-   instead of hand-written preludes: `flower env new NAME`; explore the target with
-   `flower remote exec --run RUN --cluster C --env NAME [--probe] -- <cmd>` (logged; `--probe` for
-   look-only commands); write envs/NAME/setup.sh (install into $FLOWER_ENV_PREFIX, pin exact versions),
-   activate.sh and check.sh; `flower env freeze NAME`; prove it with
-   `flower env replay NAME --run RUN --cluster C --fresh`; then put `environment: NAME` on the steps.
-   (`--run RUN` uses the run's cluster and inputs; `--plan P` reads a plan file, with `-i`/`--inputs`.)
-   Ask the user before installing anything on a machine they share with others.
-   To let the user watch it, run `flower ui --json` (starts or reuses the project's UI in the background)
-   and give them its links: the local one if they sit at this machine, else the `ssh -N -L …` line, or
-   `flower open user@host:/path/to/project` if they have flower on their laptop.
-6. **When it parks on a decision** (`open_gates` in the JSON): read it with
-   `flower show RUN --gate GATE`, relay the question to the user in plain words, and answer with their
-   decision: `flower answer RUN GATE <decision> --text "<their reason>"`.
-7. **When something fails:** `flower show RUN NODE` (error class, stderr, agent text), fix the cause,
-   then `flower rerun RUN NODE` (re-runs it and everything downstream; unchanged nodes are reused).
-   If the plan itself must change, write an amendment YAML and `flower amend RUN change.yaml`
-   (the user approves it like the plan).
-8. **Report:** `flower report RUN` writes report.md/report.html (decisions, outputs, files,
-   timeline). Summarise it for the user; "the run was admitted" is not "the run succeeded" — check the
-   final status.
+**Software on a cluster:** make an environment recipe instead of hand-written preludes: `flower env new NAME`;
+explore with `flower remote exec --run RUN --cluster C --env NAME [--probe] -- <cmd>`; write envs/NAME/setup.sh
+(install into $FLOWER_ENV_PREFIX, pin exact versions), activate.sh and check.sh; `flower env freeze NAME`; prove
+it with `flower env replay NAME --run RUN --cluster C --fresh`; then `--env NAME` on the steps. Ask the user
+before installing anything on a machine they share with others.
+
+**A plan written in full up front** (a known workflow) is fine too: `flower plan validate plan.yaml --json`
+until clean, `flower plan show plan.yaml` to the user, then `flower run plan.yaml --json` (status
+`awaiting_approval`, exit 3). **The decision is the user's. Never approve on your own judgement.** Only after the
+user says yes: `flower approve RUN --note "approved by <user> in chat"` (or `flower run plan.yaml -y` when they
+said so up front).
+
+## While it runs
+- `flower status RUN --json` — what is done, running, failed, and what needs the user (one pass; starts a
+  background driver if needed). `flower status RUN --follow --timeout 600` blocks until it finishes or needs a
+  decision (run it as a background task if your harness supports it; don't poll in a tight loop). Exit codes:
+  0 succeeded, 1 failed, 2 error, 3 needs a decision / still running.
+- **A decision** (`open_gates`): `flower show RUN --gate GATE`, relay it to the user in plain words, answer
+  with theirs: `flower approve RUN GATE [DECISION] --note "<their reason>"` or `flower reject RUN GATE --text "…"`.
+- **A failure:** `flower show RUN STEP` (error, stderr, outputs written before failing), `flower logs RUN STEP`,
+  fix the cause, `flower rerun RUN STEP` (it and everything downstream; unchanged steps are reused).
+- **The user watching:** `flower ui --json` starts or reuses the project's UI; give them its links (the local
+  one, the `ssh -N -L …` line, or `flower ui user@host:/path` if flower is on their laptop).
+
+## When it is done
+`flower show RUN STEP KEY` prints one result. `flower export RUN STEP` turns the steps behind STEP into
+`protocol.yaml` + `expected.json` + `PROTOCOL.md` next to the plan: anyone reproduces it with
+`flower run protocol.yaml -y` and checks with `flower compare RUN expected.json`. "The run was admitted" is not
+"the run succeeded": check the final status before you report.
 
 ## Coming back later (new session)
-`flower ls` → `flower status RUN` (what is done, what is running, what needs the user) →
-`flower log RUN` (what happened, in order). Everything you need is in the run, not in your memory.
-
-## Useful commands
-- `flower show RUN NODE` — attempts, inputs, outputs, files, errors, rationale
-- `flower logs RUN NODE` — agent transcript / Slurm stdout / shell output
-- `flower output RUN NODE [key]` — a node's outputs (or one value/file path)
-- `flower cancel RUN [--node N]`, `flower signal RUN NAME --data '{...}'`, `flower note RUN "text"`
-- Every command accepts `--json` and prints `{ok, data, error, next}`; follow `next` suggestions.
+`flower status` (the project's runs) → `flower status RUN` → `flower log RUN` (what happened, in order).
+Everything you need is in the run, not in your memory. Every command accepts `--json` and prints
+`{ok, data, error, next}`; follow `next`.
 """
 
 

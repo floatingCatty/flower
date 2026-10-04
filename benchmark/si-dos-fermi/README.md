@@ -9,12 +9,15 @@ on that DOS.
 
 | node | kind | what |
 |---|---|---|
-| `prepare` | function | Writes STRU (a = 10.26 bohr). Reads N_e from the UPF `z_valence` (4 × 2 = 8). |
+| `prepare` | shell (calls `abacus_si.py:prepare`) | Writes STRU (a = 10.26 bohr). Reads N_e from the UPF `z_valence` (4 × 2 = 8). |
 | `scf` | shell | ABACUS SCF, PBE, LCAO `2s2p1d`, 8³ k-mesh, `out_chg 1` |
 | `dos[i]` | shell, foreach | ABACUS nscf from the SCF density, on 8³, 12³, 16³ and 24³ meshes, `out_dos 1` |
-| `fermi[i]` | function, foreach | Fermi-Dirac integration of each DOS (`abacus_si.py:fermi_from_dos`) and a DOS plot |
-| `converge` | function | E_F against k-mesh, a convergence verdict and a plot |
-| `review` | agent (claude/sonnet) | Physical sanity review. Disable with `-i agent_review=false`. |
+| `fermi[i]` | shell, foreach | Fermi-Dirac integration of each DOS (`abacus_si.py:fermi_from_dos`) and a DOS plot |
+| `converge` | shell | E_F against k-mesh, a convergence verdict and a plot |
+
+The study first ran with `function` steps and an agent `review` step (which never ran: the local `claude` CLI had
+an expired login). When flower was reduced to `shell` and `gate` steps (2026-10-05), the function steps became
+shell steps calling the same Python functions, and the review step was dropped.
 
 ## Run
 
@@ -24,7 +27,7 @@ cd benchmark
 ../.venv/bin/flower status                                # or: flower ui
 ```
 
-Everything except `review` takes about 1 minute, running 8 MPI ranks per ABACUS step. The paths to the
+Everything takes about 1 minute, running 8 MPI ranks per ABACUS step. The paths to the
 ABACUS conda env and the `PP_ORB` directory are plan inputs.
 
 ### Remote calculation, local analysis
@@ -33,11 +36,10 @@ ABACUS conda env and the `PP_ORB` directory are plan inputs.
 
 | step | where | how |
 |---|---|---|
-| `prepare` | this machine | `function`: writes STRU and counts electrons |
+| `prepare` | this machine | writes STRU and counts electrons |
 | `env-abacus-remote` | **remote** | generated from `environment: abacus`: runs the frozen recipe [`envs/abacus/`](../envs/abacus/)'s `check.sh`, and installs it with `setup.sh` if missing |
 | `scf`, `dos[i]` | **remote**, over `ssh` | `shell` + `cluster: remote` (`scheduler: none`) + `environment: abacus`: a detached ABACUS process with the environment activated |
-| `fermi[i]`, `converge` | this machine | `function`: reads the DOS files fetched back to `${item.local_dir}` |
-| `review` | this machine | agent |
+| `fermi[i]`, `converge` | this machine | read the DOS files fetched back to `${item.local_dir}` |
 
 The structure, pseudopotential, orbital and the input helper are uploaded with `stage_in`, and nothing
 stays connected while ABACUS runs. The software comes from the environment recipe `envs/abacus/`:

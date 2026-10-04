@@ -67,32 +67,11 @@ def sha256_file(path: str | os.PathLike) -> str:
     return h.hexdigest()
 
 
-def find_local_source(module: str, search_dirs: list[str]) -> Path | None:
-    """Where a function node's *local* code lives: the top-level package directory of ``module``, or the single
-    ``<module>.py``, found in ``search_dirs`` in import order. ``None`` for an installed library."""
-    top = module.split(".", 1)[0]
-    for d in search_dirs:
-        pkg, mod = Path(d) / top, Path(d) / f"{top}.py"
-        if mod.is_file() and not (pkg / "__init__.py").is_file():  # same precedence as Python's FileFinder
-            return mod
-        if pkg.is_dir():
-            return pkg
-    return None
-
-
-def source_fingerprint(module: str, search_dirs: list[str], max_files: int = 2000) -> str | None:
-    """Content digest of a function node's local code (see :func:`find_local_source`): every ``.py`` of the
-    package, or the single module. ``None`` when it is not local (an installed library: version it through the
-    environment instead) or the package is too large."""
-    src = find_local_source(module, search_dirs)
-    if src is None:
-        return None
-    if src.is_file():
-        return digest({src.name: sha256_file(src)})
-    files = sorted(p for p in src.rglob("*.py") if "__pycache__" not in p.parts)
-    if len(files) > max_files:
-        return None
-    return digest({str(p.relative_to(src.parent)): sha256_file(p) for p in files})
+def answer_cmd(rid: str, gid: str, decisions: list[str]) -> str:
+    """How to answer a gate from the command line."""
+    if list(decisions) == ["approve", "reject"]:
+        return f"flower approve {rid} {gid} --note '…'   ·   flower reject {rid} {gid} --text '…'"
+    return f"flower approve {rid} {gid} <{'|'.join(decisions)}> --note '…'"
 
 
 _PATH_RE = re.compile(r"(?<![\w$])(/[^\s'\"`;|&<>(){}$,]+)")

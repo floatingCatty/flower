@@ -6,7 +6,6 @@
             plan.yaml               human-readable copy of the approved base plan (generation 0)
             plan.current.yaml       current plan after approved amendments (regenerated, derived)
             pending/                gate requests (*.request.json) and answers (*.answer.json)
-            signals/                external signal drop-box (*.json)
             nodes/<node>/a<N>/      one directory per attempt: work/, proc/, result files
             report.md / report.html generated, derived
 """
@@ -53,13 +52,10 @@ class RunPaths:
         self.plan_file = self.dir / "plan.yaml"
         self.current_plan_file = self.dir / "plan.current.yaml"
         self.pending = self.dir / "pending"
-        self.signals = self.dir / "signals"
         self.nodes = self.dir / "nodes"
         self.tick_lock = self.dir / "tick.lock"
         self.driver_file = self.dir / "driver.json"
         self.follow = self.dir / "follow"   # someone is watching these nodes: poll fast
-        self.report_md = self.dir / "report.md"
-        self.report_html = self.dir / "report.html"
 
     def attempt_dir(self, node_id: str, attempt: int) -> Path:
         return self.nodes / fs_name(node_id) / f"a{attempt}"
@@ -112,6 +108,6 @@ def resolve_run(root: Path, ref: str | None) -> RunPaths:
     if len(matches) == 1:
         return RunPaths(root, matches[0])
     if not matches:
-        raise FlowerError("run_not_found", f"no run matches {ref!r}", "List runs with `flower ls`.")
+        raise FlowerError("run_not_found", f"no run matches {ref!r}", "List runs with `flower status`.")
     raise FlowerError("run_ambiguous", f"{ref!r} matches {len(matches)} runs: {', '.join(matches[:5])}",
                          "Use a longer prefix.")

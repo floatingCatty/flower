@@ -15,7 +15,7 @@ from typing import Any
 from .plan import Graph, on_cluster
 from .rundir import RunPaths
 from .state import TERMINAL_RUN, NodeState, RunState
-from .util import (first_line, fmt_duration, local_clock, local_stamp, local_zone, parse_iso, read_json,
+from .util import (answer_cmd, first_line, fmt_duration, local_clock, local_stamp, local_zone, parse_iso,
                    seconds_since, short, tail_text, truncate)
 
 ICON = {"succeeded": "✓", "failed": "✗", "running": "●", "waiting": "◆", "pending": "○", "retrying": "↻",
@@ -40,15 +40,8 @@ def bold(text: str, color: bool) -> str:
 
 def kind_label(spec: dict) -> str:
     k = spec.get("kind", "?")
-    if k == "agent":
-        h = spec.get("harness") or {}
-        return f"agent:{h.get('name', '?')}" + (f"/{h['model']}" if h.get("model") else "")
-    if k == "job":
-        return f"job@{spec.get('cluster')}"
-    if on_cluster(spec):  # a shell / function node sent to a cluster
+    if on_cluster(spec):  # a shell step sent to a cluster
         return f"{k}@{spec.get('cluster')}"
-    if k == "function":
-        return "function"
     return k
 
 
@@ -79,22 +72,12 @@ def display_title(spec: dict, nid: str | None = None) -> str:
 
 
 def command_text(spec: dict) -> str:
-    """What the step runs, in full (the UI's "Does" section): the shell script, the job script, the call, the
-    prompt, the question or the awaited signal."""
+    """What the step runs, in full (the UI's "Does" section): the shell script, or a gate's question."""
     k = spec.get("kind")
     if k == "shell":
         return str(spec.get("run") or "")
-    if k == "job":
-        return str(spec.get("script") or "")
-    if k == "function":
-        args = spec.get("args") or spec.get("inputs") or {}
-        return f"{spec.get('call')}(" + ", ".join(f"{a}={v!r}" for a, v in args.items()) + ")"
-    if k == "agent":
-        return str(spec.get("prompt") or spec.get("prompt_file") or "")
     if k == "gate":
         return str(spec.get("message") or "")
-    if k == "wait":
-        return f"signal {spec.get('signal')}" if spec.get("signal") else f"timer {spec.get('timer')}"
     return ""
 
 
@@ -104,20 +87,10 @@ def what(spec: dict) -> str:
         return first_line(display_title(spec), 90)
     if spec.get("description"):
         return first_line(spec["description"], 90)
-    if k == "agent":
-        return first_line(spec.get("prompt"), 90)
     if k == "shell":
         return "$ " + first_line(spec.get("run"), 88)
-    if k == "function":
-        return f"{spec.get('call')}()"
-    if k == "job":
-        r = spec.get("resources") or {}
-        res = ", ".join(f"{a}={r[a]}" for a in ("nodes", "ntasks", "time", "partition") if r.get(a))
-        return first_line(spec.get("script"), 60) + (f"  [{res}]" if res else "")
     if k == "gate":
         return "human decision: " + first_line(spec.get("message"), 70)
-    if k == "wait":
-        return f"wait for signal {spec.get('signal')!r}" if spec.get("signal") else f"wait {spec.get('timer')}"
     return ""
 
 
@@ -147,13 +120,10 @@ def plan_overview(plan: dict, inputs: dict | None = None) -> str:
             extras.append(f"for each item in {spec['foreach'] if isinstance(spec['foreach'], str) else 'list'}")
         if spec.get("kind") == "gate" and spec.get("on_reject"):
             extras.append(f"on reject: redo {', '.join(spec['on_reject'].get('rerun') or [])}")
-        if (spec.get("effects") or {}).get("amend"):
-            a = spec["effects"]["amend"]
-            extras.append("may propose plan changes" + (" (auto-approved within policy)" if isinstance(a, dict) and a.get("auto_approve") else " (needs approval)"))
         if spec.get("outputs"):
             extras.append("returns " + ", ".join(spec["outputs"]))
         r = spec.get("retry") or {}
-        if int(r.get("max_attempts", 1)) > 1 and spec.get("kind") not in ("gate", "wait"):
+        if int(r.get("max_attempts", 1)) > 1 and spec.get("kind") != "gate":
             extras.append(f"up to {r['max_attempts']} attempts")
         if extras:
             out.append("      " + " " * len(ind) + "· " + "; ".join(extras))
@@ -164,9 +134,6 @@ def plan_overview(plan: dict, inputs: dict | None = None) -> str:
                                    + (" (no scheduler)" if c.get("scheduler") == "none" else " (slurm)")
                                    + (", installs nothing" if c.get("install") == "never" else "")
                                    for n, c in clusters.items()]
-    agents = {kind_label(s) for s in g.nodes.values() if s.get("kind") == "agent"}
-    if agents:
-        out += ["", "Agents used: " + ", ".join(sorted(agents))]
     from .plan import warnings as plan_warnings
     missing = [w.split("'")[1] for w in plan_warnings(plan) if "'" in w]
     if missing:
@@ -224,8 +191,7 @@ def node_activity(st: RunState, paths: RunPaths, ns: NodeState, spec: dict) -> s
         g = st.gates.get(ns.gate_id) if ns.gate_id else None
         if g:
             return f"needs your decision ({' / '.join(g.decisions)}) — see below"
-        w = (a.progress or {}).get("wait") if a else {}
-        return f"waiting for signal {w.get('signal')!r}" if w and w.get("signal") else "waiting for timer"
+        return "waiting"
     if ns.status == "running" and a:
         if on_cluster(spec):
             from .hpc import scheduler_for
@@ -238,11 +204,6 @@ def node_activity(st: RunState, paths: RunPaths, ns: NodeState, spec: dict) -> s
             if sched.NAME == "none":
                 return f"{j.get('state') or 'RUNNING'} · pid {j['job_id']} on {spec.get('cluster')}"
             return f"{j.get('state') or 'QUEUED'} · slurm job {j['job_id']}" + (f" ({j.get('sched')})" if j.get("sched") else "")
-        if spec.get("kind") == "agent":
-            live = read_json(paths.attempt_dir(ns.id, a.n) / "live.json") or {}
-            turn = f" [repair {a.repairs}]" if a.repairs else ""
-            act = live.get("last_action")
-            return (f"{live.get('actions', 0)} actions" + (f" · {first_line(act, 80)}" if act else " · thinking…") + turn)
         out = tail_text(paths.attempt_dir(ns.id, a.n) / "proc" / "stdout.log", 400).strip().splitlines()
         return first_line(out[-1], 100) if out else "running…"
     if ns.stale:
@@ -268,7 +229,6 @@ def status_view(st: RunState, paths: RunPaths, color: bool = False, width: int |
     depth = g.depth()
     width = width or 140
     elapsed = (parse_iso(st.completed_at) - parse_iso(st.created_at)).total_seconds() if st.completed_at else seconds_since(st.created_at)
-    cost = st.cost()
     counts = st.counts()
     head = (f"{bold(st.title or st.plan_id, color)}  ·  run {st.run_id}  ·  "
             f"{paint(st.status.upper().replace('_', ' '), st.status, color)}  ·  {fmt_duration(elapsed)}")
@@ -278,12 +238,6 @@ def status_view(st: RunState, paths: RunPaths, color: bool = False, width: int |
         meta.append(f"{counts['failed']} failed")
     if counts.get("running"):
         meta.append(f"{counts['running']} running")
-    if cost["usd"] or cost["input_tokens"]:
-        tok = f"{(cost['input_tokens'] + cost['output_tokens']) / 1000:.0f}k tokens"
-        if cost["usd"]:
-            meta.append(f"agent cost ${cost['usd']:.2f}" + ("+ " if not cost["complete"] else " ") + f"({tok})")
-        else:
-            meta.append(f"agents used {tok}" + ("" if cost["complete"] else " (cost not reported by harness)"))
     lines = [head, "  " + "  ·  ".join(meta)]
     if st.status_reason and st.status in ("failed", "parked", "rejected", "cancelled"):
         lines.append("  " + paint(first_line(st.status_reason, 120), st.status, color))
@@ -340,26 +294,15 @@ def next_steps(st: RunState) -> list[str]:
             first = first_line(g.message, 100)
             out.append(f"  • gate {g.id}: {first}")
             out.append(f"      flower show {rid} --gate {g.id}            # read it in full")
-            out.append(f"      flower answer {rid} {g.id} {g.decisions[0]} [--text '…']   # options: {', '.join(g.decisions)}")
-    waits = []
-    for nid, ns in st.nodes.items():
-        w = ((ns.last.progress or {}).get("wait") or {}) if ns.status == "waiting" and ns.last and not ns.gate_id else {}
-        if w.get("signal"):
-            waits.append((nid, w))
-    if waits:
-        out += ["", "Waiting for external input:"]
-        for nid, w in waits:
-            dl = f" (deadline {local_stamp(w['deadline_at'])})" if w.get("deadline_at") else ""
-            out.append(f"  • {nid} waits for signal {w['signal']!r}{dl}")
-            out.append(f"      flower signal {rid} {w['signal']} --data '{{\"…\": …}}'")
+            out.append(f"      {answer_cmd(rid, g.id, g.decisions)}")
     if st.status == "failed":
         failed = [n for n, s in st.nodes.items() if s.status == "failed"]
         out += ["", "Next:"] + [f"  flower show {rid} {n}        # see why {n} failed" for n in failed[:3]]
         out += [f"  flower rerun {rid} {failed[0]}    # retry it and everything after it"] if failed else []
-    elif st.status in ("running", "parked") and not gates and not waits:
-        out += ["", f"Next:  flower watch {rid}   (live view)   ·   flower log {rid}   (what happened)"]
+    elif st.status in ("running", "parked") and not gates:
+        out += ["", f"Next:  flower status {rid} --follow   (live view)   ·   flower log {rid}   (what happened)"]
     elif st.status == "succeeded":
-        out += ["", f"Done.  flower report {rid}   → readable report with every decision, output and file"]
+        out += ["", f"Done.  flower ui (the whole record)   ·   flower export {rid} STEP   (a protocol to re-run it)"]
     return out
 
 
@@ -396,16 +339,12 @@ def node_detail(st: RunState, paths: RunPaths, nid: str, color: bool = False) ->
         label = a.status
         if a.status == "running" and spec.get("kind") == "gate":
             label = "waiting for a decision"
-        elif a.status == "running" and spec.get("kind") == "wait":
-            label = "waiting for a signal/timer"
         out += ["", bold(f"attempt {a.n}", color) + f"  {label}  started {local_stamp(a.started_at)}"
                 + (f"  took {fmt_duration(a.duration_s)}" if a.duration_s is not None else "")
                 + (f"  (reused result of {a.reused_from})" if a.reused_from else "")]
         out.append(f"  dir: {adir}")
         if a.inputs:
             out.append("  inputs: " + truncate(json.dumps(a.inputs, default=str), 300))
-        if a.session:
-            out.append(f"  agent session: {a.session}" + (f"  (repair turns: {a.repairs})" if a.repairs else ""))
         if a.job:
             j = a.job
             what = "process" if j.get("scheduler") == "none" else f"{j.get('scheduler') or 'slurm'} job"
@@ -419,11 +358,6 @@ def node_detail(st: RunState, paths: RunPaths, nid: str, color: bool = False) ->
             out.append("  outputs: " + truncate(json.dumps(a.outputs, default=str, ensure_ascii=False), 800))
         for k, f in (a.files or {}).items():
             out.append(f"  file {k}: {f.get('path')}" + (f"  ({f['bytes']} B, sha {f['sha256'][:10]})" if f.get("sha256") else ""))
-        if a.usage and (a.usage.get("cost_usd") is not None or a.usage.get("input_tokens")):
-            u = a.usage
-            out.append(f"  usage: {u.get('input_tokens', 0)} in / {u.get('output_tokens', 0)} out tokens"
-                       + (f", ${u['cost_usd']:.4f}" if u.get("cost_usd") is not None else "")
-                       + (f", {u['turns']} turns" if u.get("turns") else ""))
         if a.error:
             out.append(paint(f"  error [{a.error.get('error_class')}]: {a.error.get('message')}", "failed", color))
             det = a.error.get("details") or {}
@@ -433,13 +367,13 @@ def node_detail(st: RunState, paths: RunPaths, nid: str, color: bool = False) ->
         if a.status == "running":
             for name in ("stdout.log", "stderr.log"):
                 t = tail_text(adir / "proc" / name, 800).strip()
-                if t and spec.get("kind") != "agent":
+                if t:
                     out.append(f"  {name} (tail):\n" + "\n".join("    " + l for l in t.splitlines()[-6:]))
     gid = ns.gate_id
     if gid and gid in st.gates and st.gates[gid].status == "open":
         gt = st.gates[gid]
         out += ["", "QUESTION FOR YOU:", gt.message, "",
-                f"answer:  flower answer {st.run_id} {gt.id} <{'|'.join(gt.decisions)}> [--text '…']"]
+                f"answer:  {answer_cmd(st.run_id, gt.id, gt.decisions)}"]
     return "\n".join(out)
 
 
@@ -447,7 +381,7 @@ def gate_detail(st: RunState, gid: str) -> str:
     g = st.gates[gid]
     out = [f"gate {g.id}  ({g.subject})  {g.status}", "", g.message, ""]
     if g.status == "open":
-        out.append(f"answer:  flower answer {st.run_id} {g.id} <{'|'.join(g.decisions)}> [--text '…']")
+        out.append(f"answer:  {answer_cmd(st.run_id, g.id, g.decisions)}")
     else:
         out.append(f"answered {g.decision!r} by {g.by} at {g.answered_at}" + (f": {g.text}" if g.text else ""))
     return "\n".join(out)
@@ -499,10 +433,6 @@ def describe_event(ev: dict) -> str | None:
         return f"{a} cancelled: {p.get('reason')}"
     if t == "node.stale":
         return f"{n} queued to run again: {p.get('reason')}"
-    if t == "agent.session":
-        return None
-    if t == "agent.repair":
-        return f"{a}: answer did not match contract, repair turn {p.get('n')} ({first_line(p.get('reason'), 80)})"
     direct = p.get("scheduler") == "none"  # a process on a machine without a batch system (older events: Slurm)
     if t == "job.submit_intent":
         if direct:
@@ -531,12 +461,6 @@ def describe_event(ev: dict) -> str | None:
         return f"decision requested ({subj}{' ' + n if n else ''}): {first_line(p.get('message'), 90)}"
     if t == "gate.answered":
         return f"decision {p.get('gate_id')}: {p.get('decision')!r} by {p.get('by')}" + (f" — {first_line(p.get('text'), 90)}" if p.get("text") else "")
-    if t == "wait.armed":
-        return f"{n} waiting" + (f" for signal {p['signal']!r}" if p.get("signal") else "")
-    if t == "signal.received":
-        return f"signal {p.get('name')!r} from {p.get('by')}"
-    if t == "wait.expired":
-        return f"{n}: deadline passed"
     if t == "plan.amendment.proposed":
         return f"plan change proposed by {p.get('proposed_by')}: {first_line(p.get('rationale'), 100)}"
     if t == "plan.amendment.approved":

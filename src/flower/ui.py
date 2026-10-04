@@ -102,23 +102,17 @@ class UIState:
                   "decisions": gt.decisions, "requested_at": gt.requested_at,
                   "diff": gt.extra.get("diff") if gt.extra else None}
                  for gt in st.open_gates()]
-        waits = []
-        for nid, ns in st.nodes.items():
-            w = ((ns.last.progress or {}).get("wait") or {}) if ns.status == "waiting" and ns.last and not ns.gate_id else {}
-            if w.get("signal"):
-                waits.append({"node": nid, "signal": w["signal"], "deadline_at": w.get("deadline_at")})
         drv = driver_alive(eng.paths)
         active = st.status not in TERMINAL_RUN and st.status != "awaiting_approval"
         stalled = active and not drv and any(n["status"] in ("running", "retrying", "pending") for n in nodes) \
-            and not gates and not waits
+            and not gates
         return {
             "id": st.run_id, "title": st.title, "plan_id": st.plan_id, "status": st.status, "reason": st.status_reason,
             "created": st.created_at, "completed": st.completed_at, "elapsed": fmt_duration(_elapsed(st)),
             "generation": st.generation, "digest": (st.digest or "")[7:19], "base_digest": (st.base_digest or "")[7:19],
-            "approved_by": st.approved_by, "inputs": st.inputs, "cost": st.cost(), "counts": st.counts(),
-            "description": st.plan.get("description") or "", "nodes": nodes, "gates": gates, "waits": waits,
+            "approved_by": st.approved_by, "inputs": st.inputs, "counts": st.counts(),
+            "description": st.plan.get("description") or "", "nodes": nodes, "gates": gates,
             "driver": drv, "stalled": stalled, "last_seq": st.last_seq, "dir": str(eng.paths.dir),
-            "report": eng.paths.report_html.exists(),
         }
 
     def _added_by(self, st: RunState, nid: str) -> str | None:
@@ -144,13 +138,7 @@ class UIState:
             if on_cluster(spec):
                 from .hpc import scheduler_for
                 sched = scheduler_for((st.plan.get("clusters") or {}).get(spec.get("cluster")) or {}).NAME
-            if spec.get("kind") == "agent":
-                from .transcript import render_transcript
-                try:
-                    logs["transcript"] = render_transcript(adir, (spec.get("harness") or {}).get("name", "claude"))[-MAX_TEXT:]
-                except OSError:
-                    pass
-            elif on_cluster(spec):
+            if on_cluster(spec):
                 from .hpc import log_files, scheduler_for
                 jd = Path(a.job.get("job_dir") or "")
                 local = jd if jd.is_dir() else adir / "job"
@@ -170,7 +158,7 @@ class UIState:
                 "summary": a.summary, "rationale": a.rationale, "outputs": a.outputs, "inputs": a.inputs,
                 "files": [{"name": k, **v, "image": str(v.get("path", "")).lower().endswith((".png", ".jpg", ".jpeg", ".svg", ".gif"))}
                           for k, v in (a.files or {}).items()],
-                "usage": a.usage, "error": a.error, "session": a.session, "repairs": a.repairs, "job": a.job,
+                "usage": a.usage, "error": a.error, "job": a.job,
                 "reused_from": a.reused_from, "actor": a.actor, "dir": str(adir), "scheduler": sched,
                 "logs": {k: v for k, v in logs.items() if v},
             })
@@ -247,14 +235,6 @@ class UIState:
         with self._lock:
             if action == "answer":
                 eng.answer(str(body.get("gate")), str(body.get("decision")), text=body.get("text") or None, by=by)
-            elif action == "signal":
-                data = body.get("data")
-                if isinstance(data, str) and data.strip():
-                    try:
-                        data = json.loads(data)
-                    except ValueError:
-                        raise FlowerError("bad_json", "signal data must be JSON") from None
-                eng.signal(str(body.get("name")), data, by=by)
             elif action == "rerun":
                 eng.rerun(str(body.get("node")), downstream=not body.get("only"), by=by,
                           reason=body.get("reason") or "rerun requested in flower ui")
@@ -262,10 +242,6 @@ class UIState:
                 eng.cancel(node=body.get("node") or None, reason="cancelled in flower ui", by=by)
             elif action == "note":
                 eng.note(str(body.get("text") or ""), node=body.get("node") or None, by=by)
-            elif action == "report":
-                from .report import write_report
-                write_report(eng)
-                return {"ok": True, "report": f"/runs/{run_id}/report"}
             elif action != "resume":
                 raise FlowerError("bad_action", f"unknown action {action!r}")
             st = eng.state()
@@ -348,12 +324,6 @@ def make_handler(ui: UIState, trusted: bool = False):
                     return self._send(200, body.encode(), "text/html; charset=utf-8",
                                       {"Content-Security-Policy": "default-src 'self'; img-src 'self' data:; "
                                                                   "style-src 'unsafe-inline'; script-src 'unsafe-inline'"})
-                if parts[0] == "runs" and len(parts) == 3 and parts[2] == "report":
-                    eng = ui.engine(parts[1])
-                    if not eng.paths.report_html.exists():
-                        from .report import write_report
-                        write_report(eng)
-                    return self._send(200, eng.paths.report_html.read_bytes(), "text/html; charset=utf-8")
                 if parts[0] != "api":
                     return self._json(404, {"ok": False, "error": {"code": "not_found", "message": u.path}})
                 if parts[1:] == ["runs"]:
@@ -588,7 +558,7 @@ def stop_background(root: Path) -> dict | None:
 
 
 def access_text(info: dict) -> list[str]:
-    """How to open it: on this machine, from a laptop (one ssh command, no token), or with `flower open`."""
+    """How to open it: on this machine, from a laptop (one ssh command, no token), or with `flower ui host:path`."""
     port, sock = info["port"], info["socket"]
     target = f"{info.get('user')}@{socket.getfqdn() or info['host']}"
     return [
@@ -596,6 +566,6 @@ def access_text(info: dict) -> list[str]:
         "  from your laptop:  run this there and keep it open, then browse to the link (no token needed):",
         f"      ssh -N -L {port}:{sock} {target}",
         f"      http://localhost:{port}",
-        f"  or, with flower installed on the laptop:  flower open {target}:{info['root']}",
+        f"  or, with flower installed on the laptop:  flower ui {target}:{info['root']}",
         f"  or once, in the laptop's ~/.ssh/config under that host:  LocalForward {port} {sock}",
     ]

@@ -1,8 +1,7 @@
 # Using flower in your project
 
 This page is for a team, its people and its coding agents, adopting flower in an existing research project.
-The [guide](GUIDE.md) explains the development loop in depth, and the [plan reference](PLAN_REFERENCE.md)
-documents every plan field.
+Every command and plan field is in the [reference](REFERENCE.md).
 
 ## 1. Install
 
@@ -10,8 +9,7 @@ documents every plan field.
 pip install "git+https://github.com/floatingCatty/flower"
 ```
 
-Python ≥ 3.9; the only dependencies are pyyaml and jsonschema. `flower doctor` shows which agent harnesses and
-Slurm tools it finds on the machine. Install it on the machine that drives the work,
+Python ≥ 3.9; the only dependencies are pyyaml and jsonschema. Install it on the machine that drives the work,
 usually a login node or a workstation. Remote machines that flower reaches over ssh do not need it.
 
 > The package is not on PyPI yet, and **`pip install flower` installs Celery Flower**, an unrelated tool.
@@ -34,6 +32,9 @@ This creates:
 | a short instruction block for any agent that reads `AGENTS.md` (Codex and others) | `AGENTS.md` | yes |
 | with `--hook`: a Claude Code hook that reminds an agent when it computes outside a run | `.claude/settings.local.json` | no (local) |
 
+It also says which of `ssh`, `rsync` and `sbatch` are missing on this machine (needed only for remote machines
+and Slurm). Re-running it refreshes the skill after an upgrade.
+
 Commit the plan files (`<study>/plan.yaml`), the scripts they call, and the software recipes in `envs/<name>/`.
 With these, someone else can re-run the study from a fresh clone.
 
@@ -55,12 +56,10 @@ flower sync RUN                      # apply plan-file edits without re-running 
 - **Every computation is a step,** including quick checks whose answers the agent relies on.
 - **Every step has a `--description`**: what it establishes and how to read its result. A missing one only
   warns.
-- **Reading results:** `flower status RUN`, `flower show RUN STEP`, `flower logs RUN STEP` and
-  `flower output RUN STEP` all take `--json`. Exit codes: 0 done, 1 failed, 2 error, 3 needs a decision
-  or still running.
+- **Reading results:** `flower status RUN`, `flower show RUN STEP [KEY]` and `flower logs RUN STEP` all take
+  `--json`. `flower status RUN --follow` waits until the run finishes or needs a decision. Exit codes: 0 done,
+  1 failed, 2 error, 3 needs a decision or still running.
 - **Long work** runs in a background driver; the agent never needs to hold a terminal open.
-- **Agents without a shell** can use `flower mcp`, which serves the same verbs over MCP (`--read-only` for
-  observers).
 - **Attribution:** set `FLOWER_ACTOR` (for example `agent:claude`, `agent:codex`) so the log says who did what.
   The default is `human:$USER`. The name is declared, not authenticated.
 
@@ -69,20 +68,27 @@ flower sync RUN                      # apply plan-file edits without re-running 
 The same commands, plus:
 
 - **The web UI:** `flower ui` starts or reuses the project's UI server and prints its address and token. From a
-  laptop, `flower open user@host:/path/to/project` opens it through an ssh tunnel. Each step shows its
+  laptop, `flower ui user@host:/path/to/project` opens it through an ssh tunnel. Each step shows its
   description, what it ran, and what it found (outputs, files, reports rendered in place).
 - **Decisions:** plan approvals, plan changes that touch finished work, and `gate` steps wait for a person. Answer
-  them in the UI or with `flower approve RUN [GATE]` / `flower reject RUN [GATE] --text "…"`.
-- **Results to share:** `flower report RUN` (Markdown and HTML), and `flower compare RUN_A RUN_B` (do two runs
-  agree within a tolerance?).
-- **A finished workflow as a protocol:** `flower export RUN STEP` writes, next to the plan, `protocol.yaml` (the
-  plan's own definitions of STEP and everything it depends on; probes, previews and side studies drop out),
-  `expected.json` (those steps' results) and `PROTOCOL.md` (what it does, needs and took). Anyone can then
-  reproduce it with `flower run protocol.yaml -y` and check with `flower compare RUN expected.json`.
-- **History:** `flower log RUN` (every event, actor and decision); the UI's Timeline and Plan history tabs show
-  the same.
+  them in the UI or with `flower approve RUN [GATE] [DECISION] --note "…"` / `flower reject RUN [GATE] --text "…"`.
+- **History:** `flower log RUN` (every event, actor and decision; `--note "…"` adds one); the UI's Timeline and
+  Plan history tabs show the same.
 
-## 5. Machines and software
+## 5. A finished study as a protocol
+
+`flower export RUN STEP` writes, next to the plan:
+- `protocol.yaml`: the plan's own definitions of STEP and everything it depends on. Probes, previews and side
+  studies drop out.
+- `expected.json`: those steps' results.
+- `PROTOCOL.md`: what it does, needs and took.
+
+Commit the three. Anyone reproduces the study with `flower run protocol.yaml -y` (plus `--inputs` for machine
+details) and checks it with `flower compare RUN expected.json`. To re-run a study with one step changed,
+`flower run plan.yaml --reuse RUN --rerun-from STEP` takes the earlier run's results and inputs for everything
+upstream.
+
+## 6. Machines and software
 
 - **Clusters** are named in the plan: `transport: ssh` with `scheduler: slurm` or `none` (a workstation without a
   batch system). Host names and ssh options are run *inputs*, given with `-i NAME=VALUE` or
@@ -93,9 +99,9 @@ The same commands, plus:
 - **Software** comes from frozen recipes in `envs/<name>/`: setup, activate and check scripts, pinned and
   hashed. Explore with `flower remote exec --run RUN --cluster C --env NAME -- <cmd>`, then run
   `flower env freeze NAME` and `flower env replay NAME --run RUN --cluster C --fresh`. Steps use a recipe with
-  `--env NAME` (or `environment: NAME`). See [ENVIRONMENTS.md](ENVIRONMENTS.md).
+  `--env NAME` (or `environment: NAME`). See [the reference](REFERENCE.md#environments).
 
-## 6. What it is not (yet)
+## 7. What it is not (yet)
 
 - **One machine per project.** Runs are files in that project's `.flower/`. Other people see them through the
   UI (over an ssh tunnel), not through a shared server.

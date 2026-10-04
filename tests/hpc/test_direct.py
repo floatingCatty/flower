@@ -182,50 +182,6 @@ def test_shell_node_on_slurm_cluster(ff):
     assert len(ff.jobs()) == 1
 
 
-def test_function_node_on_cluster_ships_its_package(ff, tmp_path):
-    src = tmp_path / "plansrc"
-    (src / "sci").mkdir(parents=True)
-    (src / "sci" / "__init__.py").write_text("")
-    (src / "sci" / "helpers.py").write_text("K = 3\n")
-    (src / "sci" / "api.py").write_text(textwrap.dedent("""
-        import os
-        from sci.helpers import K
-        def f(x, ctx):
-            with open(os.path.join(ctx["workdir"], "plot.txt"), "w") as fh:
-                fh.write("p")
-            return {"v": x * K, "cwd": os.getcwd(), "workdir": ctx["workdir"], "summary": f"v={x * K}"}
-    """))
-    eng = ff.run(ff.plan([{"id": "f", "kind": "function", "cluster": "c", "call": "sci.api:f", "args": {"x": 5},
-                           "python": sys.executable, "outputs": {"v": "integer"}, "files": {"plot": "plot.txt"}}],
-                         clusters=_direct(ff), _source={"dir": str(src)}))
-    st = ff.drive(eng)
-    assert st.status == "succeeded", ff.why(eng)
-    r = st.nodes["f"].result
-    assert r.outputs["v"] == 15 and r.summary == "v=15"
-    assert r.outputs["cwd"] == r.outputs["workdir"] == r.outputs["job_dir"]
-    assert (Path(r.outputs["job_dir"]) / ".flower" / "code" / "sci" / "helpers.py").exists()
-    assert Path(r.files["plot"]["path"]).read_text() == "p"
-
-
-def test_function_node_on_cluster_can_call_an_installed_module(ff):
-    eng = ff.run(ff.plan([{"id": "f", "kind": "function", "cluster": "c", "call": "json:dumps",
-                           "args": {"obj": [1, 2]}, "python": sys.executable}], clusters=_direct(ff)))
-    st = ff.drive(eng)
-    assert st.status == "succeeded", ff.why(eng)
-    assert st.nodes["f"].result.outputs["result"] == "[1, 2]"
-
-
-def test_function_node_on_cluster_reports_the_traceback(ff, tmp_path):
-    src = tmp_path / "plansrc"
-    src.mkdir()
-    (src / "bad.py").write_text("def f():\n    raise ValueError('nope 42')\n")
-    eng = ff.run(ff.plan([{"id": "f", "kind": "function", "cluster": "c", "call": "bad:f", "python": sys.executable}],
-                         clusters=_direct(ff), _source={"dir": str(src)}))
-    st = ff.drive(eng)
-    err = st.nodes["f"].last.error
-    assert err["error_class"] == "exit_nonzero" and "nope 42" in err["message"]
-
-
 def test_cluster_nodes_do_not_count_against_local_concurrency(ff):
     eng = ff.run(ff.plan([{"id": f"s{i}", "kind": "shell", "cluster": "c", "run": "sleep 2"} for i in range(3)],
                          clusters=_direct(ff), defaults={"concurrency": 1}))
@@ -244,16 +200,13 @@ def _issues(nodes, clusters=None):
 
 
 def test_cluster_node_validation():
-    assert _issues([{"id": "s", "kind": "shell", "cluster": "c", "run": "true"},
-                    {"id": "f", "kind": "function", "cluster": "c", "call": "m:f"}]) == []
+    assert _issues([{"id": "s", "kind": "shell", "cluster": "c", "run": "true"}]) == []
     assert any("unknown scheduler" in m for _, m in _issues([{"id": "s", "kind": "shell", "run": "true"}],
                                                             {"c": {"scheduler": "pbs"}}))
     assert any(p.endswith(".cluster") and "unknown cluster" in m
                for p, m in _issues([{"id": "s", "kind": "shell", "cluster": "nope", "run": "true"}]))
     assert any(p.endswith(".stage_in") for p, _ in _issues([{"id": "s", "kind": "shell", "run": "true",
                                                               "stage_in": ["x"]}]))
-    assert any(p.endswith(".cwd") for p, _ in _issues([{"id": "s", "kind": "shell", "cluster": "c", "run": "true",
-                                                         "cwd": "elsewhere"}]))
 
 
 RESUME = """\

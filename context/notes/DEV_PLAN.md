@@ -1,5 +1,9 @@
 # flower — Development Plan (draft v0.1)
 
+> **A historical record.** flower has since been reduced (2026-10-05) to `shell` and `gate` steps and 18
+> commands; agent steps, `function`/`job`/`wait` steps, signals, MCP and reports were removed. The current
+> surface is in `docs/REFERENCE.md`.
+
 Date: 2026-10-02 · Status: draft for review · Working name, easy to rename before the first release.
 
 > **Implementation status (2026-10-03): M0–M6 implemented.**

@@ -1,5 +1,5 @@
 """Getting to the UI: the owner-only Unix socket (no token in the link), one background server per project
-(``flower ui`` / ``status`` / ``stop``), and ``flower open`` from a laptop through an ssh tunnel."""
+(``flower ui`` / ``status`` / ``stop``), and ``flower ui host:path`` from a laptop through an ssh tunnel."""
 from __future__ import annotations
 
 import http.client
@@ -147,7 +147,7 @@ def test_cli_ui_start_status_stop(project, cli):
     assert cli("ui", "status")[1]["data"]["running"] is False
 
 
-# ---------------------------------------------------------------- flower open, with a fake ssh that really forwards
+# ---------------------------------------------------------------- flower ui host:path, with a fake ssh that forwards
 
 FAKE_SSH = r'''#!PYTHON
 """Fake OpenSSH client: runs the remote command locally, and -N -L PORT:TARGET forwards for real."""
@@ -211,7 +211,7 @@ def fake_ssh(tmp_path, monkeypatch):
 
 def _flower_open(root: Path, tmp_path: Path, port: int):
     out = tmp_path / "open.out"
-    proc = subprocess.Popen([sys.executable, "-m", "flower", "open", f"box:{root}", "--no-browser",
+    proc = subprocess.Popen([sys.executable, "-m", "flower", "ui", f"box:{root}", "--no-browser",
                              "--port", str(port), "--flower", f"{sys.executable} -m flower"],
                             stdout=open(out, "w"), stderr=subprocess.STDOUT, env={**os.environ}, start_new_session=True)
     t0 = time.time()
@@ -236,7 +236,7 @@ def _tunnels(log_marker: str) -> list[str]:
 
 
 @pytest.mark.parametrize("streamlocal", [True, False])
-def test_flower_open_starts_tunnels_and_cleans_up(project, tmp_path, fake_ssh, monkeypatch, streamlocal):
+def test_flower_ui_remote_starts_tunnels_and_cleans_up(project, tmp_path, fake_ssh, monkeypatch, streamlocal):
     root, eng = project
     if not streamlocal:  # an sshd that forbids forwarding to Unix sockets: fall back to the TCP port + token
         monkeypatch.setenv("FAKESSH_NO_STREAMLOCAL", "1")
@@ -263,6 +263,8 @@ def test_flower_open_starts_tunnels_and_cleans_up(project, tmp_path, fake_ssh, m
     assert _tunnels(marker) == []
 
 
-def test_flower_open_rejects_a_target_without_path(cli):
-    code, res = cli("open", "justahost")
+def test_flower_ui_rejects_a_remote_target_without_path(cli):
+    code, res = cli("ui", "justahost:")
+    assert code != 0 and res["error"]["code"] == "usage"
+    code, res = cli("ui", "frobnicate")
     assert code != 0 and res["error"]["code"] == "usage"

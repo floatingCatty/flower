@@ -1,10 +1,8 @@
-"""Nodes that run on a cluster: ``job`` nodes, and ``shell`` / ``function`` nodes that name a ``cluster:``.
+"""Shell steps that name a ``cluster:``.
 
 The cluster's ``scheduler`` decides how the payload is started: ``slurm`` (sbatch, the default) or ``none``
 (a detached process straight on the host, see :mod:`flower.hpc.direct`). Its ``transport`` decides where:
-``local`` or ``ssh``. A ``shell`` node's ``run`` and a ``function`` node's call become the payload; the
-function's module (a local file or package next to the plan / on ``pythonpath``) is shipped with it, so
-it runs in the remote machine's own Python environment.
+``local`` or ``ssh``. The step's ``run`` becomes the payload.
 
 Lifecycle per attempt (all transitions journalled as ``job.*`` events):
 
@@ -34,7 +32,7 @@ from pathlib import Path
 from ..hpc import scheduler_for, slurm
 from ..hpc.transport import CmdResult, make_transport
 from ..rundir import fs_name
-from ..util import (FlowerError, atomic_write_json, atomic_write_text, digest, find_local_source, first_line,
+from ..util import (FlowerError, atomic_write_json, atomic_write_text, digest, first_line,
                     parse_duration, read_json, tail_text)
 from .base import scratch_env, RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, check_outputs, collect_files
 
@@ -66,15 +64,8 @@ def _backoff(n: int) -> float:
 
 
 def _payload(node: dict) -> str:
-    """The user payload (``user.sh``) for each node kind that can run on a cluster."""
-    kind = node.get("kind")
-    if kind == "shell":
-        return "set -euo pipefail\n" + str(node["run"]) + "\n"
-    if kind == "function":
-        py = shlex.quote(str(node.get("python") or "python3"))
-        return (f"set -eo pipefail\n{py} .flower/code/_flower_callfn.py {shlex.quote(str(node['call']))} "
-                '.flower/kwargs.json "$FLOWER_OUTPUTS" .flower/fctx.json\n')
-    return "set -eo pipefail\n" + str(node["script"]) + "\n"
+    """The user payload (``user.sh``): the step's shell command."""
+    return "set -euo pipefail\n" + str(node["run"]) + "\n"
 
 
 def _resources(cluster: dict, node: dict) -> dict:
@@ -166,7 +157,7 @@ class JobExecutor(Executor):
             env.setdefault(k, v)
         np = ctx.node.get("prelude")
         prelude = list(cluster.get("prelude") or []) + (list(np) if isinstance(np, list) else ([np] if np else []))
-        modules = list(cluster.get("modules") or []) + list(ctx.node.get("modules") or [])
+        modules = list(cluster.get("modules") or [])
         script = scheduler_for(cluster).render_job_script(key=ctx.job["submit_key"], job_dir=job_dir,
                                                           resources=ctx.job.get("resources") or {}, env=env,
                                                           prelude=prelude, modules=modules,
@@ -174,40 +165,15 @@ class JobExecutor(Executor):
                                                           tmpdir=ctx.node.get("tmpdir"))
         atomic_write_text(stage / "job.sh", script)
         atomic_write_text(stage / "user.sh", _payload(ctx.node))
-        if ctx.node.get("kind") == "function":
-            self._render_function(ctx, job_dir, stage)
         atomic_write_json(stage / "inputs.json", ctx.inputs)
         atomic_write_json(stage / "submit.json", {"run_id": ctx.run_id, "node": ctx.node["id"], "attempt": ctx.attempt,
                                                   "submit_key": ctx.job["submit_key"],
                                                   "fingerprint": ctx.job["fingerprint"]})
 
-    def _render_function(self, ctx: NodeCtx, job_dir: str, stage: Path) -> None:
-        """Ship the called module (when it is local code) plus the call shim, kwargs and context."""
-        import shutil
-        node = ctx.node
-        code = stage / "code"
-        if code.exists():
-            shutil.rmtree(code)
-        code.mkdir(parents=True)
-        shutil.copy2(Path(__file__).resolve().parent.parent / "_callfn.py", code / "_flower_callfn.py")
-        dirs = [str(Path(str(p)).expanduser()) for p in (node.get("pythonpath") or [])]
-        dirs.append((ctx.plan.get("_source") or {}).get("dir") or ".")
-        src = find_local_source(str(node["call"]).partition(":")[0], dirs)
-        if src is not None:  # otherwise the module must already be importable in the remote environment
-            if src.is_dir():
-                shutil.copytree(src, code / src.name, ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-            else:
-                shutil.copy2(src, code / src.name)
-        kwargs = node.get("args") if node.get("args") is not None else ctx.inputs
-        atomic_write_json(stage / "kwargs.json", kwargs or {})
-        atomic_write_json(stage / "fctx.json", {
-            "workdir": job_dir, "run_dir": job_dir, "run_id": ctx.run_id, "node_id": node["id"],
-            "attempt": ctx.attempt, "pythonpath": [f"{job_dir}/.flower/code"] + [str(p) for p in node.get("pythonpath") or []]})
-
     def _stage(self, ctx: NodeCtx, cluster: dict, tr, job_dir: str) -> None:
         """Create the job directory with everything the payload needs, in as few round trips as possible.
 
-        The directory's initial content (generated scripts, the function's code and arguments, local
+        The directory's initial content (generated scripts, local
         ``stage_in`` files as symlinks to their sources) is assembled under ``upload/`` and sent in ONE
         transfer that also creates the directory; cluster-side ``stage_in`` (``remote:`` sources, links on
         a local cluster) runs as ONE command after it. Over ssh that is 2 connections instead of one per file.
@@ -222,10 +188,6 @@ class JobExecutor(Executor):
         for name in ("job.sh", "user.sh", "inputs.json"):
             shutil.copy2(stage / name, up / name)
         shutil.copy2(stage / "submit.json", up / ".flower" / "submit.json")
-        if ctx.node.get("kind") == "function":
-            shutil.copytree(stage / "code", up / ".flower" / "code")
-            for name in ("kwargs.json", "fctx.json"):
-                shutil.copy2(stage / name, up / ".flower" / name)
         q = shlex.quote
         on_cluster: list[str] = []
         for item in ctx.node.get("stage_in") or []:

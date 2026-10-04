@@ -1,4 +1,4 @@
-"""Control verbs: cancel (node / run), rerun (--downstream, cache reuse, reopen), amendments, waits & signals."""
+"""Control verbs: cancel (node / run), rerun (--downstream, cache reuse, reopen), amendments."""
 from __future__ import annotations
 
 import json
@@ -72,16 +72,15 @@ def test_cancel_errors(mkplan, start):
 
 
 def test_cancel_whole_run(mkplan, start):
-    eng = start(mkplan([sh("a", "sleep 30"), sh("b", "true", needs=["a"]), {"id": "g", "kind": "gate"},
-                        {"id": "w", "kind": "wait", "signal": "go"}]))
+    eng = start(mkplan([sh("a", "sleep 30"), sh("b", "true", needs=["a"]), {"id": "g", "kind": "gate"}]))
     info = wait_running(eng, "a")
-    tick_until(eng, lambda s: s.nodes["g"].status == "waiting" and s.nodes["w"].status == "waiting")
+    tick_until(eng, lambda s: s.nodes["g"].status == "waiting")
     eng.cancel(reason="stop all")
     rep = eng.tick()
     st = eng.state()
     assert rep.status == "cancelled" and st.status == "cancelled"
     assert st.nodes["a"].status == "cancelled" and st.nodes["b"].status == "skipped"
-    assert st.nodes["g"].status == "cancelled" and st.nodes["w"].status == "cancelled"
+    assert st.nodes["g"].status == "cancelled"
     assert st.open_gates() == []
     assert st.gates["g#a1"].decision == "withdrawn"
     assert wait_for(lambda: not pid_alive(info["child_pid"]), 5)
@@ -351,80 +350,6 @@ def test_supersede_running_node_does_not_orphan_process(mkplan, start):
     assert not pid_alive(info["child_pid"]), "attempt 1 process still running after its node was superseded"
 
 
-# ------------------------------------------------------------------ waits & signals
-
-def test_wait_signal(mkplan, start):
-    eng = start(mkplan([{"id": "w", "kind": "wait", "signal": "go"},
-                        sh("after", 'echo "${w.outputs.data.x}"')]))
-    rep = drive(eng)
-    assert rep.status == "parked" and rep.next_poll_s == 0
-    assert any("waiting for signal" in x for x in rep.waiting_on)
-    eng.signal("other", {"x": 0})
-    drive(eng)
-    assert eng.state().nodes["w"].status == "waiting"
-    eng.signal("go", {"x": 42}, by="human:s")
-    assert drive(eng).status == "succeeded"
-    st = eng.state()
-    outs = dict(st.nodes["w"].result.outputs)
-    assert isinstance(outs.pop("signal_seq"), int)
-    assert outs == {"signal": "go", "data": {"x": 42}, "by": "human:s", "expired": False}
-    assert st.nodes["after"].result.summary == "42"
-    # parked -> running transition was journalled
-    types = [e["eventType"] for e in eng.journal.read() if e["eventType"] in ("run.parked", "run.started")]
-    assert "run.started" in types[types.index("run.parked"):]
-
-
-def test_signal_sent_before_wait_is_armed_is_not_consumed(mkplan, start):
-    """Signals are sticky (fixed): one sent before its wait node is armed is delivered when it arms."""
-    eng = start(mkplan([sh("a", "sleep 0.3"), {"id": "w", "kind": "wait", "signal": "go", "needs": ["a"]}]))
-    eng.tick()
-    eng.signal("go", {"early": True})
-    drive(eng)
-    st = eng.state()
-    assert st.nodes["w"].status == "succeeded" and st.nodes["w"].result.outputs["data"] == {"early": True}
-
-
-def test_signal_via_file_dropbox(mkplan, start):
-    eng = start(mkplan([{"id": "w", "kind": "wait", "signal": "ready"}]))
-    drive(eng)
-    (eng.paths.signals / "s1.json").write_text(json.dumps({"name": "ready", "data": [1, 2], "by": "cron"}))
-    assert drive(eng).status == "succeeded"
-    assert eng.state().nodes["w"].result.outputs["data"] == [1, 2]
-    assert (eng.paths.signals / "consumed" / "s1.json").exists()
-    assert len(events(eng, "signal.received")) == 1
-
-
-def test_wait_timer(mkplan, start):
-    eng = start(mkplan([{"id": "t", "kind": "wait", "timer": "1s"}, sh("after", "true", needs=["t"])]))
-    t0 = time.time()
-    eng.tick()
-    rep = eng.tick()
-    assert rep.status == "parked" and rep.next_poll_s > 0      # timed park keeps a driver alive
-    rep = drive(eng, timeout=10)
-    assert rep.status == "succeeded"
-    assert time.time() - t0 >= 0.9
-    assert eng.state().nodes["t"].result.outputs["timer"] is True
-
-
-def test_wait_deadline_expiry_is_branchable(mkplan, start):
-    eng = start(mkplan([{"id": "w", "kind": "wait", "signal": "data", "deadline": "1s"},
-                        sh("late", "true", when="${w.outputs.expired}"),
-                        sh("ontime", "true", when="not ${w.outputs.expired}"),
-                        sh("join", "true", needs=["late", "ontime"], trigger="all_done")]))
-    drive(eng, timeout=10)
-    st = eng.state()
-    assert st.nodes["w"].status == "succeeded" and st.nodes["w"].result.outputs["expired"] is True
-    assert len(events(eng, "wait.expired", "w")) == 1
-    assert st.nodes["late"].status == "succeeded" and st.nodes["ontime"].status == "skipped"
-    assert st.nodes["join"].status == "succeeded"
-
-
-def test_engine_drive_keeps_alive_for_timers(mkplan, start):
-    eng = start(mkplan([{"id": "t", "kind": "wait", "timer": "0.8s"}]))
-    rep = eng.drive(timeout=10, max_sleep=0.3)
-    assert rep.status == "succeeded"
-
-
 def test_rerun_reexecutes_when_upstream_file_changes(mkplan, start, tmp_path):
     cnt = tmp_path / "file.cnt"
     eng = start(mkplan([sh("a", counter(cnt) + '\necho "content $C" > data.txt', files={"data": "data.txt"}),
@@ -519,55 +444,6 @@ def test_rerun_foreach_parent_refuses_while_a_child_runs(mkplan, start):
         eng.rerun("each")
     assert ei.value.code == "node_running"
     eng.cancel(by="human:x")
-
-
-def _calc_plan(mkplan):
-    return mkplan([
-        sh("a", out_json({"x": 1})),
-        {"id": "f", "kind": "function", "call": "calc:f", "args": {"x": "${a.outputs.x}"}},
-    ])
-
-
-def test_function_cache_keys_on_module_source(mkplan, start, src_dir):
-    # regression (benchmark si-dos-fermi): editing the called module did not invalidate cached results
-    (src_dir / "calc.py").write_text("def f(x):\n    return {'v': x + 1}\n")
-    eng = start(_calc_plan(mkplan))
-    drive(eng)
-    assert eng.state().nodes["f"].result.outputs == {"v": 2}
-    eng.rerun("a")
-    drive(eng)
-    f = eng.state().nodes["f"].result
-    assert f.reused_from == "a1" and f.outputs == {"v": 2}            # source unchanged: reused
-    (src_dir / "calc.py").write_text("def f(x):\n    return {'v': x + 100}\n")
-    eng.rerun("a")
-    drive(eng)
-    f = eng.state().nodes["f"].result
-    assert f.reused_from is None and f.outputs == {"v": 101}          # source changed: re-executed
-
-
-def test_function_cache_keys_on_whole_local_package(mkplan, start, src_dir):
-    pkg = src_dir / "sci"
-    pkg.mkdir()
-    (pkg / "__init__.py").write_text("")
-    (pkg / "helpers.py").write_text("K = 1\n")
-    (pkg / "api.py").write_text("from sci.helpers import K\ndef f(x):\n    return {'v': x * K}\n")
-    extra = src_dir / "extra"                                          # a node-level pythonpath dir
-    extra.mkdir()
-    (extra / "other.py").write_text("def g():\n    return {'w': 1}\n")
-    eng = start(mkplan([
-        sh("a", out_json({"x": 3})),
-        {"id": "f", "kind": "function", "call": "sci.api:f", "args": {"x": "${a.outputs.x}"}},
-        {"id": "g", "kind": "function", "call": "other:g", "needs": ["a"], "pythonpath": [str(extra)]},
-    ]))
-    drive(eng)
-    assert eng.state().nodes["f"].result.outputs == {"v": 3}
-    (pkg / "helpers.py").write_text("K = 10\n")                        # a helper, not the called module
-    (extra / "other.py").write_text("def g():\n    return {'w': 22}\n")
-    eng.rerun("a")
-    drive(eng)
-    st = eng.state()
-    assert st.nodes["f"].result.reused_from is None and st.nodes["f"].result.outputs == {"v": 30}
-    assert st.nodes["g"].result.reused_from is None and st.nodes["g"].result.outputs == {"w": 22}
 
 
 def test_rerun_resets_retry_budget(mkplan, start):

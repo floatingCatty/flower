@@ -10,7 +10,7 @@ description: |
     frozen and replayed with `flower env`), which the generated step env-abacus-remote checks, and
     installs there if missing, before the first calculation;
   * the setup (structure, electron count) and the analysis (Fermi-Dirac integration of the DOS,
-    k-mesh convergence, agent review) run on this machine, on the DOS files fetched back with `files:`.
+    k-mesh convergence) run on this machine, on the DOS files fetched back with `files:`.
 
 inputs:
   host: {type: string, required: true, description: "ssh alias of the remote machine"}
@@ -32,10 +32,8 @@ inputs:
   dos_kmeshes: {type: array, default: [8, 12, 16, 24]}
   temperature_K: {type: number, default: 300}
   ef_tol_meV: {type: number, default: 5}
-  agent_review: {type: boolean, default: true}
 
 defaults:
-  harness: {name: claude, model: sonnet}
   timeout: {total: 30m, idle: 15m}
   retry: {max_attempts: 2, on: [lost, remote]}
 
@@ -50,16 +48,22 @@ clusters:
     min_poll: 3s
     env: {OMP_NUM_THREADS: "1"}
 
-results: [converge, review]
 
 nodes:
   # ---------------------------------------------------------------- local: setup
   - id: prepare
-    kind: function
+    kind: shell
+    description: 'Builds the silicon structure and counts the valence electrons ABACUS needs.'
     title: Build Si structure, count electrons (local)
-    python: ${inputs.analysis_python}
-    call: abacus_si:prepare
-    args: {pp_dir: "${inputs.pp_dir}", pseudo: "${inputs.pseudo}", orbital: "${inputs.orbital}",
+    run: |
+      ${inputs.analysis_python} - <<'EOF'
+      import json, os, sys
+      sys.path.insert(0, "${plan.dir}")
+      from abacus_si import prepare
+      args = json.load(open(os.environ["FLOWER_INPUTS"]))
+      json.dump(prepare(**args, ctx={"workdir": os.getcwd()}), open(os.environ["FLOWER_OUTPUTS"], "w"), default=str)
+      EOF
+    inputs: {pp_dir: "${inputs.pp_dir}", pseudo: "${inputs.pseudo}", orbital: "${inputs.orbital}",
            alat_bohr: "${inputs.alat_bohr}"}
     outputs: {stru: path, nelec: number, alat_angstrom: number}
     files: {stru: STRU}
@@ -67,6 +71,7 @@ nodes:
   # ---------------------------------------------------------------- remote: ABACUS
   - id: scf
     kind: shell
+    description: 'Self-consistent ABACUS run for the charge density; converged must be true, and etot_eV and ef_abacus_eV are the reference values.'
     cluster: remote
     title: ABACUS SCF (remote)
     environment: abacus
@@ -81,6 +86,7 @@ nodes:
 
   - id: dos
     kind: shell
+    description: 'Non-self-consistent density of states on one k-mesh, from the scf charge density.'
     cluster: remote
     title: ABACUS nscf DOS (remote)
     environment: abacus
@@ -98,51 +104,37 @@ nodes:
 
   # ---------------------------------------------------------------- local: analysis
   - id: fermi
-    kind: function
+    kind: shell
+    description: 'Finds the Fermi level by integrating the DOS with Fermi-Dirac occupations, and the band edges; for silicon ef_fd_eV lies in the gap (insulator true).'
     title: E_F by Fermi-Dirac integration of the DOS (local)
     foreach: "${dos.outputs.items}"
-    python: ${inputs.analysis_python}
-    call: abacus_si:fermi_from_dos
-    args: {out_dir: "${item.local_dir}/OUT.si", kmesh: "${item.kmesh}", ef_abacus_eV: "${item.ef_abacus_eV}",
+    run: |
+      ${inputs.analysis_python} - <<'EOF'
+      import json, os, sys
+      sys.path.insert(0, "${plan.dir}")
+      from abacus_si import fermi_from_dos
+      args = json.load(open(os.environ["FLOWER_INPUTS"]))
+      json.dump(fermi_from_dos(**args, ctx={"workdir": os.getcwd()}), open(os.environ["FLOWER_OUTPUTS"], "w"), default=str)
+      EOF
+    inputs: {out_dir: "${item.local_dir}/OUT.si", kmesh: "${item.kmesh}", ef_abacus_eV: "${item.ef_abacus_eV}",
            nelec: "${prepare.outputs.nelec}", temperature_K: "${inputs.temperature_K}"}
     outputs: {kmesh: integer, ef_fd_eV: number, ef_fd_smeared_dos_eV: number, ef_abacus_eV: number,
               vbm_eV: number, cbm_eV: number, gap_eV: number, midgap_eV: number,
               ef_minus_midgap_meV: number, insulator: boolean, plot: path}
 
   - id: converge
-    kind: function
+    kind: shell
+    description: 'Checks that the Fermi level is converged with the k-mesh: delta_last_meV between the two densest meshes, converged true when it is small.'
     title: k-point convergence of E_F (local)
-    python: ${inputs.analysis_python}
-    call: abacus_si:converge
-    args: {results: "${fermi.outputs.items}", tol_meV: "${inputs.ef_tol_meV}"}
+    run: |
+      ${inputs.analysis_python} - <<'EOF'
+      import json, os, sys
+      sys.path.insert(0, "${plan.dir}")
+      from abacus_si import converge
+      args = json.load(open(os.environ["FLOWER_INPUTS"]))
+      json.dump(converge(**args, ctx={"workdir": os.getcwd()}), open(os.environ["FLOWER_OUTPUTS"], "w"), default=str)
+      EOF
+    inputs: {results: "${fermi.outputs.items}", tol_meV: "${inputs.ef_tol_meV}"}
     outputs: {table: array, ef_eV: number, gap_eV: number, kmesh: integer, delta_last_meV: number,
               converged: boolean, plot: path}
     files: {plot: convergence.png}
-
-  - id: review
-    kind: agent
-    title: Physical sanity review (local)
-    when: "${inputs.agent_review}"
-    needs: [converge]
-    harness: {name: claude, model: sonnet, budget_usd: 1}
-    prompt: |
-      You are reviewing a small DFT workflow result. Do not run any new calculations; you may read files.
-      System: bulk diamond Si, a = ${prepare.outputs.alat_angstrom} Å, PBE, ABACUS LCAO basis
-      (${inputs.orbital}), ${prepare.outputs.nelec} valence electrons per cell.
-      SCF (k=${inputs.scf_kmesh}^3): ${scf.summary}.
-      The Fermi level was obtained by solving ∫ g(E) f_FD(E; E_F, T=${inputs.temperature_K} K) dE = N_e on the
-      unbroadened nscf DOS histogram, for several k-meshes:
-      ${converge.outputs.table}
-      Convergence verdict: ${converge.summary}
-      Convergence plot: ${converge.files.plot}
-
-      Judge, briefly and concretely:
-      1. Is E_F where it should be for an intrinsic semiconductor (relative to VBM/CBM/midgap)?
-      2. Why does the ABACUS-reported E_F differ, and which number should be quoted as "the Fermi level"?
-      3. Is the DOS gap plausible for PBE Si with this LCAO basis (vs ~0.6 eV plane-wave PBE, 1.17 eV expt)?
-      4. Is E_F converged with k-mesh? Anything suspicious in the numbers?
-    outputs:
-      ok: {type: boolean, description: "true if the result is physically sensible"}
-      ef_to_quote_eV: number
-      concerns: {type: array, items: {type: string}}
-    timeout: {total: 15m}

@@ -1,7 +1,7 @@
 """The development loop inside a run: edit the plan file (or the code), `flower rerun RUN NODE --follow`.
 
 * rerun picks up edits to the plan file for the node, its downstream and new nodes, as a recorded amendment;
-* approval: `policies: {edits: ask|unfinished|all}` (default ask) or `--yes` from the human running it;
+* new and unfinished steps change at once; an edit of a finished step waits for approval (or `--yes` from the human running it);
 * --follow watches one node until it finishes and exits 0/1 by its result; while someone follows, polling is fast.
 """
 from __future__ import annotations
@@ -18,10 +18,9 @@ from flower.plan import normalize, validate
 from flower.rundir import RunPaths, followers, list_runs
 
 
-def _plan(tmp_path: Path, nodes: str, policy: str | None = None) -> Path:
+def _plan(tmp_path: Path, nodes: str) -> Path:
     p = tmp_path / "plan.yaml"
-    pol = f"policies: {{edits: {policy}}}\n" if policy else ""
-    p.write_text("flower: 1\nid: dev\n" + pol + "nodes:\n" + textwrap.dedent(nodes))
+    p.write_text("flower: 1\nid: dev\nnodes:\n" + textwrap.dedent(nodes))
     return p
 
 
@@ -46,10 +45,10 @@ def _eng(home, rid) -> Engine:
 
 
 def test_rerun_picks_up_a_plan_edit_and_follows_the_node(cli, home, tmp_path):
-    plan = _plan(tmp_path, A_OK + B_FAIL, policy="unfinished")
+    plan = _plan(tmp_path, A_OK + B_FAIL)
     rid = _start(cli, plan)
     assert _eng(home, rid).state().nodes["b"].status == "failed"
-    _plan(tmp_path, A_OK + B_FIXED, policy="unfinished")  # fix it in the plan file
+    _plan(tmp_path, A_OK + B_FIXED)  # fix it in the plan file
     code, res = cli("rerun", rid, "b", "--follow")
     assert code == 0 and res["data"]["status"] == "succeeded", res
     st = _eng(home, rid).state()
@@ -60,19 +59,22 @@ def test_rerun_picks_up_a_plan_edit_and_follows_the_node(cli, home, tmp_path):
     assert not (_eng(home, rid).paths.follow / "b.json").exists()  # the follow marker is gone
 
 
-def test_default_policy_asks_before_applying_an_edit(cli, home, tmp_path):
+def test_an_edit_of_a_failed_step_applies_and_of_a_succeeded_one_asks(cli, home, tmp_path):
     plan = _plan(tmp_path, A_OK + B_FAIL)
     rid = _start(cli, plan)
     _plan(tmp_path, A_OK + B_FIXED)
-    code, res = cli("rerun", rid, "b")
-    assert code == 3 and res["data"]["gate"].startswith("amend-")
-    eng = _eng(home, rid)
-    assert eng.state().nodes["b"].status == "failed"  # nothing re-ran with the old definition
-    code, _ = cli("approve", rid, res["data"]["gate"])
-    assert code in (0, 3)
-    code, res = cli("rerun", rid, "b", "--follow")
+    code, res = cli("rerun", rid, "b", "--follow")         # b failed: unfinished, so the fix applies at once
     assert code == 0, res
     assert _eng(home, rid).state().nodes["b"].result.outputs["y"] == 20
+    _plan(tmp_path, A_OK.replace("2}", "3}") + B_FIXED)    # a succeeded: changing it waits for a decision
+    code, res = cli("rerun", rid, "a")
+    assert code == 3 and res["data"]["gate"].startswith("amend-")
+    assert _eng(home, rid).state().nodes["a"].result.outputs["x"] == 2
+    code, _ = cli("approve", rid, res["data"]["gate"])        # BUGS #20: approved on a finished run, it applies
+    assert code in (0, 3)
+    code, res = cli("rerun", rid, "a", "--follow")
+    assert code == 0, res
+    assert _eng(home, rid).state().nodes["a"].result.outputs["x"] == 3
 
 
 def test_yes_approves_the_edit(cli, home, tmp_path):
@@ -83,21 +85,21 @@ def test_yes_approves_the_edit(cli, home, tmp_path):
     assert code == 0 and _eng(home, rid).state().nodes["b"].result.outputs["y"] == 20
 
 
-def test_unfinished_policy_still_asks_for_a_finished_node(cli, home, tmp_path):
-    plan = _plan(tmp_path, A_OK + B_FIXED, policy="unfinished")
+def test_an_edit_of_a_finished_node_asks(cli, home, tmp_path):
+    plan = _plan(tmp_path, A_OK + B_FIXED)
     rid = _start(cli, plan)
     assert _eng(home, rid).state().status == "succeeded"
-    _plan(tmp_path, A_OK.replace("2}", "3}") + B_FIXED, policy="unfinished")  # edit a succeeded node
+    _plan(tmp_path, A_OK.replace("2}", "3}") + B_FIXED)  # edit a succeeded node
     code, res = cli("rerun", rid, "a")
     assert code == 3 and res["data"]["changed"] == ["a"]
 
 
 def test_new_node_added_by_rerun(cli, home, tmp_path):
-    plan = _plan(tmp_path, A_OK + B_FIXED, policy="unfinished")
+    plan = _plan(tmp_path, A_OK + B_FIXED)
     rid = _start(cli, plan)
     _plan(tmp_path, A_OK + B_FIXED + """\
   - {id: c, kind: shell, run: 'echo "{\\"z\\": $((${b.outputs.y} + 1))}" > "$FLOWER_OUTPUTS"', outputs: {z: integer}}
-""", policy="unfinished")
+""")
     code, res = cli("rerun", rid, "c", "--follow")
     assert code == 0, res
     st = _eng(home, rid).state()
@@ -108,11 +110,11 @@ def test_new_node_added_by_rerun(cli, home, tmp_path):
 def test_only_the_rerun_cone_is_picked_up(home, tmp_path, cli):
     plan = _plan(tmp_path, A_OK + B_FIXED + """\
   - {id: other, kind: shell, run: 'echo one'}
-""", policy="unfinished")
+""")
     rid = _start(cli, plan)
     _plan(tmp_path, A_OK + B_FIXED.replace("* 10", "* 100") + """\
   - {id: other, kind: shell, run: 'echo two'}
-""", policy="all")
+""")
     ed = _eng(home, rid).plan_edits("a")
     assert ed["changed"] == ["b"] and ed["added"] == []  # `other` is not downstream of `a`
 
@@ -136,9 +138,11 @@ def test_followers_make_polling_fast(cli, home, tmp_path):
     assert followers(paths) == ["a"] and not (paths.follow / "dead.json").exists()  # stale markers are cleaned
 
 
-def test_edits_policy_is_validated():
-    raw = {"flower": 1, "id": "p", "policies": {"edits": "sometimes"}, "nodes": [{"id": "a", "kind": "shell", "run": "true"}]}
-    assert any(i["path"] == "policies.edits" for i in validate(normalize(raw)))
+def test_policies_and_results_of_older_plans_are_dropped():
+    raw = {"flower": 1, "id": "p", "policies": {"edits": "ask"}, "results": ["a"],
+           "nodes": [{"id": "a", "kind": "shell", "run": "true"}]}
+    plan = normalize(raw)
+    assert validate(plan) == [] and "policies" not in plan and "results" not in plan
 
 
 # ---------------------------------------------------------------------- the run first: start / add / init / hook
@@ -159,7 +163,7 @@ def test_start_creates_a_parked_draft_run(cli, home, tmp_path, monkeypatch):
     st = _eng(home, rid).state()
     assert st.status == "parked" and "no steps yet" in st.status_reason
     plan = (tmp_path / "ans" / "plan.yaml").read_text()
-    assert "nodes: []" in plan and "edits: unfinished" in plan
+    assert "nodes: []" in plan and "policies" not in plan
     code, res = cli("start", "Find the answer", "--id", "ans", "--dir", str(tmp_path / "ans"))
     assert code != 0 and res["error"]["code"] == "exists"
 
@@ -324,12 +328,12 @@ def test_editing_a_foreach_steps_template_reruns_its_items(cli, home, tmp_path):
     """BUGS #23: a foreach step edited in the plan file (not its items) was re-collected with the old children."""
     plan = _plan(tmp_path, """\
   - {id: f, kind: shell, foreach: [1, 2], run: 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
-""", policy="unfinished")
+""")
     rid = _start(cli, plan)
     assert _eng(home, rid).state().status == "succeeded"
     _plan(tmp_path, """\
   - {id: f, kind: shell, foreach: [1, 2], run: 'echo "{\\"v\\": $((${item} * 10))}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
-""", policy="unfinished")
+""")
     code, res = cli("rerun", rid, "f", "--follow", "--yes")
     assert code == 0, res
     st = _eng(home, rid).state()
@@ -369,7 +373,7 @@ def test_sync_tunes_a_cluster_without_rerunning(cli, home, tmp_path):
     """BUGS #41: `cpus: 16` added to a running plan's cluster was ignored (a run's clusters were fixed), so three
     8-core jobs started on a machine meant to give the study 16 cores. Pacing settings may now change mid-run
     (`flower sync`, or any rerun/add); where a step runs stays fixed."""
-    head = ("flower: 1\nid: dev\npolicies: {edits: unfinished}\nclusters:\n"
+    head = ("flower: 1\nid: dev\nclusters:\n"
             "  box: {transport: local, scheduler: none, max_jobs: 2%s}\nnodes:\n" + A_OK)
     p = tmp_path / "plan.yaml"
     p.write_text(head % "")
@@ -393,7 +397,7 @@ def test_sync_tunes_a_cluster_without_rerunning(cli, home, tmp_path):
 def test_a_newer_plan_file_supersedes_an_older_waiting_edit(cli, home, tmp_path):
     """BUGS #58: an edit of finished work waits for approval; when the file was edited again and synced, the
     first proposal stayed open and parked the finished run. Each sync now withdraws older snapshots of the file."""
-    head = "flower: 1\nid: dev\npolicies: {edits: unfinished}\nnodes:\n"
+    head = "flower: 1\nid: dev\nnodes:\n"
     p = tmp_path / "plan.yaml"
     p.write_text(head + A_OK)
     rid = _start(cli, p)
@@ -460,9 +464,9 @@ def test_rerun_names_edits_it_does_not_apply(cli, home, tmp_path):
   - {id: a, kind: shell, run: 'echo "{\\"x\\": 1}" > "$FLOWER_OUTPUTS"', outputs: {x: integer}}
   - {id: b, kind: shell, run: 'echo "{\\"y\\": 1}" > "$FLOWER_OUTPUTS"', outputs: {y: integer}}
 """
-    plan = _plan(tmp_path, two, policy="unfinished")
+    plan = _plan(tmp_path, two)
     rid = _start(cli, plan)
-    _plan(tmp_path, two.replace('x\\": 1', 'x\\": 2').replace('y\\": 1', 'y\\": 2'), policy="unfinished")
+    _plan(tmp_path, two.replace('x\\": 1', 'x\\": 2').replace('y\\": 1', 'y\\": 2'))
     code, res = cli("rerun", rid, "a", "--yes")
     assert code == 0 and "also changes b" in res["message"] and "flower sync" in res["message"], res
     code, res = cli("sync", rid, "--yes")
@@ -502,9 +506,9 @@ def test_a_timeout_edit_keeps_finished_foreach_items(cli, home, tmp_path):
     body = """\
   - {id: f, kind: shell, foreach: [1, 2], timeout: {total: TT}, run: 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
 """
-    plan = _plan(tmp_path, body.replace("TT", "1h"), policy="unfinished")
+    plan = _plan(tmp_path, body.replace("TT", "1h"))
     rid = _start(cli, plan)
-    _plan(tmp_path, body.replace("TT", "24h"), policy="unfinished")
+    _plan(tmp_path, body.replace("TT", "24h"))
     code, res = cli("sync", rid, "--yes")
     assert code == 0, res
     _eng(home, rid).drive(until="settled", timeout=30)
@@ -515,9 +519,9 @@ def test_a_timeout_edit_keeps_finished_foreach_items(cli, home, tmp_path):
     assert st.status == "succeeded", st.status
     # the same for a plain step: a finished step takes the new timeout without running again
     one = "  - {id: g, kind: shell, timeout: {total: TT}, run: 'true'}\n"
-    plan = _plan(tmp_path, one.replace("TT", "1h"), policy="unfinished")
+    plan = _plan(tmp_path, one.replace("TT", "1h"))
     rid = _start(cli, plan)
-    _plan(tmp_path, one.replace("TT", "2h"), policy="unfinished")
+    _plan(tmp_path, one.replace("TT", "2h"))
     code, res = cli("sync", rid)          # no approval needed: nothing finished is touched
     assert code == 0 and "changed g" in res["message"], res
     st = _eng(home, rid).state()
@@ -540,14 +544,14 @@ def test_items_appended_to_a_running_foreach_start_now(cli, home, tmp_path):
     body = """\
   - {id: f, kind: shell, foreach: ITEMS, run: 'sleep ${item}; echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
 """
-    plan = _plan(tmp_path, body.replace("ITEMS", "[20]"), policy="unfinished")
+    plan = _plan(tmp_path, body.replace("ITEMS", "[20]"))
     code, res = cli("run", str(plan), "--yes", "--detach")
     rid = res["data"]["run_id"]
     eng = _eng(home, rid)
     deadline = time.time() + 20
     while time.time() < deadline and eng.state().nodes.get("f[0]") is None:
         eng.tick(); time.sleep(0.2)
-    _plan(tmp_path, body.replace("ITEMS", "[20, 0]"), policy="unfinished")
+    _plan(tmp_path, body.replace("ITEMS", "[20, 0]"))
     code, res = cli("sync", rid)
     assert code == 0, res
     deadline = time.time() + 15     # well inside the first item's 20 s, even on a loaded machine
@@ -562,7 +566,7 @@ def test_a_settings_edit_reaches_pending_items_while_one_runs(cli, home, tmp_pat
     """BUGS #52: lowering a remote step's cores so two items fit the cpu budget did not reach the pending items
     until the running one had finished (the re-expansion waited for every in-flight item)."""
     import time
-    head = ("flower: 1\nid: dev\npolicies: {edits: unfinished}\nclusters:\n"
+    head = ("flower: 1\nid: dev\nclusters:\n"
             "  box: {transport: local, scheduler: none, max_jobs: 1, min_poll: 0.2s, remote_root: '%s'}\nnodes:\n"
             % (tmp_path / "remote"))
     body = """\
@@ -639,9 +643,9 @@ def test_a_description_edit_applies_without_rerunning(cli, home, tmp_path):
   - {id: f, kind: shell, foreach: [1, 2], description: DESC, run: 'echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
   - {id: g, kind: shell, needs: [f], description: DESC, run: 'true'}
 """
-    plan = _plan(tmp_path, body.replace("DESC", "old words"), policy="unfinished")
+    plan = _plan(tmp_path, body.replace("DESC", "old words"))
     rid = _start(cli, plan)
-    _plan(tmp_path, body.replace("DESC", "Squares; read v."), policy="unfinished")
+    _plan(tmp_path, body.replace("DESC", "Squares; read v."))
     code, res = cli("sync", rid)          # no approval: nothing finished is re-run
     assert code == 0 and "plan edits applied" in res["message"], res
     _eng(home, rid).drive(until="settled", timeout=30)
@@ -697,7 +701,7 @@ def test_an_edited_script_is_not_served_from_cache(cli, home, tmp_path):
     plan = _plan(tmp_path, """\
   - {id: a, kind: shell, run: 'echo "{\\"x\\": 1}" > "$FLOWER_OUTPUTS"', outputs: {x: integer}}
   - {id: b, kind: shell, needs: [a], run: 'python3 ${plan.dir}/s.py > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
-""", policy="unfinished")
+""")
     rid = _start(cli, plan)
     assert _eng(home, rid).state().nodes["b"].result.outputs["v"] == 1
     (tmp_path / "s.py").write_text('import json, os\nprint(json.dumps({"v": 2}))\n')
@@ -721,10 +725,10 @@ def test_rerun_after_an_edit_still_reruns_unchanged_items(cli, home, tmp_path):
     body = """\
   - {id: f, kind: shell, foreach: ITEMS, run: 'python3 ${plan.dir}/s.py ${item} > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
 """
-    plan = _plan(tmp_path, body.replace("ITEMS", "[1, 2]"), policy="unfinished")
+    plan = _plan(tmp_path, body.replace("ITEMS", "[1, 2]"))
     rid = _start(cli, plan)
     (tmp_path / "s.py").write_text('import json, sys\nprint(json.dumps({"v": 10 * int(sys.argv[1])}))\n')
-    _plan(tmp_path, body.replace("ITEMS", "[1, 2, 3]"), policy="unfinished")
+    _plan(tmp_path, body.replace("ITEMS", "[1, 2, 3]"))
     code, res = cli("rerun", rid, "f", "--follow", "--yes")
     assert code == 0, res
     st = _eng(home, rid).state()
@@ -751,10 +755,10 @@ def test_editing_tmpdir_keeps_finished_results(cli, home, tmp_path):
     counter = Path(tempfile.mkdtemp()) / "count"   # outside the plan directory (files there are part of the key)
     counter.write_text("")
     run = 'echo x >> ' + str(counter) + '; echo "{\\"v\\": 1}" > "$FLOWER_OUTPUTS"'
-    plan = _plan(tmp_path, f"  - {{id: a, kind: shell, run: '{run}', outputs: {{v: integer}}}}\n", policy="all")
+    plan = _plan(tmp_path, f"  - {{id: a, kind: shell, run: '{run}', outputs: {{v: integer}}}}\n")
     rid = _start(cli, plan)
     assert counter.read_text().count("x") == 1
-    _plan(tmp_path, f"  - {{id: a, kind: shell, tmpdir: job, run: '{run}', outputs: {{v: integer}}}}\n", policy="all")
+    _plan(tmp_path, f"  - {{id: a, kind: shell, tmpdir: job, run: '{run}', outputs: {{v: integer}}}}\n")
     code, res = cli("rerun", rid, "a", "--cached", "--follow")
     assert code == 0, res
     st = _eng(home, rid).state()
@@ -767,7 +771,7 @@ def test_partial_results_of_a_running_foreach(cli, home, tmp_path):
     plan = _plan(tmp_path, """\
   - {id: f, kind: shell, foreach: [1, 2, 30], run: 'sleep $(( ${item} / 10 )); echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
   - {id: peek, kind: shell, inputs: {sofar: "${f.partial}"}, run: 'python3 -c "import json, os; d = json.load(open(os.environ[\\"FLOWER_INPUTS\\"]))[\\"sofar\\"]; print(json.dumps({\\"n\\": sum(x is not None for x in d)}))" > "$FLOWER_OUTPUTS"', outputs: {n: integer}}
-""", policy="unfinished")
+""")
     code, res = cli("run", str(plan), "--yes", "--detach")
     rid = list_runs(Path(os.environ["FLOWER_HOME"]))[-1]
     eng = _eng(home, rid)

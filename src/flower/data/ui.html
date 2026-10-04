@@ -266,12 +266,8 @@ const S = { runs: [], runId: null, run: null, tab: "run", node: null, nodeData: 
 
 // Eleforge canvas TYPE_COLORS (constellation-node-helpers.ts) mapped onto flower node kinds.
 const TYPE = {
-  agent:    { color: "#38bdf8", name: "Agent",    icon: "bot" },       // BOT
   gate:     { color: "#a78bfa", name: "Human",    icon: "user" },      // HUMAN
-  job:      { color: "#fb923c", name: "HPC job",  icon: "layers" },    // STANDARD_DAG
   shell:    { color: "#818cf8", name: "Shell",    icon: "terminal" },  // DEFAULT
-  function: { color: "#34d399", name: "Function", icon: "braces" },    // EMBED
-  wait:     { color: "#fbbf24", name: "Wait",     icon: "clock" },     // CONTINUE
   foreach:  { color: "#c084fc", name: "Fan-out",  icon: "split" },     // RESULT
 };
 const CHECKPOINT = "#f59e0b", FAILED = "#ef4444";
@@ -306,7 +302,7 @@ const kindOf = (n) => (n.foreach && n.kind !== "gate" ? "foreach" : n.kind);
 const typeOf = (n) => TYPE[kindOf(n)] || TYPE.shell;
 const runColor = (r) => {   // Eleforge getNodeColor: the folder takes the colour of its most significant task type
   const k = new Set(r.nodes.map(kindOf));
-  return (k.has("job") ? TYPE.job : k.has("agent") ? TYPE.agent : k.has("gate") ? TYPE.gate : TYPE.shell).color;
+  return (k.has("gate") ? TYPE.gate : TYPE.shell).color;
 };
 
 // ---------------------------------------------------------------- helpers
@@ -347,8 +343,6 @@ const enc = encodeURIComponent;
 const fileUrl = (p) => `/api/runs/${enc(S.runId)}/file?path=${enc(p)}&token=${enc(TOKEN)}`;
 const sh = (iconName, text, right) => el("h3", { class: "sh" }, iconName ? icon(iconName, 12) : null, text, right ? el("span", { class: "r" }, right) : null);
 const card = (iconName, title, ...kids) => el("div", { class: "card" }, sh(iconName, title), ...kids);
-const costText = (c, long) => !c ? null : c.usd ? `$${c.usd.toFixed(2)}` :
-  c.input_tokens ? `${Math.round((c.input_tokens + c.output_tokens) / 1000)}k${long ? " tokens" : ""}` : null;
 function toast(msg) {
   const t = document.getElementById("toast");
   t.textContent = msg; t.style.display = "block"; clearTimeout(toast._t); toast._t = setTimeout(() => (t.style.display = "none"), 2600);
@@ -396,22 +390,20 @@ function progressBar(cls, r, states) {
   return bar;
 }
 function renderTop(r) {
-  const c = r.counts || {}, cost = costText(r.cost, true);
+  const c = r.counts || {};
   document.getElementById("topstatus").replaceChildren(el("span", { class: "row", style: "gap:12px" }, chip(r.status),
     progressBar("minibar", r, ["succeeded", "running", "waiting", "retrying", "failed"]),
-    el("span", { class: "mono" }, `${c.succeeded || 0}/${r.nodes.length}`), el("span", {}, r.elapsed),
-    cost ? el("span", {}, cost) : null));
+    el("span", { class: "mono" }, `${c.succeeded || 0}/${r.nodes.length}`), el("span", {}, r.elapsed)));
   const acts = document.getElementById("topacts"); acts.textContent = "";
   if (r.stalled) acts.append(el("button", { class: "primary", onclick: () => act("resume", {}, "resumed") }, "Resume"));
-  acts.append(el("button", { onclick: async () => { await act("report", {}, "report written"); window.open(`/runs/${enc(r.id)}/report?token=${enc(TOKEN)}`, "_blank"); } }, "Open report"));
   if (!["succeeded", "failed", "cancelled", "rejected"].includes(r.status))
     acts.append(el("button", { class: "danger", onclick: () => confirm("Cancel the whole run?") && act("cancel", {}, "cancel requested") }, "Cancel run"));
-  const n = r.gates.length + r.waits.length;
+  const n = r.gates.length;
   const banner = document.getElementById("banner");
   banner.classList.toggle("show", n > 0 || !!r.stalled);
-  banner.replaceChildren(icon(r.gates.length ? "hand" : r.waits.length ? "clock" : "play", 14, CHECKPOINT),
+  banner.replaceChildren(icon(r.gates.length ? "hand" : "play", 14, CHECKPOINT),
     el("span", { style: "font-weight:500" }, r.gates.length ? `${r.gates.length} decision${r.gates.length > 1 ? "s" : ""} waiting for you` :
-      r.waits.length ? `Waiting for signal “${r.waits[0].signal}”` : "Nothing is driving this run"),
+      "Nothing is driving this run"),
     el("button", { class: "primary", style: "height:26px", onclick: () => setTab("run") }, "Review"));
   document.querySelector('.tab[data-tab="run"]').replaceChildren("Run", n ? el("span", { class: "count" }, String(n)) : "");
 }
@@ -516,7 +508,7 @@ function statusLook(status, color, kind) {
   if (status === "succeeded") L.cls = "breathe";
   if (["failed", "cancelled", "rejected"].includes(status)) { L.stroke = FAILED; L.pulse = FAILED; }
   if (status === "waiting" || status === "parked") {     // Eleforge "checkpoint": amber, 2px, pulsing, Hand icon
-    L.stroke = CHECKPOINT; L.pulse = CHECKPOINT; L.width = 2; L.cls = "attn"; L.icon = kind === "wait" ? "clock" : "hand";
+    L.stroke = CHECKPOINT; L.pulse = CHECKPOINT; L.width = 2; L.cls = "attn"; L.icon = "hand";
   }
   return L;
 }
@@ -633,21 +625,13 @@ function renderRunTab(r) {
       el("div", { class: "btns" }, g.decisions.map((d, i) => el("button", { class: i === 0 ? "primary" : (["reject", "abort"].includes(d) ? "danger" : null),
         onclick: () => act("answer", { gate: g.id, decision: d, text: text.value }, `${d} recorded`) }, d)))));
   }
-  for (const w of r.waits) {
-    const data = el("textarea", { class: "code", rows: 2, placeholder: '{"value": …}  JSON payload' });
-    b.append(el("div", { class: "decision" },
-      el("div", { class: "t t-label" }, icon("clock", 14, CHECKPOINT), `${w.node} waits for signal “${w.signal}”`),
-      el("div", { class: "tiny muted", style: "margin:4px 0 8px" }, w.deadline_at ? `deadline ${w.deadline_at.replace("T", " ").slice(0, 16)} UTC` : "no deadline"),
-      data, el("div", { class: "btns" }, el("button", { class: "primary", onclick: () => act("signal", { name: w.signal, data: data.value }, "signal sent") }, "Send signal"))));
-  }
   if (r.stalled) b.append(el("div", { class: "decision" }, el("div", { class: "t t-label" }, icon("play", 14, CHECKPOINT), "Nothing is driving this run"),
     el("div", { class: "small muted", style: "margin-top:4px" }, "Work is pending but no driver process is running."),
     el("div", { class: "btns" }, el("button", { class: "primary", onclick: () => act("resume", {}, "resumed") }, "Resume"))));
   b.append(card("activity", "Progress",
     el("div", { class: "stats" },
       el("div", { class: "stat" }, el("b", {}, `${c.succeeded || 0}/${r.nodes.length}`), el("span", {}, "completed")),
-      el("div", { class: "stat" }, el("b", {}, r.elapsed), el("span", {}, "elapsed")),
-      el("div", { class: "stat" }, el("b", {}, costText(r.cost) || "—"), el("span", {}, r.cost && r.cost.usd ? "agent cost" : "agent tokens"))),
+      el("div", { class: "stat" }, el("b", {}, r.elapsed), el("span", {}, "elapsed"))),
     progressBar("bar", r, ["succeeded", "running", "waiting", "retrying", "failed", "skipped"]),
     el("div", { class: "legend-row" },
       Object.entries(c).map(([s, v]) => el("span", { class: "row", style: "gap:5px" }, el("span", { class: "dot", style: `background:${(STATUS[s] || [0, "#a8a29e"])[1]}` }),
@@ -796,9 +780,6 @@ function attemptBlock(a, open) {
   const kv = el("div", { class: "kv", style: "margin-top:12px" });
   kv.append(el("div", {}, "started"), el("div", {}, (a.started || "").replace("T", " ").slice(0, 19)));
   if (a.actor && a.actor !== "system") kv.append(el("div", {}, "by"), el("div", {}, a.actor));
-  if (a.session) kv.append(el("div", {}, "agent session"), el("div", {}, a.session + (a.repairs ? ` · ${a.repairs} repair turn(s)` : "")));
-  if (a.usage && (a.usage.input_tokens || a.usage.cost_usd != null))
-    kv.append(el("div", {}, "usage"), el("div", {}, `${a.usage.input_tokens || 0} in · ${a.usage.output_tokens || 0} out` + (a.usage.cost_usd != null ? ` · $${Number(a.usage.cost_usd).toFixed(4)}` : "")));
   b.append(kv);
   const where = el("div", { class: "kv" });
   if (a.job && a.job.job_id) where.append(el("div", {}, a.scheduler === "slurm" ? "slurm job" : "process"),

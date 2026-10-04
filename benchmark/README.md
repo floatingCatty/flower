@@ -5,7 +5,7 @@ in this folder holds the runs and is gitignored.
 
 | benchmark | what | status |
 |---|---|---|
-| [`si-dos-fermi`](si-dos-fermi/README.md) | ABACUS DOS of Si, with E_F from Fermi-Dirac integration of the DOS and a k-mesh convergence check | compute nodes pass; agent review blocked by local `claude` auth |
+| [`si-dos-fermi`](si-dos-fermi/README.md) | ABACUS DOS of Si, with E_F from Fermi-Dirac integration of the DOS and a k-mesh convergence check | E_F = 6.8301 eV (midgap) at 24³; re-run after the move to shell steps agrees to 1e-6 |
 | [`si-valence`](si-valence/README.md) | Si valence-band top: Δso, HH/LH/SO masses, Luttinger γ's, strain HH–LH splitting with 7 methods (QE, ABACUS, PySCF, DFTB+, tight binding, EPM, k·p), all on a remote workstation, each code in a frozen environment recipe | run succeeded (8 min); results in the README |
 | [`ttg-twistons`](ttg-twistons/README.md) | Theory of Turkel *et al.*, Science 2022 (twisted trilayer graphene): continuum model, Hartree–Fock (ours and the authors'), the authors' relaxation, corrugation | 10/15 claims reproduced, the rest explained |
 | [`si-nte`](si-nte/README.md) | Si negative thermal expansion, Rignanese *et al.* PRB 1996: QE DFPT + quasi-harmonic, two pseudopotentials | 16/18 (15/18 with PseudoDojo); a rerun from a fresh clone agrees to 1e-6 (`flower compare`) |

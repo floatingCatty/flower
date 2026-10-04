@@ -18,9 +18,6 @@ inputs:
   dataset_version: {type: string, default: "1.1"}
   analysis_python: {type: string, default: python3, description: "the Python of the local analysis steps (envs/analysis provides it)"}
 
-policies:
-  edits: unfinished
-
 defaults:
   timeout: {total: 2h, idle: 1h}
   retry: {max_attempts: 2, on: [lost, remote]}

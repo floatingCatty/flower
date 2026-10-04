@@ -1,4 +1,4 @@
-"""Executor protocol and the local-process plumbing shared by shell / function / agent nodes.
+"""Executor protocol and the local-process plumbing of shell steps.
 
 An executor is *start → poll → collect*, never "run and wait": ``start`` launches work and returns
 a handle that is journalled; ``poll`` is called by every ``tick`` and returns ``None`` while the work
@@ -36,7 +36,6 @@ class Outcome:
     message: str | None = None
     retryable: bool | None = None
     details: dict = field(default_factory=dict)
-    amendment: dict | None = None     # agent-proposed plan amendment (validated by the engine)
 
     @classmethod
     def fail(cls, error_class: str, message: str, **kw: Any) -> "Outcome":
@@ -90,8 +89,6 @@ class NodeCtx:
     handle: dict = field(default_factory=dict)
     progress: dict = field(default_factory=dict)
     job: dict = field(default_factory=dict)
-    session: str | None = None
-    repairs: int = 0
     series: int = 0            # attempts of one "series" (a start and its retries) share FLOWER_STATE_DIR
 
     @property

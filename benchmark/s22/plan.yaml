@@ -10,9 +10,6 @@ title: "Reproduce the S22 benchmark of noncovalent interaction energies, CCSD(T)
 description: |
   Reproduce the S22 benchmark of noncovalent interaction energies, CCSD(T)/CBS (Jurecka, Sponer, Cerny, Hobza, PCCP 8, 1985, 2006; doi:10.1039/B600027D)
 
-policies:
-  edits: unfinished
-
 inputs:
   host: {type: string, required: true, description: "ssh alias of the remote machine"}
   ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}

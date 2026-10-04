@@ -123,30 +123,6 @@ def test_unresolvable_reference_fails_with_template_class(mkplan, start):
     assert err["error_class"] == "template" and "nope" in err["message"]
 
 
-def test_function_node(mkplan, start, src_dir):
-    (src_dir / "mymod.py").write_text(textwrap.dedent("""
-        def square(x, ctx):
-            return {"sq": x * x, "node": ctx["node_id"], "attempt": ctx["attempt"]}
-        def scalar(x):
-            return x + 1
-        def boom(x):
-            raise ValueError("bad value %s" % x)
-    """))
-    eng = start(mkplan([
-        {"id": "f", "kind": "function", "call": "mymod:square", "inputs": {"x": 7}},
-        {"id": "g", "kind": "function", "call": "mymod:scalar", "args": {"x": "${f.outputs.sq}"}},
-        {"id": "h", "kind": "function", "call": "mymod:boom", "inputs": {"x": 1}},
-        {"id": "i", "kind": "function", "call": "mymod:square", "inputs": {"x": 1, "unexpected": 2}},
-    ]))
-    drive(eng)
-    st = eng.state()
-    assert st.nodes["f"].result.outputs == {"sq": 49, "node": "f", "attempt": 1}
-    assert st.nodes["g"].result.outputs == {"result": 50}
-    assert st.nodes["h"].status == "failed"
-    assert "ValueError: bad value 1" in st.nodes["h"].last.error["message"]
-    assert "does not accept" in st.nodes["i"].last.error["message"]
-
-
 # ------------------------------------------------------------------ when / triggers / on_failure
 
 def test_when_false_skips_node_and_downstream_with_reason(mkplan, start):

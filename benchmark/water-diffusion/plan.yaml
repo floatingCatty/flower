@@ -10,9 +10,6 @@ title: "Reproduce the size-dependent self-diffusion and the shear viscosity of r
 description: |
   Reproduce the size-dependent self-diffusion and the shear viscosity of rigid water models from MD (Tazi et al., J. Phys.: Condens. Matter 24, 284117 (2012), arXiv:1204.2501)
 
-policies:
-  edits: unfinished
-
 inputs:
   host: {type: string, description: "ssh alias of the remote machine"}
   ssh_options: {type: array, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}

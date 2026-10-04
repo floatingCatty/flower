@@ -11,9 +11,6 @@ title: "Reproduce the deterministic quantum-chemistry results of the Simons Coll
 description: |
   Reproduce the deterministic quantum-chemistry results of the Simons Collaboration hydrogen-chain benchmark in the minimal basis: the H10 potential energy curve (Table II: FCI, RHF, UHF, RCCSD, RCCSD(T), UCCSD, UCCSD(T)), the exact equilibrium and dissociation energies, and the thermodynamic-limit equation of state (Table V) (Motta et al., PRX 7, 031059 (2017), arXiv:1705.01608)
 
-policies:
-  edits: unfinished
-
 inputs:
   host: {type: string, required: true, description: "ssh alias of the remote machine"}
   ssh_options: {type: array, required: true, description: 'extra ssh/rsync options, e.g. ["-F", "/path/ssh_config"]'}

@@ -29,8 +29,6 @@ class Attempt:
     workdir: str | None = None
     progress: dict = field(default_factory=dict)
     job: dict = field(default_factory=dict)       # hpc sub-state
-    session: str | None = None
-    repairs: int = 0
     outputs: dict = field(default_factory=dict)
     files: dict = field(default_factory=dict)
     usage: dict = field(default_factory=dict)
@@ -135,7 +133,6 @@ class RunState:
     nodes: dict[str, NodeState] = field(default_factory=dict)
     gates: dict[str, Gate] = field(default_factory=dict)
     amendments: dict[str, Amendment] = field(default_factory=dict)
-    signals: list[dict] = field(default_factory=list)
     notes: list[dict] = field(default_factory=list)
     cancel_requested: bool = False
     completed_at: str | None = None
@@ -171,20 +168,6 @@ class RunState:
 
     def open_gates(self) -> list[Gate]:
         return [g for g in self.gates.values() if g.status == "open"]
-
-    def cost(self) -> dict:
-        usd, tin, tout = 0.0, 0, 0
-        priced = True
-        for ns in self.nodes.values():
-            for a in ns.attempts:
-                u = a.usage or {}
-                if u.get("cost_usd") is not None:
-                    usd += float(u["cost_usd"])
-                elif u.get("input_tokens"):
-                    priced = False
-                tin += int(u.get("input_tokens") or 0)
-                tout += int(u.get("output_tokens") or 0)
-        return {"usd": round(usd, 4), "input_tokens": tin, "output_tokens": tout, "complete": priced}
 
     def counts(self) -> dict[str, int]:
         out: dict[str, int] = {}
@@ -319,19 +302,6 @@ def apply(st: RunState, ev: dict) -> None:  # noqa: C901 - one switch, kept flat
             a.progress.update({k: v for k, v in p.items() if k != "attempt"})
             if p.get("handle"):
                 a.handle.update(p["handle"])
-    elif t == "agent.session":
-        a = _attempt(_node(st, nid), p.get("attempt"))
-        if a:
-            a.session = p.get("session_id")
-    elif t == "agent.repair":
-        a = _attempt(_node(st, nid), p.get("attempt"))
-        if a:
-            a.repairs = p.get("n", a.repairs + 1)
-            a.progress["repair_reason"] = p.get("reason")
-    elif t == "agent.decision":
-        a = _attempt(_node(st, nid), p.get("attempt"))
-        if a:
-            a.progress.setdefault("decisions", []).append(p)
     elif t.startswith("job."):
         ns = _node(st, nid)
         a = _attempt(ns, p.get("attempt"))
@@ -444,16 +414,6 @@ def apply(st: RunState, ev: dict) -> None:  # noqa: C901 - one switch, kept flat
             g.text = p.get("text")
             g.by = p.get("by") or ev.get("actor")
             g.answered_at = at
-    elif t == "wait.armed":
-        ns = _node(st, nid)
-        ns.status = "waiting"
-        a = _attempt(ns, p.get("attempt"))
-        if a:
-            a.progress.update({"wait": {k: v for k, v in p.items() if k != "attempt"}})
-    elif t == "signal.received":
-        st.signals.append({"at": at, "seq": ev.get("seq"), **p})
-    elif t == "wait.expired":
-        pass
     elif t == "plan.amendment.proposed":
         st.amendments[p["amendment_id"]] = Amendment(
             id=p["amendment_id"], proposed_at=at, proposed_by=p.get("proposed_by") or ev.get("actor"),

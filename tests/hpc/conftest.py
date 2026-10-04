@@ -100,7 +100,7 @@ class FF:
 
     @staticmethod
     def job(nid: str, script: str, **kw) -> dict:
-        n = {"id": nid, "kind": "job", "cluster": "c", "script": script}
+        n = {"id": nid, "kind": "shell", "cluster": "c", "run": script}
         n.update(kw)
         return n
 

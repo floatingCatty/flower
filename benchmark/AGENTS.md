@@ -14,6 +14,8 @@ the project's UI (`flower ui`). The full guide is in `.claude/skills/flower/SKIL
    (logged), not raw ssh.
 4. Reading files, papers and results directly is fine; *running* things beside the run is not, including a
    quick check whose answer you rely on (make it a one-line step).
+5. When it is done, `flower export RUN STEP` turns the steps behind STEP into a protocol that anyone re-runs
+   with `flower run protocol.yaml -y` and checks with `flower compare RUN expected.json`.
 
 If `FLOWER_INSIDE_RUN` is set you are inside a step: do its task and never call flower.
 <!-- flower:end -->

@@ -43,11 +43,10 @@ def test_validation_returns_all_issues_at_once():
         {"id": "a", "kind": "shell", "run": "true", "retyr": {"max_attempts": 2}},       # unknown field (typo)
         {"id": "b", "kind": "shell", "run": "echo ${ghost.outputs.x}"},                   # unknown ref
         {"id": "c", "kind": "shell", "timeout": {"total": "5 parsecs"}},                  # missing run + bad duration
-        {"id": "d", "kind": "job", "script": "x", "cluster": "nope"},                     # unknown cluster
+        {"id": "d", "kind": "shell", "run": "x", "cluster": "nope"},                      # unknown cluster
         {"id": "e", "kind": "gate", "on_reject": {"rerun": ["zzz"]}},                     # on_reject unknown node
-        {"id": "f", "kind": "function", "call": "nocolon"},                               # bad call
+        {"id": "f", "kind": "agent", "prompt": "x"},                                      # a removed kind
         {"id": "g", "kind": "teleport"},                                                  # unknown kind
-        {"id": "h", "kind": "wait"},                                                      # wait needs signal/timer
         {"id": "i", "kind": "shell", "run": "true", "trigger": "sometimes"},              # bad trigger
         {"id": "j", "kind": "shell", "run": "true", "retry": {"max_attempts": 0}},        # bad retry
     ], bogus_top=1)
@@ -84,19 +83,19 @@ def test_plan_invalid_error_payload():
     ({"flower": 1, "id": "p", "nodes": [{"id": "1bad", "kind": "shell", "run": "x"}]}, "node_id"),
     ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"},
                                            {"id": "a", "kind": "shell", "run": "y"}]}, "duplicate_id"),
-    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "agent"}]}, "required"),
-    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "agent", "prompt": "x", "harness": "gpt"}]}, "harness"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell"}]}, "required"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "function", "call": "m:f"}]}, "kind"),
     ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x",
                                            "outputs": {"k": "tensor"}}]}, "output_type"),
     ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x", "when": "lambda: 1"}]}, "expr"),
     ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x", "foreach": 3}]}, "foreach"),
     ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "gate", "decisions": []}]}, "decisions"),
-    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "wait", "signal": "s", "deadline": "soon"}]}, "duration"),
-    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x"}], "results": ["zz"]}, "unknown_ref"),
+    ({"flower": 1, "id": "p", "nodes": [{"id": "a", "kind": "shell", "run": "x", "timeout": {"total": "soon"}}]},
+     "duration"),
     ({"flower": 1, "id": "p", "clusters": {"h": {"transport": "ftp"}},
-      "nodes": [{"id": "a", "kind": "job", "cluster": "h", "script": "x"}]}, "cluster"),
+      "nodes": [{"id": "a", "kind": "shell", "cluster": "h", "run": "x"}]}, "cluster"),
     ({"flower": 1, "id": "p", "clusters": {"h": {"transport": "ssh"}},
-      "nodes": [{"id": "a", "kind": "job", "cluster": "h", "script": "x"}]}, "cluster"),
+      "nodes": [{"id": "a", "kind": "shell", "cluster": "h", "run": "x"}]}, "cluster"),
 ])
 def test_single_issue_codes(raw, code):
     assert code in codes(issues_of(raw))

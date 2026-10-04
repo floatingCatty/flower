@@ -6,12 +6,13 @@ A plan is the *contract* a user approves. It is a YAML document::
     id: si-bands
     title: Silicon band structure
     inputs:   {structure: {type: path, required: true}}
-    defaults: {harness: {name: claude, model: sonnet}, timeout: 2h, retry: {max_attempts: 2}}
+    defaults: {timeout: 2h, retry: {max_attempts: 2}}
     clusters: {hpc: {transport: ssh, host: myhpc, remote_root: ~/flower-runs}}
     nodes:
       - id: relax
-        kind: job
-        ...
+        kind: shell
+        cluster: hpc
+        run: ...
 
 Validation never stops at the first problem: it returns every issue as
 ``{code, path, message, suggestion}`` so an agent can fix the plan in one pass (LabFlow PlanLoadError).
@@ -31,26 +32,19 @@ from . import template as tpl
 from .util import FlowerError, digest, parse_duration
 
 PLAN_VERSION = 1
-NODE_KINDS = ("shell", "function", "agent", "job", "gate", "wait")
+NODE_KINDS = ("shell", "gate")
 TRIGGERS = ("all_success", "all_done", "any_success")
 OUTPUT_TYPES = ("string", "number", "integer", "boolean", "object", "array", "path", "any")
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_\-]*(\[\d+\])?$")
-KNOWN_HARNESSES = ("claude", "codex", "pi", "script")
-TOP_KEYS = {"flower", "id", "title", "description", "inputs", "defaults", "clusters", "policies", "results", "nodes"}
+TOP_KEYS = {"flower", "id", "title", "description", "inputs", "defaults", "clusters", "nodes"}
+DROPPED_TOP_KEYS = ("policies", "results")   # older plans: edits to unfinished steps now always apply; see `export`
 
 COMMON_KEYS = {"id", "kind", "title", "description", "needs", "when", "trigger", "inputs", "outputs",
-               "files", "retry", "timeout", "cache", "foreach", "tags", "env", "cwd", "on_failure",
+               "files", "retry", "timeout", "cache", "foreach", "env", "on_failure",
                "bind", "expanded_from", "generated"}
 KIND_KEYS = {
-    "shell": {"run", "shell", "cluster", "stage_in", "retrieve", "resources", "modules", "prelude", "environment",
-              "tmpdir"},
-    "function": {"call", "python", "pythonpath", "args", "cluster", "stage_in", "retrieve", "resources", "modules",
-                 "prelude", "environment", "tmpdir"},
-    "agent": {"prompt", "prompt_file", "harness", "system", "repair_attempts", "effects", "context"},
-    "job": {"cluster", "script", "resources", "stage_in", "retrieve", "poll", "deadline", "modules", "prelude",
-            "environment", "tmpdir"},
-    "gate": {"message", "decisions", "on_reject", "approve_value"},
-    "wait": {"signal", "deadline", "timer", "token"},
+    "shell": {"run", "cluster", "stage_in", "retrieve", "resources", "prelude", "environment", "tmpdir"},
+    "gate": {"message", "decisions", "on_reject"},
 }
 
 
@@ -156,23 +150,11 @@ def normalize_node(node: dict, defaults: dict) -> dict:
         base_r.update(defaults["retry"])
     n["retry"] = _merged(base_r, n.get("retry"))
     kind = n.get("kind")
-    if kind == "agent":
-        dh = defaults.get("harness") if isinstance(defaults.get("harness"), dict) else {}
-        hv = n.get("harness")
-        h = _merged(dh, hv) if not isinstance(hv, str) else {**dh, "name": hv}
-        if isinstance(h, dict):
-            h.setdefault("name", "claude")
-        n["harness"] = h
-        n.setdefault("repair_attempts", 2)
-        n.setdefault("cache", False)
-    elif kind in ("gate", "wait"):
-        n["cache"] = False  # a decision or an external event is never "reused"
+    if kind == "gate":
+        n["cache"] = False  # a decision is never "reused"
+        n.setdefault("decisions", ["approve", "reject"])
     else:
         n.setdefault("cache", True)
-    if kind == "gate":
-        n.setdefault("decisions", ["approve", "reject"])
-        dec = n["decisions"]
-        n.setdefault("approve_value", dec[0] if isinstance(dec, list) and dec else "approve")
     if on_cluster(n):
         n.setdefault("resources", {})
         n.setdefault("stage_in", [])
@@ -199,8 +181,8 @@ def normalize(raw: dict) -> dict:
     plan.setdefault("inputs", {})
     plan.setdefault("defaults", {})
     plan.setdefault("clusters", {})
-    plan.setdefault("policies", {})
-    plan.setdefault("results", [])
+    for k in DROPPED_TOP_KEYS:
+        plan.pop(k, None)
     nodes = plan.get("nodes")
     if isinstance(nodes, list):
         plan["nodes"] = [normalize_node(n, plan["defaults"]) if isinstance(n, dict) else n for n in nodes]
@@ -213,12 +195,12 @@ LOCAL_CLUSTER = "local"
 
 
 def _implicit_local_cluster(plan: dict) -> None:
-    """A shell/function step that names an `environment` but no `cluster` runs on this machine with it: on the
+    """A shell step that names an `environment` but no `cluster` runs on this machine with it: on the
     cluster `local` (transport local, no scheduler), defined here unless the plan has its own. So a recipe gives
     every step a reproducible software environment, local analysis included (no hard-coded interpreters)."""
     for n in plan["nodes"]:
         if isinstance(n, dict) and n.get("environment") and not n.get("cluster") \
-                and n.get("kind") in ("shell", "function"):
+                and n.get("kind") == "shell":
             n["cluster"] = LOCAL_CLUSTER
     # defined whenever a step uses it, also when the step arrives already resolved (an amendment of a running plan)
     if any(isinstance(n, dict) and n.get("cluster") == LOCAL_CLUSTER for n in plan["nodes"]):
@@ -279,8 +261,8 @@ def _environment_issues(plan: dict, n: dict, p: str) -> list:
         return [Issue("environment", f"{p}.environment", f"invalid environment name {name!r}",
                       "letters, digits, '.', '-', '_'; the recipe lives in envs/<name>/")]
     if not on_cluster(n) or not n.get("cluster"):
-        return [Issue("environment", f"{p}.environment", "`environment` applies to shell, function and job steps",
-                      "a shell/function step without `cluster:` uses it on this machine")]
+        return [Issue("environment", f"{p}.environment", "`environment` applies to shell steps",
+                      "a shell step without `cluster:` uses it on this machine")]
     if any(isinstance(x, dict) and str(x.get("generated", "")).startswith(f"env:{name}:") for x in plan.get("nodes") or []):
         return []  # the step was generated from a frozen recipe
     src = (plan.get("_source") or {}).get("dir")
@@ -298,10 +280,8 @@ def _environment_issues(plan: dict, n: dict, p: str) -> list:
 
 
 def on_cluster(node: dict) -> bool:
-    """True for nodes that run through a cluster (and the job executor): ``job`` nodes, and ``shell`` /
-    ``function`` nodes that name a ``cluster:``."""
-    kind = node.get("kind")
-    return kind == "job" or (kind in ("shell", "function") and bool(node.get("cluster")))
+    """True for steps that run through a cluster (and the job executor): shell steps that name a ``cluster:``."""
+    return node.get("kind") == "shell" and bool(node.get("cluster"))
 
 
 def effective_needs(node: dict) -> list[str]:
@@ -328,11 +308,6 @@ def validate(plan: dict) -> list[Issue]:
         if not isinstance(spec, dict):
             issues.append(Issue("input", f"inputs.{name}", "input spec must be a mapping",
                                 "e.g. `structure: {type: path, required: true}`"))
-    pol = plan.get("policies") or {}
-    if isinstance(pol, dict) and pol.get("edits", "ask") not in ("ask", "unfinished", "all"):
-        issues.append(Issue("policies", "policies.edits", f"unknown edits policy {pol.get('edits')!r}",
-                            "`ask` (default), `unfinished` (auto-approve plan-file edits to nodes that have not "
-                            "succeeded), or `all`"))
     for name, c in (plan.get("clusters") or {}).items():
         if not isinstance(c, dict):
             issues.append(Issue("cluster", f"clusters.{name}", "cluster spec must be a mapping"))
@@ -383,8 +358,7 @@ def validate(plan: dict) -> list[Issue]:
         for fld, typ, hint in (("retry", dict, "{max_attempts: 3, backoff: 30s}"), ("timeout", dict, "{total: 2h, idle: 30m}"),
                                ("outputs", dict, "{energy: number, converged: boolean}"), ("files", dict, "{report: report.md}"),
                                ("inputs", dict, "{x: ${a.outputs.x}}"), ("env", dict, "{OMP_NUM_THREADS: '1'}"),
-                               ("harness", dict, "{name: claude, model: sonnet}"), ("resources", dict, "{nodes: 1, time: '01:00:00'}"),
-                               ("effects", dict, "{amend: {auto_approve: true}}")):
+                               ("resources", dict, "{nodes: 1, time: '01:00:00'}")):
             if fld in n and n[fld] is not None and not isinstance(n[fld], typ):
                 issues.append(Issue("type", f"{p}.{fld}", f"`{fld}` must be a mapping, got {type(n[fld]).__name__}",
                                     f"e.g. {fld}: {hint}"))
@@ -446,58 +420,17 @@ def validate(plan: dict) -> list[Issue]:
         # kind specific
         if kind == "shell" and not n.get("run"):
             issues.append(Issue("required", f"{p}.run", "shell node needs `run` (a bash script)"))
-        if kind == "function":
-            call = n.get("call")
-            if not isinstance(call, str) or ":" not in call:
-                issues.append(Issue("required", f"{p}.call", "function node needs `call: package.module:function`"))
-        if kind == "agent":
-            if not n.get("prompt"):
-                issues.append(Issue("required", f"{p}.prompt", "agent node needs `prompt` (or `prompt_file`)"))
-            h = n.get("harness") or {}
-            if h.get("name") not in KNOWN_HARNESSES:
-                issues.append(Issue("harness", f"{p}.harness.name", f"unknown harness {h.get('name')!r}",
-                                    f"one of {', '.join(KNOWN_HARNESSES)}"))
-            eff = n.get("effects") or {}
-            if eff and not isinstance(eff, dict):
-                issues.append(Issue("effects", f"{p}.effects", "effects must be a mapping"))
-            am = eff.get("amend") if isinstance(eff, dict) else None
-            if am is not None and not isinstance(am, (bool, dict)):
-                issues.append(Issue("effects", f"{p}.effects.amend", "amend must be true or a policy mapping"))
-            if isinstance(am, dict):
-                if "auto_approve" in am and not isinstance(am["auto_approve"], bool):
-                    issues.append(Issue("effects", f"{p}.effects.amend.auto_approve", "must be true or false (not a string)"))
-                if "max_nodes" in am and not (isinstance(am["max_nodes"], int) and am["max_nodes"] >= 0):
-                    issues.append(Issue("effects", f"{p}.effects.amend.max_nodes", "must be a non-negative integer"))
-                for fld in ("kinds", "ops"):
-                    if fld in am and not (isinstance(am[fld], list) and all(isinstance(k, str) for k in am[fld])):
-                        issues.append(Issue("effects", f"{p}.effects.amend.{fld}", "must be a list of strings"))
         if n.get("environment") is not None:
             issues.extend(_environment_issues(plan, n, p))
-        if kind in ("shell", "function"):
+        if kind == "shell":
             if n.get("cluster") is not None and n["cluster"] not in (plan.get("clusters") or {}):
                 issues.append(Issue("cluster", f"{p}.cluster", f"unknown cluster {n['cluster']!r}",
                                     f"declare it under top-level `clusters:` (known: {', '.join(plan.get('clusters') or {}) or 'none'})"))
             if n.get("cluster") is None:
-                stray = [k for k in ("stage_in", "retrieve", "resources", "modules", "prelude") if n.get(k)]
+                stray = [k for k in ("stage_in", "retrieve", "resources", "prelude") if n.get(k)]
                 if stray:
                     issues.append(Issue("cluster", f"{p}.{stray[0]}", f"`{stray[0]}` only applies to a node that runs on a cluster",
                                         "add `cluster: <name>`, or drop it"))
-            elif n.get("cwd") or n.get("shell"):
-                k = "cwd" if n.get("cwd") else "shell"
-                issues.append(Issue("cluster", f"{p}.{k}", f"`{k}` is not supported on a cluster node",
-                                    "the payload runs in its own attempt directory on the cluster, under bash"))
-        if kind == "job":
-            cl = n.get("cluster")
-            if not cl or cl not in (plan.get("clusters") or {}):
-                issues.append(Issue("cluster", f"{p}.cluster", f"unknown cluster {cl!r}",
-                                    f"declare it under top-level `clusters:` (known: {', '.join(plan.get('clusters') or {}) or 'none'})"))
-            if not n.get("script"):
-                issues.append(Issue("required", f"{p}.script", "job node needs `script` (body of the batch script)"))
-            for fld in ("poll", "deadline"):
-                try:
-                    parse_duration(n.get(fld))
-                except ValueError as exc:
-                    issues.append(Issue("duration", f"{p}.{fld}", str(exc)))
         if kind == "gate":
             dec = n.get("decisions")
             if not isinstance(dec, list) or not dec or not all(isinstance(d, str) for d in dec):
@@ -509,21 +442,10 @@ def validate(plan: dict) -> list[Issue]:
                 for r in orj.get("rerun", []):
                     if r not in ids:
                         issues.append(Issue("unknown_ref", f"{p}.on_reject.rerun", f"unknown node {r!r}"))
-        if kind == "wait":
-            if not (n.get("signal") or n.get("timer")):
-                issues.append(Issue("required", p, "wait node needs `signal` and/or `timer`"))
-            for fld in ("deadline", "timer"):
-                try:
-                    parse_duration(n.get(fld))
-                except ValueError as exc:
-                    issues.append(Issue("duration", f"{p}.{fld}", str(exc)))
     for k in plan:
         if k not in TOP_KEYS and not k.startswith("_"):
             issues.append(Issue("unknown_field", k, f"unknown top-level field {k!r}",
                                 f"valid fields: {', '.join(sorted(TOP_KEYS))}"))
-    for r in plan.get("results") or []:
-        if r not in ids:
-            issues.append(Issue("unknown_ref", "results", f"results lists unknown node {r!r}"))
     if not any(i["code"] in ("unknown_ref", "node_id", "duplicate_id") for i in issues):
         cyc = find_cycle(plan)
         if cyc:
@@ -580,7 +502,7 @@ def plan_digest(plan: dict) -> str:
 
 
 # keys that do not change what a step computes: editing them keeps cached results
-DECL_EXCLUDE = {"title", "description", "tags", "retry", "timeout", "resources", "poll", "deadline", "cache", "tmpdir"}
+DECL_EXCLUDE = {"title", "description", "retry", "timeout", "resources", "cache", "tmpdir"}
 
 
 def warnings(plan: dict) -> list[str]:
@@ -793,7 +715,7 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
             for name, spec in cl.items():
                 if name in (new.get("clusters") or {}):
                     issues.append(Issue("amend_clusters", p, f"cluster {name!r} already exists; a run's clusters "
-                                        "are fixed once defined", "use a new cluster name, or `flower fork` the run"))
+                                        "are fixed once defined", "use a new cluster name, or a new run: `flower run PLAN --reuse RUN`"))
                     continue
                 new.setdefault("clusters", {})[name] = copy.deepcopy(spec)
         elif kind == "tune_clusters":
@@ -807,7 +729,7 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
                 if cur is None or not isinstance(spec, dict) or bad:
                     issues.append(Issue("amend_clusters", p, f"cannot tune cluster {name!r}" + (
                         f": only {', '.join(CLUSTER_TUNABLE)} may change in a running plan, not {', '.join(bad)}"
-                        if bad else ": no such cluster"), "use a new cluster name, or `flower fork` the run"))
+                        if bad else ": no such cluster"), "use a new cluster name, or a new run: `flower run PLAN --reuse RUN`"))
                     continue
                 for k, v in spec.items():   # null removes the setting
                     if v is None:

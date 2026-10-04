@@ -155,7 +155,7 @@ Run with: `.venv/bin/pytest -q tests/core` (about 110 s). Add `--runxfail` to se
 ## CLI
 
 ### 13. `flower output RUN NODE KEY` crashes on a missing key
-- **Test:** `test_core_cli.py::test_output_unknown_key_is_a_clean_error`
+- **Test:** `test_core_cli.py::test_show_unknown_key_is_a_clean_error` (now `flower show RUN NODE KEY`)
 - **Observed:** an uncaught `KeyError` / `ValueError` / `IndexError` prints a traceback and exits 1, with
   no JSON envelope.
 - **Root cause:** `cli.py:473`.
@@ -191,9 +191,8 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   descendants. `force` applies to the node and its children. The busy check covers the children too.
 
 ### 17. A `function` node's cache key ignores the code it calls
-- **Tests:** `test_core_engine_control.py::test_function_cache_keys_on_module_source`,
-  `::test_function_cache_keys_on_whole_local_package`,
-  `test_core_fork_provenance.py::test_fork_does_not_reuse_function_result_after_its_module_changed`
+- **Tests:** none any more: `function` steps were removed in the simplification of 2026-10-05 (a shell step's key
+  covers the plan-directory files its command names).
 - **Observed:** after the analysis module was edited, the function nodes still counted as "unchanged".
   A downstream rerun reused the old results, and so did a `fork`, which replayed results computed by
   the old code.
@@ -232,7 +231,7 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   - The UI shows browser-local time, with the UTC stamp in the tooltip.
 
 ### 20. An approved amendment on a finished run was never applied
-- **Test:** `test_core_devloop.py::test_default_policy_asks_before_applying_an_edit`
+- **Test:** `test_core_devloop.py::test_an_edit_of_a_failed_step_applies_and_of_a_succeeded_one_asks`
 - **Observed:** `flower amend` (or `rerun` picking up a plan edit) on a failed run, followed by
   `flower approve RUN amend-…`. The amendment stayed `proposed` forever.
 - **Root cause:** `_tick` returned early for runs in a terminal state, *before* processing answered
@@ -523,6 +522,15 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** a proposal made from the plan file is a snapshot of it, so each `flower sync` withdraws older open
   snapshots; a sync back to what ran leaves no gate.
 
+### 59. A driver switched to flower code that did not import
+- **Test:** `tests/core/test_core_cli.py::test_a_driver_does_not_switch_to_code_that_does_not_import`
+- **Observed:** while flower itself was being simplified in the checkout the live runs used, their background
+  drivers saw the code change, re-executed into the half-edited code and failed on every tick
+  (`ModuleNotFoundError`) until the edit was complete. The jobs kept running; their results were recorded late.
+- **Fix:** a driver imports changed code in a fresh interpreter before switching to it; code that does not import
+  is logged once and the driver keeps what it runs until the next change. (Developing flower in its own worktree,
+  with live runs on a stable checkout, avoids the window altogether.)
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses
@@ -547,7 +555,3 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   is meant to follow the exit-code vocabulary, it should use `run_status_code(st.status)`.
 - **A missing `flower:` key is silently accepted.** `normalize` defaults it to 1, so the `version`
   issue only fires for an explicit wrong value.
-- **A signal sent before its `wait` node is armed is ignored** (`since_seq`). This is by design, but it
-  is easy to trip over. It is documented by
-  `test_signal_sent_before_wait_is_armed_is_not_consumed`. `--token`-scoped signals from DEV_PLAN D9
-  are not implemented: the wait node ignores `token`.

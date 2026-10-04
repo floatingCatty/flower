@@ -7,8 +7,6 @@ title: 'Reproduce the ground-state parameters of the 2D S=1/2 Heisenberg antifer
   and the per-size data of Table II (Sandvik, PRB 56, 11678 (1997), arXiv:cond-mat/9707123)'
 description: |
   Reproduce the ground-state parameters of the 2D S=1/2 Heisenberg antiferromagnet by stochastic series expansion QMC and finite-size scaling: E = -0.669437(5), M = 0.3070(3), rho_s = 0.175(2), chi = 0.0625(9), c = 1.673(7), and the per-size data of Table II (Sandvik, PRB 56, 11678 (1997), arXiv:cond-mat/9707123)
-policies:
-  edits: unfinished
 inputs:
   host:
     type: string

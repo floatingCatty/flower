@@ -1,8 +1,8 @@
-"""The engine: fold the journal, apply answers/signals, poll work, schedule ready nodes.
+"""The engine: fold the journal, apply answers, poll work, schedule ready nodes.
 
 Everything happens in :meth:`Engine.tick`, a short, re-entrant pass guarded by a file lock. There
-is no resident daemon: ``flower run/watch/wait`` loop over ticks in the foreground, ``--detach``
-loops in a background process, and cron/scrontab or the outer agent can call ``flower tick``.
+is no resident daemon: ``flower run`` and ``flower status --follow`` loop over ticks in the foreground, a
+background driver loops in its own process, and any ``flower status`` call makes one pass.
 Because all state is in the journal and all work runs under detached supervisors (or Slurm), any
 tick from any process can pick up where the last one stopped.
 """
@@ -24,11 +24,11 @@ from .executors.base import RETRYABLE_DEFAULT, NodeCtx, Outcome
 from .journal import Journal
 from .rundir import RunPaths, find_root, followers, fs_name, list_runs
 from .state import TERMINAL_NODE, TERMINAL_RUN, Attempt, NodeState, RunState, fold
-from .util import (FlowerError, atomic_write_json, atomic_write_text, default_actor, digest, hostname,
-                   files_fingerprint, new_id, new_run_id, now, now_iso, parse_duration, parse_iso, read_json, source_fingerprint,
+from .util import (FlowerError, answer_cmd, atomic_write_json, atomic_write_text, default_actor, digest, hostname,
+                   files_fingerprint, new_id, new_run_id, now, now_iso, parse_duration, parse_iso, read_json,
                    username)
 
-LOCAL_KINDS = ("shell", "function", "agent")
+LOCAL_KINDS = ("shell",)
 
 
 def _executor_kind(spec: dict) -> str:
@@ -37,10 +37,9 @@ def _executor_kind(spec: dict) -> str:
 
 
 def _executors() -> dict:
-    from .executors.agent import AgentExecutor
     from .executors.job import JobExecutor
-    from .executors.local import FunctionExecutor, ShellExecutor
-    return {"shell": ShellExecutor(), "function": FunctionExecutor(), "agent": AgentExecutor(), "job": JobExecutor()}
+    from .executors.local import ShellExecutor
+    return {"shell": ShellExecutor(), "job": JobExecutor()}
 
 
 @dataclass
@@ -144,7 +143,7 @@ def create_run(plan_raw: dict, inputs: dict | None = None, *, root: Path | None 
     run_id = new_run_id(plan["id"])
     paths = RunPaths(root, run_id)
     paths.dir.mkdir(parents=True, exist_ok=False)
-    for d in (paths.pending, paths.signals, paths.nodes):
+    for d in (paths.pending, paths.nodes):
         d.mkdir(parents=True, exist_ok=True)
     atomic_write_text(paths.plan_file, planmod.dump_yaml(plan))
     eng = Engine(paths)
@@ -238,7 +237,7 @@ class Engine:
                       amendment_id: str | None = None, extra: dict | None = None) -> None:
         req = {"gate_id": gate_id, "run_id": self.paths.run_id, "subject": subject, "node": node,
                "message": message, "decisions": decisions, "amendment_id": amendment_id,
-               "answer": f"flower answer {self.paths.run_id} {gate_id} <{'|'.join(decisions)}> [--text '…']",
+               "answer": answer_cmd(self.paths.run_id, gate_id, decisions),
                "answer_file": str(self.paths.pending / f"{fs_name(gate_id)}.answer.json"),
                "answer_file_format": {"decision": decisions[0], "text": "optional free text", "by": "who"}}
         req.update(extra or {})
@@ -294,7 +293,7 @@ class Engine:
             if ns.status in ("running", "waiting") and ns.last:
                 spec = self._attempt_spec(node, ns.last)
                 ex = self.executors.get(_executor_kind(spec))
-                if ex and ns.last.status == "running" and spec.get("kind") not in ("gate", "wait"):
+                if ex and ns.last.status == "running" and spec.get("kind") != "gate":
                     ex.cancel(self._ctx(st, spec, ns.last))
                     self.emit("node.progress", {"phase": "cancelling", "by": by}, node=node, attempt=ns.last.n)
                     return
@@ -393,7 +392,7 @@ class Engine:
                 if fixed:
                     res["ignored"].append(f"cluster {name!r} changed in the plan file ({', '.join(fixed)}); only "
                                           f"{', '.join(planmod.CLUSTER_TUNABLE)} may change in a running plan "
-                                          "(use a new cluster name, or `flower fork`)")
+                                          "(use a new cluster name, or a new run: `flower run PLAN --reuse RUN`)")
                 else:
                     tune_cl[name] = {k: rendered.get(k) for k in sorted(keys)}
         if add_in:
@@ -481,10 +480,6 @@ class Engine:
             res["ops"].append({"op": "add", "nodes": [new[nid] for nid in added]})
         res["changed"], res["added"] = changed, added
         return res
-
-    def signal(self, name: str, data: Any = None, by: str | None = None, token: str | None = None) -> dict:
-        by = by or default_actor()
-        return self.emit("signal.received", {"name": name, "data": data, "by": by, "token": token}, actor=by)
 
     def note(self, text: str, node: str | None = None, by: str | None = None) -> dict:
         by = by or default_actor()
@@ -588,11 +583,6 @@ class Engine:
             except KeyError:
                 continue
             kind = spec.get("kind")
-            if kind == "wait":
-                if self._poll_wait(st, nid, ns, spec):
-                    rep.finished.append(nid)
-                    rep.changed = True
-                continue
             if kind == "gate":
                 continue
             by_kind.setdefault(_executor_kind(spec), []).append((nid, ns, spec))
@@ -627,22 +617,13 @@ class Engine:
         if started:
             rep.changed = True
         st = self.state()
-        # waits armed in this tick may already be satisfiable (sticky signals, elapsed timers)
-        for nid in started:
-            ns = st.nodes.get(nid)
-            if ns and ns.status == "waiting" and ns.last and ns.last.status == "running" and not ns.gate_id:
-                spec = self._attempt_spec(nid, ns.last)
-                if spec.get("kind") == "wait" and self._poll_wait(st, nid, ns, spec):
-                    rep.finished.append(nid)
-                    st = self.state()
-
         # --- run status
         self._update_run_status(st, rep)
         self._write_usage()
         self._write_current_plan(st)
         return rep
 
-    # ------------------------------------------------------------ ingest files (gate answers, signals)
+    # ------------------------------------------------------------ ingest files (gate answers)
     def _ingest_files(self) -> None:
         st = None
         for f in sorted(self.paths.pending.glob("*.answer.json")) if self.paths.pending.exists() else []:
@@ -664,16 +645,6 @@ class Engine:
             except FlowerError as exc:
                 atomic_write_json(f.with_suffix(".error.json"), exc.to_dict())
                 f.rename(f.with_suffix(".rejected"))
-        if self.paths.signals.exists():
-            for f in sorted(self.paths.signals.glob("*.json")):
-                data = read_json(f) or {}
-                self.emit("signal.received", {"name": data.get("name") or f.stem, "data": data.get("data"),
-                                              "by": data.get("by") or "file:" + f.name, "token": data.get("token")},
-                          key=f"signal.file:{f.name}:{f.stat().st_mtime_ns}")
-                done = self.paths.signals / "consumed"
-                done.mkdir(exist_ok=True)
-                f.rename(done / f.name)
-
     # ------------------------------------------------------------ context & rendering
     def _attempt_spec(self, nid: str, attempt: Attempt) -> dict:
         p = self.paths.attempt_dir(nid, attempt.n) / "node.json"
@@ -692,7 +663,6 @@ class Engine:
         return NodeCtx(run_id=st.run_id, run_dir=self.paths.dir, node=spec, attempt=attempt.n, attempt_dir=adir,
                        workdir=Path(attempt.workdir or adir / "work"), inputs=attempt.inputs, plan=st.plan,
                        emit=emit, handle=attempt.handle, progress=attempt.progress, job=attempt.job,
-                       session=attempt.session, repairs=attempt.repairs,
                        series=(st.nodes[nid].state_series if nid in st.nodes else 0) or 0)
 
     def _resolver(self, st: RunState, spec: dict):
@@ -707,9 +677,7 @@ class Engine:
             res_ctx["index"] = bind.get("index")
         return tpl.make_resolver(res_ctx)
 
-    RENDER_FIELDS = ("inputs", "run", "prompt", "system", "script", "args", "message", "env", "cwd", "stage_in",
-                     "retrieve", "call", "files", "resources", "signal", "prelude", "modules", "python", "pythonpath",
-                     "harness", "token")
+    RENDER_FIELDS = ("inputs", "run", "message", "env", "stage_in", "retrieve", "files", "resources", "prelude")
 
     def _render(self, st: RunState, spec: dict) -> dict:
         res = self._resolver(st, spec)
@@ -914,24 +882,19 @@ class Engine:
             if r is not None:
                 upstream[d] = {"outputs": digest(r.outputs), "files": {k: v.get("sha256") for k, v in r.files.items()}}
         dh = planmod.decl_hash(spec)
-        if spec.get("kind") == "function":  # what the node does includes the code it calls
-            dirs = [str(Path(str(p)).expanduser()) for p in (rendered.get("pythonpath") or [])]
-            dirs.append((st.plan.get("_source") or {}).get("dir") or st.meta.get("plan_dir") or ".")
-            code = source_fingerprint(str(rendered.get("call") or "").partition(":")[0], dirs)
-            if code:
-                dh = digest({"decl": dh, "code": code})
-        if spec.get("kind") in ("shell", "job", "function"):  # ... and the plan-directory files it runs
+        if spec.get("kind") == "shell":  # what the step does includes the plan-directory files it runs
             used = files_fingerprint({k: rendered.get(k) for k in ("run", "script", "stage_in", "env", "args",
                                                                    "inputs", "pythonpath")},
                                      (st.plan.get("_source") or {}).get("dir") or st.meta.get("plan_dir"))
             if used:
                 dh = digest({"decl": dh, "files": used})
+        # the key set is kept from when steps could also be agents or jobs, so recorded results stay reusable
         ih = digest({"inputs": inputs, "upstream": upstream, "bind": spec.get("bind"),
                      "prompt": rendered.get("prompt"), "script": rendered.get("script"), "run": rendered.get("run"),
                      "args": rendered.get("args")})
         # early cut-off / cache: a stale node whose definition and inputs are unchanged keeps its result
         prev = ns.result
-        if prev is not None and spec.get("cache", True) and spec.get("kind") not in ("gate", "wait") \
+        if prev is not None and spec.get("cache", True) and spec.get("kind") != "gate" \
                 and not ns.force_next and prev.decl_hash == dh \
                 and prev.input_hash == ih:
             self.emit("node.succeeded", {"attempt": n, "outputs": prev.outputs, "files": prev.files,
@@ -939,28 +902,20 @@ class Engine:
                                          "reused_from": f"a{prev.n}", "decl_hash": dh, "input_hash": ih,
                                          "usage": {}}, node=nid, attempt=n)
             return True
-        # results from other runs (--reuse / fork): a step marked cache: false (e.g. an environment check, which
-        # must notice an environment deleted since) always runs; an agent's recorded decision is replayed on
-        # purpose (agents are cache: false within a run only so that a rerun asks them again)
-        reusable = (spec.get("kind") == "agent" or spec.get("cache", True)) and not ns.force_next
+        # results from other runs (--reuse): a step marked cache: false (e.g. an environment check, which must
+        # notice an environment deleted since) always runs
+        reusable = spec.get("cache", True) and not ns.force_next
         hit = self._reuse_lookup(st, nid, dh, ih) if reusable else None
         if hit is not None:
             src_run, a = hit
             self.emit("node.succeeded", {"attempt": n, "outputs": a.outputs, "files": a.files, "summary": a.summary,
                                          "rationale": a.rationale, "reused_from": f"{src_run}:{nid}#a{a.n}",
-                                         "amendment": a.amendment, "decl_hash": dh, "input_hash": ih, "usage": {}},
+                                         "decl_hash": dh, "input_hash": ih, "usage": {}},
                       node=nid, attempt=n)
-            if a.amendment:  # a recorded agent decision included a plan change: replay it faithfully
-                self._agent_amendment(nid, spec, a.amendment)
             return True
         adir = self.paths.attempt_dir(nid, n)
         adir.mkdir(parents=True, exist_ok=True)
-        if rendered.get("cwd"):
-            wd = Path(str(rendered["cwd"])).expanduser()
-            if not wd.is_absolute():
-                wd = Path(st.meta.get("plan_dir") or ".") / wd
-        else:
-            wd = adir / "work"
+        wd = adir / "work"
         wd.mkdir(parents=True, exist_ok=True)
         atomic_write_json(adir / "node.json", rendered)
         up_info = {}
@@ -974,23 +929,12 @@ class Engine:
         # write-ahead: the attempt exists in the journal before any side effect happens
         self.emit("node.started", {"attempt": n, "decl_hash": dh, "input_hash": ih, "inputs": inputs,
                                    "workdir": str(wd), "kind": kind, "handle": {},
-                                   "executor": rendered.get("harness", {}).get("name") if kind == "agent" else kind},
+                                   "executor": kind},
                   node=nid, attempt=n, key=f"node.started:{nid}#a{n}")
         if kind == "gate":
             msg = rendered.get("message") or f"Approve {nid}?"
             self._request_gate(f"{nid}#a{n}", subject="node", node=nid, message=str(msg),
                                decisions=list(rendered.get("decisions") or ["approve", "reject"]))
-            return True
-        if kind == "wait":
-            tsec = parse_duration(rendered.get("timer"))
-            dsec = parse_duration(rendered.get("deadline"))
-            base = now()
-            import datetime as dt
-            self.emit("wait.armed", {"signal": rendered.get("signal"),
-                                     "timer_at": (base + dt.timedelta(seconds=tsec)).isoformat() if tsec else None,
-                                     "deadline_at": (base + dt.timedelta(seconds=dsec)).isoformat() if dsec else None,
-                                     "since_seq": st.last_seq, "token": rendered.get("token")},
-                      node=nid, attempt=n)
             return True
         st2 = self.state()
         attempt = st2.nodes[nid].last
@@ -1190,11 +1134,9 @@ class Engine:
         n = ns.last.n
         if oc.status == "succeeded":
             self.emit("node.succeeded", {"outputs": oc.outputs, "files": oc.files, "usage": oc.usage,
-                                         "summary": oc.summary, "rationale": oc.rationale, "amendment": oc.amendment,
+                                         "summary": oc.summary, "rationale": oc.rationale,
                                          "decl_hash": ns.last.decl_hash, "input_hash": ns.last.input_hash},
                       node=nid, attempt=n, key=f"node.done:{nid}#a{n}")
-            if oc.amendment:
-                self._agent_amendment(nid, spec, oc.amendment)
             return
         if oc.status == "cancelled":
             self.emit("node.cancelled", {"reason": oc.message or "cancelled", "usage": oc.usage},
@@ -1210,83 +1152,21 @@ class Engine:
         if oc.error_class in set(retry.get("on") or []) and oc.error_class not in NEVER_RETRY:
             retryable = True
         budget = int(retry.get("max_attempts", 1))
-        quota_failures = sum(1 for a in ns.attempts[ns.retry_base:] if (a.error or {}).get("error_class") == "quota_retry")
-        used = ns.attempts_since_reset - quota_failures
-        if oc.error_class == "quota_retry":
-            # a usage limit is not a failure of the work: park until the reset (DEV_PLAN D8), bounded overall
-            cap = int((self.state().plan.get("defaults") or {}).get("quota_max_retries") or 48)
-            if quota_failures < cap:
-                retryable, used, budget = True, 0, 1
         self.emit("node.failed", {"error_class": oc.error_class, "message": oc.message, "retryable": retryable,
                                   "usage": oc.usage, "outputs": oc.outputs or None, "details": oc.details or None},
                   node=nid, attempt=n, key=f"node.done:{nid}#a{n}")
+        used = ns.attempts_since_reset
         if retryable and used < budget:
             back = parse_duration(retry.get("backoff") or "10s") or 0
             delay = back * (2 ** max(0, used - 1))
             ra = (oc.details or {}).get("retry_after_s")
             if ra:
                 delay = max(delay, float(ra))
-            elif oc.error_class == "quota_retry":
-                delay = max(delay, 900.0)  # no reset time given: look again in 15 minutes
             import datetime as dt
             nb = (now() + dt.timedelta(seconds=delay)).isoformat()
-            why = ("quota_retry: usage limit reached; waiting for the reset" if oc.error_class == "quota_retry"
-                   else f"{oc.error_class}: attempt {used}/{budget} failed")
+            why = f"{oc.error_class}: attempt {used}/{budget} failed"
             self.emit("node.retry_scheduled", {"next_attempt": n + 1, "not_before": nb, "reason": why},
                       node=nid, attempt=n)
-
-    def _agent_amendment(self, nid: str, spec: dict, amendment: dict) -> None:
-        """An agent's proposed plan change. Untrusted input: validated, policy-checked on its *effect*,
-        and never allowed to crash the tick or to widen the grant that allowed it."""
-        try:
-            eff = (spec.get("effects") or {}).get("amend")
-            ops = amendment.get("ops") if isinstance(amendment, dict) else None
-            rationale = str(amendment.get("rationale") or "") if isinstance(amendment, dict) else ""
-            if not eff:
-                self.emit("run.note", {"text": f"{nid} proposed an amendment but has no `effects.amend` permission;"
-                                               " ignored", "rationale": rationale}, node=nid)
-                return
-            if not ops:
-                return
-            well_formed = isinstance(ops, list) and all(isinstance(o, dict) for o in ops)
-            auto = well_formed and self._within_policy(eff if isinstance(eff, dict) else {}, ops)
-            if not well_formed:
-                ops = ops if isinstance(ops, list) else [ops]
-            self._propose_locked(ops, rationale, by=f"agent:{nid}", source_node=nid, auto=auto)
-        except planmod.PlanInvalid:
-            pass  # recorded as rejected with its issues
-        except Exception as exc:  # noqa: BLE001
-            self.emit("run.note", {"text": f"amendment from {nid} could not be processed: {type(exc).__name__}: {exc}"},
-                      node=nid)
-
-    def _within_policy(self, policy: dict, ops: list) -> bool:
-        """Judge the amendment by what it *does* to the plan, not by how the ops are spelled (H2/H3)."""
-        if policy.get("auto_approve") is not True:
-            return False
-        allowed_ops = set(policy.get("ops") or ["add", "detour"])
-        if any(op.get("op") not in allowed_ops for op in ops):
-            return False
-        st = self.state()
-        try:
-            new_plan, effects = planmod.apply_amendment(st.plan, ops, {k: v.status for k, v in st.nodes.items()})
-        except planmod.PlanInvalid:
-            return False
-        by_id = {n["id"]: n for n in new_plan["nodes"]}
-        touched = [by_id[x] for x in list(effects.get("added", [])) + list(effects.get("changed", [])) if x in by_id]
-        added = [by_id[x] for x in effects.get("added", []) if x in by_id]
-        if policy.get("max_nodes") is not None and len(added) > int(policy["max_nodes"]):
-            return False
-        if policy.get("kinds") and any(n.get("kind") not in set(policy["kinds"]) for n in added):
-            return False
-        replaced = [by_id[c] for c in effects.get("changed", []) if c in by_id and c not in effects.get("added", [])]
-        if policy.get("kinds") and any(n.get("kind") not in set(policy["kinds"]) for n in replaced
-                                       if any(op.get("op") == "replace" and op.get("node") == n["id"] for op in ops)):
-            return False
-        if any((n.get("effects") or {}).get("amend") for n in touched):
-            return False  # a grant can never mint a new (possibly wider) grant without a human
-        if effects.get("removed") or effects.get("stale"):
-            return False  # dropping or superseding work always needs a human
-        return True
 
     def _propose_locked(self, ops: list, rationale: str, by: str, source_node: str | None, auto: bool) -> str:
         st = self.state()
@@ -1383,7 +1263,7 @@ class Engine:
     def _resolve_node_gate(self, st: RunState, ns: NodeState, g) -> None:
         spec = st.node_spec(ns.id)
         n = ns.last.n
-        approve_value = spec.get("approve_value") or (spec.get("decisions") or ["approve"])[0]
+        approve_value = (spec.get("decisions") or ["approve"])[0]
         outs = {"decision": g.decision, "text": g.text or "", "by": g.by}
         if g.decision == approve_value or not spec.get("on_reject") and g.decision not in ("reject", "abort"):
             self.emit("node.succeeded", {"outputs": outs, "summary": f"{g.decision} by {g.by}"
@@ -1414,52 +1294,13 @@ class Engine:
                                   + (f" (rework limit {maxa} reached)" if targets else "")},
                   node=ns.id, attempt=n, actor=g.by or "system")
 
-    # ------------------------------------------------------------ waits
-    def _poll_wait(self, st: RunState, nid: str, ns: NodeState, spec: dict) -> bool:
-        w = (ns.last.progress or {}).get("wait") or {}
-        n = ns.last.n
-        name = w.get("signal")
-        since = w.get("since_seq", 0)
-        if name:
-            # a signal is delivered once: the earliest one with this name not yet consumed by another wait
-            # (signals sent before the wait was armed are kept, not lost)
-            consumed = {a.outputs.get("signal_seq") for x in st.nodes.values() for a in x.attempts
-                        if a.status == "succeeded" and isinstance(a.outputs, dict)}
-            token = w.get("token")
-            for s in st.signals:
-                if s.get("name") != name or s.get("seq") in consumed:
-                    continue
-                if token and s.get("token") != token:
-                    continue
-                self.emit("node.succeeded", {"outputs": {"signal": name, "data": s.get("data"), "by": s.get("by"),
-                                                         "expired": False, "signal_seq": s.get("seq")},
-                                             "summary": f"signal {name!r} received from {s.get('by')}"},
-                          node=nid, attempt=n)
-                return True
-        t = w.get("timer_at")
-        if t and parse_iso(t) <= now():
-            self.emit("node.succeeded", {"outputs": {"signal": None, "data": None, "expired": False, "timer": True},
-                                         "summary": "timer elapsed"}, node=nid, attempt=n)
-            return True
-        d = w.get("deadline_at")
-        if d and parse_iso(d) <= now():
-            self.emit("wait.expired", {"deadline_at": d}, node=nid, attempt=n)
-            self.emit("node.succeeded", {"outputs": {"signal": name, "data": None, "expired": True},
-                                         "summary": f"deadline passed without signal {name!r}"}, node=nid, attempt=n)
-            return True
-        return False
-
-    def _signal_seq(self, s: dict) -> int:
-        # signals keep their journal position via the fold order; recover seq lazily
-        return s.get("seq", 10**12)
-
     # ------------------------------------------------------------ cancellation & status
     def _cancel_everything(self, st: RunState) -> None:
         for nid, ns in st.nodes.items():
             if ns.status in ("running", "waiting") and ns.last and ns.last.status == "running":
                 try:
                     spec = self._attempt_spec(nid, ns.last)
-                    if spec.get("kind") not in ("gate", "wait"):
+                    if spec.get("kind") != "gate":
                         self.executors[_executor_kind(spec)].cancel(self._ctx(st, spec, ns.last))
                 except Exception:  # noqa: BLE001 - best effort, still record cancellation
                     pass
@@ -1486,9 +1327,6 @@ class Engine:
         open_gates = st.open_gates()
         for gt in open_gates:
             rep.waiting_on.append(f"gate {gt.id} ({gt.subject})")
-        for ns in waiting:
-            if ns.gate_id is None:
-                rep.waiting_on.append(f"{ns.id}: waiting for signal/timer")
         if rep.running:
             rep.status = "running"
             has_job = any(_executor_kind(g.nodes[n]) == "job" for n in rep.running if n in g.nodes)
@@ -1509,14 +1347,11 @@ class Engine:
             # nothing can make progress: a dependency is stuck (should not happen) -> report and park
             pass
         if waiting or open_gates or pending:
-            timed = any((ns.last.progress or {}).get("wait", {}).get("timer_at") or
-                        (ns.last.progress or {}).get("wait", {}).get("deadline_at")
-                        for ns in waiting if ns.last)
             rep.status = "parked"
-            rep.next_poll_s = 30.0 if timed else 0
+            rep.next_poll_s = 0
             reason = "; ".join(rep.waiting_on[:4]) or "waiting"
             if st.status != "parked" or st.status_reason != reason:
-                self.emit("run.parked", {"reason": reason, "timed": bool(timed)})
+                self.emit("run.parked", {"reason": reason, "timed": False})
             return
         if not nodes:   # a draft run (`flower start`) waits for its first step
             rep.status = "parked"
