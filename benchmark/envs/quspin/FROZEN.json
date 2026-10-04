@@ -1,0 +1,33 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "2b5cc08fd936605b79ca64b7ceb27f6a77f5df37555b033981e9c0340e39a07b",
+    "check.sh": "e57752e2d0cacc3e96f4c6cf31bc8f0f173432c54002759346d856b72a1da20f",
+    "conda-explicit.txt": "6de3c8305f0b649aa70bd8e7aa12146d2c478733b37383b356176bc63b43d8e3",
+    "env.yaml": "d14a6a1a31337e1eec0c4c49e9aef021a6b6b0fbec1b5219416d027ff93d014c",
+    "requirements.txt": "b2196153861667782b8227611e32c0ad539a268b1831a69d0954b4b69cd7661d",
+    "setup.sh": "6807860390b2b420ba45ad780e360521825d5299bda233231997c5750d927187"
+  },
+  "frozen_at": "2026-10-04T00:06:47.758Z",
+  "hash": "sha256:532bcbc67c2436da558e90ed8127a5314350bf9e55c10b40827279e1562f332d",
+  "name": "quspin",
+  "previous": null,
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-04T00:07:10.575Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/home/zhanghao/.flower/envs/quspin-532bcbc67c24-replay-20261004-000650-2c8d",
+      "rc": 0,
+      "seconds": 20.4,
+      "tail": "Particle conservation check passed!\nParticle conservation check passed!\nParticle conservation check passed!\nParticle conservation check passed!\nquspin 1.0.1 numpy 2.4.6 scipy 1.17.1 L=10 ring E0 = -4.5154463545 (block) = -4.5154463545 (full) OK\nenvironment quspin installed in /home/zhanghao/.flower/envs/quspin-532bcbc67c24-replay-20261004-000650-2c8d\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-04.jsonl"
+  ]
+}

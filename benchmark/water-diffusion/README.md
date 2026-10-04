@@ -33,9 +33,19 @@ The polarizable Dang–Chang model is not reproduced.
 D_PBC is linear in 1/L for both models (χ²/dof 0.19 and 0.45 over N = 128–2048; `yh.png`). Qualitatively:
 SPC/E diffuses faster and is less viscous than real water (✓, as the paper says); TIP4P/2005 is closer to
 experiment in D (✓) but not in η here (our two η values coincide within their bars). The SPC/E differences are
-plausibly protocol: a 2 fs time step (the paper: 1 fs), our real-space cutoff min(1 nm, 0.45 L) and Nosé–Hoover
+plausibly protocol (the time step is ruled out, below): our real-space cutoff min(1 nm, 0.45 L) and Nosé–Hoover
 coupling (1 ps⁻¹), and 2 ns runs (the paper: 1–10 ns); the paper's own Green–Kubo η for SPC/E (0.68) is also
 above its D(L) estimate. The Dang–Chang model and Green–Kubo viscosities were not reproduced.
+
+**The time step is not the cause.** The `md-dt1` step re-ran SPC/E at the paper's 1 fs (same seeds, 2 ns):
+
+| SPC/E | D_PBC at 2 fs (10⁻⁹ m²/s) | at 1 fs | |
+|---|---|---|---|
+| N = 512, seed 1 | 2.533 | 2.536 | +0.1 % (seed 2 at 2 fs: 2.556) |
+| N = 1024, seed 1 | 2.608 | 2.610 | +0.1 % |
+
+The 1 fs runs agree with the 2 fs runs to 0.1 %, well inside the spread between seeds. The remaining candidates
+are the thermostat and its coupling, the real-space cutoff, and the run length.
 
 The Yeh–Hummer fit was first run as a preview on 21 of the 22 MD runs (`yh-preview`, `${md.partial}`) while the
 largest box was still running; the final fit moved D₀(TIP4P/2005) from 2.43 to 2.45.

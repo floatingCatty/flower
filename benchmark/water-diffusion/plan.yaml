@@ -193,3 +193,30 @@ nodes:
     inputs:
       md: ${md.partial}
     run: python3 ${plan.dir}/yh_fit.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: md-dt1
+    kind: shell
+    title: 'SPC/E N=${item.N} at the paper''s 1 fs time step (same seed): does dt explain D?'
+    cluster: remote
+    environment: openmm
+    stage_in:
+    - ${plan.dir}/md_water.py
+    timeout:
+      total: 10h
+    foreach:
+    - model: spce
+      N: 512
+      seed: 1
+      ns: 2
+    - model: spce
+      N: 1024
+      seed: 1
+      ns: 2
+    outputs:
+      D_pbc: number
+      L_nm: number
+    files:
+      result: result.json
+    retry:
+      max_attempts: 3
+    run: python3 md_water.py ${item.model} ${item.N} ${item.seed} ${item.ns} 1 8 | tail -n 1 > "$FLOWER_OUTPUTS"

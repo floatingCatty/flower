@@ -401,6 +401,13 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** the edit comparison treats empty values as absent. The amendment overview names replaced
   steps, and lists tuned or new clusters and new inputs.
 
+### 43. A rerun silently skipped plan-file edits outside its reach
+- **Test:** `tests/core/test_core_devloop.py::test_rerun_names_edits_it_does_not_apply`
+- **Observed:** two steps (`preview`, `analysis`) were edited; `flower rerun RUN preview` applied only the
+  preview's edit. `analysis` kept its old definition, ran with it when its inputs were ready, and the report
+  silently used the wrong fit.
+- **Fix:** a rerun names the edited steps it does not apply and points to `flower sync RUN`.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

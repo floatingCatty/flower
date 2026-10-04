@@ -428,6 +428,13 @@ class Engine:
             return c
 
         changed = [nid for nid in cone if nid in new and canon(new[nid]) != canon(cur[nid])]
+        if node is not None:   # edits the rerun does not reach must not go unnoticed (BUGS #43)
+            elsewhere = [n for n in cur if n not in cone and not cur[n].get("expanded_from")
+                         and not str(cur[n].get("generated", "")).startswith("env:")
+                         and n in new and canon(new[n]) != canon(cur[n])]
+            if elsewhere:
+                res["ignored"].append(f"the plan file also changes {', '.join(elsewhere)}, outside what this rerun "
+                                      f"touches: not applied (`flower sync {st.run_id}` applies them)")
         for nid in list(changed):  # a node's new environment version needs its env step updated too
             for d in new[nid].get("needs") or []:
                 if str(cur.get(d, {}).get("generated", "")).startswith("env:") and d in new \

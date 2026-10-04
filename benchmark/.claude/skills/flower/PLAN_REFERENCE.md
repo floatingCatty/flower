@@ -111,6 +111,8 @@ ops:
   - {op: drop, nodes: [pending-node]}
   - {op: set_needs, node: n, needs: [a, b]}
   - {op: add_clusters, clusters: {box: {transport: ssh, host: mybox, scheduler: none}}}   # new names only
+  - {op: tune_clusters, clusters: {box: {cpus: 16, max_jobs: 4}}}     # pacing only: cpus, max_jobs, min_poll
   - {op: add_inputs, inputs: {host: {type: string, default: mybox}}}                       # value as default
 ```
-History is immutable: finished nodes can only be superseded, never edited in place.
+History is immutable: finished nodes can only be superseded, never edited in place. Edits to the plan file become such
+amendments with `flower add` / `flower rerun RUN NODE` (which also re-runs NODE) or `flower sync RUN` (nothing re-runs).

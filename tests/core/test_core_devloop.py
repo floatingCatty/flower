@@ -387,6 +387,24 @@ def test_remote_exec_on_a_run_uses_its_inputs(cli, home, tmp_path, capsys):
     assert "at over-there" in capsys.readouterr().out + json.dumps(res)
     code, res = cli("remote", "exec", "--cluster", "box", "--", "true")
     assert code != 0 and "--run" in res["error"]["message"]
+    code, res = cli("remote", "exec", "--run", rid, "--cluster", "local", "--", "echo here")   # always there
+    assert code == 0, res
+
+
+def test_rerun_names_edits_it_does_not_apply(cli, home, tmp_path):
+    """BUGS #43: two steps were edited in the plan file, `rerun` of one applied only that one; the other kept its
+    old definition and ran with it later, silently. The rerun now names the edits outside its reach."""
+    two = """\
+  - {id: a, kind: shell, run: 'echo "{\\"x\\": 1}" > "$FLOWER_OUTPUTS"', outputs: {x: integer}}
+  - {id: b, kind: shell, run: 'echo "{\\"y\\": 1}" > "$FLOWER_OUTPUTS"', outputs: {y: integer}}
+"""
+    plan = _plan(tmp_path, two, policy="unfinished")
+    rid = _start(cli, plan)
+    _plan(tmp_path, two.replace('x\\": 1', 'x\\": 2').replace('y\\": 1', 'y\\": 2'), policy="unfinished")
+    code, res = cli("rerun", rid, "a", "--yes")
+    assert code == 0 and "also changes b" in res["message"] and "flower sync" in res["message"], res
+    code, res = cli("sync", rid, "--yes")
+    assert code == 0 and "changed b" in res["message"], res
 
 
 def test_tune_clusters_amendment_refuses_placement_keys():

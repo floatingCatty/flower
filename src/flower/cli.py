@@ -1199,7 +1199,7 @@ def _plan_cluster(args) -> tuple[dict, Path]:
     if args.run:
         eng = get_engine(args)
         st = eng.state()
-        clusters = st.plan.get("clusters") or {}
+        clusters = {planmod.LOCAL_CLUSTER: {"transport": "local", "scheduler": "none"}, **(st.plan.get("clusters") or {})}
         if args.cluster not in clusters:
             raise FlowerError("usage", f"run {st.run_id} has no cluster {args.cluster!r}",
                               f"clusters: {', '.join(clusters) or 'none'} (a new one: add it to the plan file, "
@@ -1214,7 +1214,8 @@ def _plan_cluster(args) -> tuple[dict, Path]:
         inputs.update(json.loads(Path(args.inputs).read_text()))
     values = coerce_inputs(plan.get("inputs") or {}, inputs, Path.cwd())
     res = tpl.make_resolver({"inputs": values, "env": dict(os.environ), "plan": {"dir": str(src), "id": plan.get("id")}})
-    clusters = tpl.render(plan.get("clusters") or {}, res)
+    clusters = {planmod.LOCAL_CLUSTER: {"transport": "local", "scheduler": "none"},   # always there: this machine
+                **tpl.render(plan.get("clusters") or {}, res)}
     if args.cluster not in clusters:
         raise FlowerError("usage", f"plan {args.plan} has no cluster {args.cluster!r}",
                           f"clusters: {', '.join(clusters) or 'none'}")

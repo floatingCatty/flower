@@ -22,12 +22,13 @@ what was done and why. For a single quick command, just do it directly.
 (`<id>/plan.yaml`) and a run that parks until it has steps, and starts the project's UI so the user can
 watch. Nothing is too early to be a step: downloading inputs, the first quick test, a parameter probe.
 - **One command per step:** `flower add RUN ID [--needs X] [--out NAME:TYPE] [--file NAME=PATH]
-  [--cluster C --env E --stage-in FILE --retrieve GLOB] -- <command>` writes the step into plan.yaml
+  [--cluster C --env E --stage-in FILE --retrieve GLOB --cpus N --mem 16G] -- <command>` writes the step into plan.yaml
   and runs it, streaming its output. The command writes outputs as JSON to `$FLOWER_OUTPUTS`.
 - **Fix and repeat:** edit the code or the step in plan.yaml, then `flower rerun RUN ID --follow`. Edits are
   picked up as recorded amendments (`policies: {edits: unfinished}` lets new/unfinished steps through).
 - **A new machine later:** add an `inputs:` entry (value with `-i NAME=VALUE` on add/rerun) and a
-  `clusters:` entry to plan.yaml; the next add/rerun picks them up. Existing clusters/inputs are fixed.
+  `clusters:` entry to plan.yaml; the next add/rerun picks them up. Existing clusters/inputs are fixed,
+  except a cluster's `cpus`, `max_jobs`, `min_poll`: edit them and run `flower sync RUN` (nothing re-runs).
 - **Explore a remote host** with `flower remote exec` (logged), not raw ssh.
 - Reading papers, files and results directly is fine. *Running* computations beside the run is not: they
   are unrecorded and invisible to the user. That includes the quick check whose answer you rely on (a symmetry
@@ -50,10 +51,11 @@ For a workflow that is already known end to end, writing the whole plan first (b
    don't poll in a tight loop). Exit code 0 = succeeded, 1 = failed, 3 = needs a decision / still running.
    **Software on a cluster:** if a step needs software on a remote target, make an environment recipe
    instead of hand-written preludes: `flower env new NAME`; explore the target with
-   `flower remote exec --plan P --cluster C --env NAME [--probe] -- <cmd>` (logged; `--probe` for
+   `flower remote exec --run RUN --cluster C --env NAME [--probe] -- <cmd>` (logged; `--probe` for
    look-only commands); write envs/NAME/setup.sh (install into $FLOWER_ENV_PREFIX, pin exact versions),
    activate.sh and check.sh; `flower env freeze NAME`; prove it with
-   `flower env replay NAME --plan P --cluster C --fresh`; then put `environment: NAME` on the steps.
+   `flower env replay NAME --run RUN --cluster C --fresh`; then put `environment: NAME` on the steps.
+   (`--run RUN` uses the run's cluster and inputs; `--plan P` reads a plan file, with `-i`/`--inputs`.)
    Ask the user before installing anything on a machine they share with others.
    To let the user watch it, run `flower ui --json` (starts or reuses the project's UI in the background)
    and give them its links: the local one if they sit at this machine, else the `ssh -N -L …` line, or
