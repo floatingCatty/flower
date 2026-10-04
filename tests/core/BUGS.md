@@ -513,6 +513,16 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** inside a git repository, `flower init` adds `.flower/` to the project's `.gitignore` unless a line
   already covers it.
 
+## Hydrogen-chain reproduction (2026-10-04)
+
+### 58. An outdated plan-file edit parked a finished run
+- **Test:** `tests/core/test_core_devloop.py::test_a_newer_plan_file_supersedes_an_older_waiting_edit`
+- **Observed:** two `flower sync` calls on the hydrogen-chain run each proposed the plan file's edit of the
+  `chains` foreach. The first touched finished work and opened a gate; the second was applied. The first gate
+  stayed open, and when the last items finished the run parked on it with nothing left to decide.
+- **Fix:** a proposal made from the plan file is a snapshot of it, so each `flower sync` withdraws older open
+  snapshots; a sync back to what ran leaves no gate.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

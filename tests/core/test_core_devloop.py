@@ -390,6 +390,29 @@ def test_sync_tunes_a_cluster_without_rerunning(cli, home, tmp_path):
     assert "already follows" in res["message"] or "note:" in res["message"]
 
 
+def test_a_newer_plan_file_supersedes_an_older_waiting_edit(cli, home, tmp_path):
+    """BUGS #58: an edit of finished work waits for approval; when the file was edited again and synced, the
+    first proposal stayed open and parked the finished run. Each sync now withdraws older snapshots of the file."""
+    head = "flower: 1\nid: dev\npolicies: {edits: unfinished}\nnodes:\n"
+    p = tmp_path / "plan.yaml"
+    p.write_text(head + A_OK)
+    rid = _start(cli, p)
+    p.write_text(head + A_OK.replace("2}", "3}"))
+    code, res = cli("sync", rid)
+    first = res["data"]["amendment_id"]
+    assert code == 3
+    p.write_text(head + A_OK.replace("2}", "4}"))
+    code, res = cli("sync", rid)
+    second = res["data"]["amendment_id"]
+    assert code == 3 and second != first
+    st = _eng(home, rid).state()
+    assert st.amendments[first].status == "rejected" and [g.amendment_id for g in st.open_gates()] == [second]
+    p.write_text(head + A_OK)                                 # back to what ran: nothing left to decide
+    code, res = cli("sync", rid)
+    st = _eng(home, rid).state()
+    assert code == 0 and not st.open_gates() and st.status == "succeeded", res
+
+
 def test_an_added_environment_step_is_not_seen_as_edited(cli, home, tmp_path, monkeypatch):
     """BUGS #42: a step added with `--env` (implicit cluster `local`) carries `stage_in: []`, `retrieve: []`,
     `resources: {}` in the run but not in the plan file, so `flower sync` proposed to re-run it, finished and

@@ -84,6 +84,7 @@ nodes:
     title: 'H${item.N} at R = ${item.R}: RHF, UHF, RCCSD(T), UCCSD(T) (STO-6G)'
     description: Longer open chains (N = 20..50 at every bond length, and N = 60..100 for R <= 2.0 where UHF breaks symmetry only in long chains), for the extrapolation to the infinite chain (Table V). Together with h10 they give E(N)/N for each method; RCCSD may break down at large R, as the paper reports.
     environment: pyscf
+    tmpdir: job
     env:
       OMP_NUM_THREADS: '4'
     timeout:

@@ -20,7 +20,7 @@ from typing import Any
 
 from . import __version__
 from . import plan as planmod
-from .engine import Engine, create_run, driver_alive
+from .engine import FILE_EDIT, Engine, create_run, driver_alive
 from .rundir import RunPaths, find_root, list_runs, resolve_run
 from .state import TERMINAL_RUN
 from .util import FlowerError, atomic_write_json, default_actor, first_line, hostname, local_clock, now_iso, parse_duration, read_json
@@ -685,6 +685,8 @@ def _pick_up_edits(eng: Engine, args, out: Out, node: str | None, via: str) -> t
     eng.tick()  # apply approvals answered since the last pass (e.g. of an earlier edit)
     ed = eng.plan_edits(node, new_inputs=parse_kv(getattr(args, "input", None)))
     notes.extend(f"note: {x}" for x in ed.get("ignored") or [])
+    if node is None:  # the whole file: older snapshots of it are superseded (#58)
+        notes.extend(f"note: withdrew {a}, an older version of the plan file" for a in eng.withdraw_file_proposals(ed["ops"]))
     if not ed["ops"]:
         return notes, None
     st = eng.state()
@@ -699,11 +701,11 @@ def _pick_up_edits(eng: Engine, args, out: Out, node: str | None, via: str) -> t
              if isinstance(n, dict) and n.get("description") and not n.get("generated")]
     if len(descs) == 1:
         what += f": {first_line(descs[0], 160)}"
-    waiting = next((a for a in st.amendments.values() if a.status == "proposed" and a.ops == ed["ops"]), None)
+    waiting = next((a for a in eng.state().amendments.values() if a.status == "proposed" and a.ops == ed["ops"]), None)
     if waiting is not None and not auto:  # the same edit is already waiting for a decision
         aid = waiting.id
     else:
-        aid = eng.propose_amendment(ed["ops"], f"plan file edited ({what}); picked up by `{via}`", by=by,
+        aid = eng.propose_amendment(ed["ops"], f"{FILE_EDIT} ({what}); picked up by `{via}`", by=by,
                                     auto_approve=auto)
     st = eng.state()
     am = st.amendments.get(aid)

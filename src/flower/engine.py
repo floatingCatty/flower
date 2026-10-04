@@ -62,6 +62,7 @@ class TickReport:
 # ====================================================================== run creation
 
 NEVER_RETRY = {"auth", "contract", "template"}
+FILE_EDIT = "plan file edited"  # the rationale prefix of proposals made from the plan file (`flower sync`/`rerun`)
 
 
 def host_key(c: dict) -> str:
@@ -1353,8 +1354,30 @@ class Engine:
         for nid in effects.get("stop", []):
             self.emit("node.skipped", {"reason": f"stopped by amendment {aid}", "cause": "stopped"}, node=nid)
         st = self.state()
+        st = self.state()
         if st.status in TERMINAL_RUN or st.status == "parked":
             self.emit("run.reopened", {"reason": f"amendment {aid} approved", "by": by})
+
+    def withdraw_file_proposals(self, keep_ops: list) -> list[str]:
+        """A proposal made from the plan file is a snapshot of it; a newer one supersedes it. Withdraw the open
+        ones that differ from ``keep_ops`` so an outdated snapshot cannot park the run (#58)."""
+        out = []
+        with self.lock():
+            st = self.state()
+            for g in st.open_gates():
+                am = st.amendments.get(g.amendment_id) if g.subject == "amendment" else None
+                if am and am.status == "proposed" and am.rationale.startswith(FILE_EDIT) and am.ops != keep_ops:
+                    self.emit("gate.answered", {"gate_id": g.id, "decision": "withdrawn", "by": "system",
+                                                "text": "superseded by a newer version of the plan file"},
+                              key=f"gate.answered:{g.id}")
+                    self.emit("plan.amendment.rejected", {"amendment_id": am.id, "by": "flower",
+                                                          "reason": "superseded by a newer version of the plan file"})
+                    try:
+                        (self.paths.pending / f"{fs_name(g.id)}.request.json").unlink()
+                    except FileNotFoundError:
+                        pass
+                    out.append(am.id)
+        return out
 
     # ------------------------------------------------------------ gates
     def _resolve_node_gate(self, st: RunState, ns: NodeState, g) -> None:

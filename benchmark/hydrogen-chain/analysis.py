@@ -123,7 +123,7 @@ def main():
     L += ["", "R_e and E_0 from a quartic fit of FCI on R = 1.70..1.90 (step 0.02)."]
     Path("report.md").write_text("\n".join(L) + "\n")
     json.dump({"claims": claims, "tdl": {"%s %s" % k: v for k, v in tdl.items()}, "Re": re, "E0": e0},
-              open("analysis.json", "w"), indent=1)
+              open("analysis.json", "w"), indent=1, default=lambda o: o.item() if hasattr(o, "item") else str(o))
     figure(h10, T, tdl)
     return {"n_claims": len(claims), "n_reproduced": n_rep, "Re": re, "E0": e0, "table2_agree": n_ok}
 
