@@ -1093,10 +1093,19 @@ class Engine:
                 if canon(child(i, items[i])) != canon(g.nodes[c]):
                     reshaped.add(i)
         if items is not None and (items != old_items or reshaped):
-            only_added = not reshaped and len(items) > len(old_items) and items[:len(old_items)] == old_items
-            if not only_added and any(st.nodes.get(c, NodeState(c)).status in ("running", "waiting", "retrying")
-                                      for c in children):
-                return False  # let in-flight children finish first (items appended do not need to wait: #51)
+            def in_flight(c: str) -> bool:
+                return st.nodes.get(c, NodeState(c)).status in ("running", "waiting", "retrying")
+
+            def settings_only(i: int) -> bool:
+                return items[i] == old_items[i] and \
+                    planmod.decl_hash(child(i, items[i])) == planmod.decl_hash(g.nodes[children[i]])
+            # wait only if an in-flight item itself would be superseded or dropped; appended items (#51), items
+            # changed in their settings only, and pending items are updated at once
+            touched = [i for i in range(min(len(items), len(children)))
+                       if (items[i] != old_items[i] or i in reshaped) and not settings_only(i)]
+            dropped = list(range(len(items), len(children)))
+            if any(in_flight(children[i]) for i in touched + dropped):
+                return False  # let in-flight children finish first
             base_needs = [d for d in (spec.get("needs") or []) if d not in children]
             ops: list[dict] = []
             add = [child(i, it) for i, it in enumerate(items) if i >= len(children)]

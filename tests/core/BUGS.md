@@ -468,6 +468,13 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   have started only after all the others.
 - **Fix:** appending items (no item changed or removed) expands at once; replacing or dropping items still waits.
 
+### 52. A settings edit reached a foreach's pending items only after the running one finished
+- **Test:** `tests/core/test_core_devloop.py::test_a_settings_edit_reaches_pending_items_while_one_runs`
+- **Observed:** S22's remote items were lowered from 16 to 15 cores so that two fit the 30-core budget; the
+  pending items kept 16 until the running item finished, so the next one would again run alone.
+- **Fix:** the re-expansion waits only when an in-flight item itself would be superseded or dropped; settings-only
+  changes and pending items are updated at once.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

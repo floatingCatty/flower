@@ -276,7 +276,7 @@ nodes:
     timeout:
       total: 12h
     resources:
-      cpus_per_task: 16
+      cpus_per_task: 15
       mem: 60G
     foreach:
     - i: 5

@@ -516,6 +516,36 @@ def test_items_appended_to_a_running_foreach_start_now(cli, home, tmp_path):
         "the appended item waited for the running one"
 
 
+def test_a_settings_edit_reaches_pending_items_while_one_runs(cli, home, tmp_path):
+    """BUGS #52: lowering a remote step's cores so two items fit the cpu budget did not reach the pending items
+    until the running one had finished (the re-expansion waited for every in-flight item)."""
+    import time
+    head = ("flower: 1\nid: dev\npolicies: {edits: unfinished}\nclusters:\n"
+            "  box: {transport: local, scheduler: none, max_jobs: 1, min_poll: 0.2s, remote_root: '%s'}\nnodes:\n"
+            % (tmp_path / "remote"))
+    body = """\
+  - {id: f, kind: shell, cluster: box, foreach: [3, 0, 0], timeout: {total: TT}, run: 'sleep ${item}', outputs: {}}
+"""
+    p = tmp_path / "plan.yaml"
+    p.write_text(head + body.replace("TT", "1h"))
+    code, res = cli("run", str(p), "--yes", "--detach")
+    rid = res["data"]["run_id"]
+    eng = _eng(home, rid)
+    deadline = time.time() + 20
+    while time.time() < deadline and (eng.state().nodes.get("f[0]") is None
+                                      or eng.state().nodes["f[0]"].status != "running"):
+        eng.tick(); time.sleep(0.2)
+    p.write_text(head + body.replace("TT", "2h"))
+    code, res = cli("sync", rid)
+    assert code == 0, res
+    deadline = time.time() + 2.5
+    while time.time() < deadline and eng.state().graph().nodes["f[1]"]["timeout"]["total"] != "2h":
+        eng.tick(); time.sleep(0.1)
+    st = eng.state()
+    assert st.nodes["f[0]"].status == "running", st.nodes["f[0]"].status
+    assert st.graph().nodes["f[1]"]["timeout"]["total"] == "2h", "the pending item kept the old setting"
+
+
 def test_tune_clusters_amendment_refuses_placement_keys():
     from flower.plan import apply_amendment, PlanInvalid
     plan = {"flower": 1, "id": "x", "clusters": {"box": {"transport": "local", "cpus": 4}}, "nodes": []}
