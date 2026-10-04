@@ -295,6 +295,10 @@ nodes:
       level: mp2-atz
     - i: 15
       level: mp2-atz
+    - i: 14
+      level: ccsdt-dz
+    - i: 15
+      level: ccsdt-dz
     outputs:
       hf_int_kcal: number
       seconds: number

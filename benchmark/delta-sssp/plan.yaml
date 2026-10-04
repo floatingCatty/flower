@@ -223,3 +223,90 @@ nodes:
       eos: ${eos-hicut.outputs.items}
       wien2k: ${sources.files.wien2k}
     run: python3 ${plan.dir}/delta.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: structures-smear
+    kind: shell
+    title: pw.x inputs with the paper's smearing (0.002 Ry) and a denser k-mesh (0.07 1/A) for five metals
+    environment: ase
+    outputs:
+      items: array
+      n: integer
+    inputs:
+      wien2k: ${sources.files.wien2k}
+      sssp_json: ${sources.files.sssp_json}
+      kspacing: 0.07
+      degauss: 0.002
+      elements:
+      - Au
+      - Hg
+      - Cu
+      - Pt
+      - Cd
+    run: python3 ${plan.dir}/structures.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: eos-smear
+    kind: shell
+    title: EOS of ${item.el}, smearing 0.002 Ry, k-spacing 0.07 1/A
+    cluster: remote
+    environment: qe
+    stage_in:
+    - ${plan.dir}/eos.sh
+    - ${structures-smear.outputs.local_dir}/inputs/${item.el}
+    timeout:
+      total: 24h
+    resources:
+      cpus_per_task: 4
+    foreach: ${structures-smear.outputs.items}
+    outputs:
+      el: string
+      V: array
+      E: array
+      mag: array
+      iterations: array
+    retry:
+      max_attempts: 3
+    on_failure: continue
+    run: bash eos.sh ${item.el} $FLOWER_CPUS | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: delta-smear
+    kind: shell
+    title: Delta of five metals with the paper's smearing (is the gap the smearing?)
+    environment: ase
+    outputs:
+      n_elements: integer
+      avg_delta: number
+      worst: array
+      failed: array
+    files:
+      report: report.md
+      data: delta.json
+    trigger: all_done
+    inputs:
+      eos: ${eos-smear.outputs.items}
+      wien2k: ${sources.files.wien2k}
+    run: python3 ${plan.dir}/delta.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: delta-reference
+    kind: shell
+    title: Published QE Delta values (all pseudopotential families in the package history) for the outliers
+    environment: ase
+    outputs:
+      sections: integer
+      delta: object
+    files:
+      data: reference.json
+    inputs:
+      wien2k: ${sources.files.wien2k}
+      elements:
+      - Au
+      - Hg
+      - Pt
+      - Cd
+      - Cu
+      - N
+      - F
+      - O
+      - Cr
+      - Fe
+      - Mn
+    run: python3 ${plan.dir}/delta.py reference | tail -n 1 > "$FLOWER_OUTPUTS"

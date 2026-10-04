@@ -461,6 +461,13 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** a value that is JSON (list, object, number, true/false/null) keeps its type, as in YAML; paths, words
   and `${references}` stay strings.
 
+### 51. Items appended to a running foreach waited for the whole step
+- **Test:** `tests/core/test_core_devloop.py::test_items_appended_to_a_running_foreach_start_now`
+- **Observed:** two more S22 CCSD(T) items were appended to `calc-remote` while one of its items ran; the
+  re-expansion waits until no item is in flight, and with items running one after another the new ones would
+  have started only after all the others.
+- **Fix:** appending items (no item changed or removed) expands at once; replacing or dropping items still waits.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

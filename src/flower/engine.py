@@ -1093,8 +1093,10 @@ class Engine:
                 if canon(child(i, items[i])) != canon(g.nodes[c]):
                     reshaped.add(i)
         if items is not None and (items != old_items or reshaped):
-            if any(st.nodes.get(c, NodeState(c)).status in ("running", "waiting", "retrying") for c in children):
-                return False  # let in-flight children finish first
+            only_added = not reshaped and len(items) > len(old_items) and items[:len(old_items)] == old_items
+            if not only_added and any(st.nodes.get(c, NodeState(c)).status in ("running", "waiting", "retrying")
+                                      for c in children):
+                return False  # let in-flight children finish first (items appended do not need to wait: #51)
             base_needs = [d for d in (spec.get("needs") or []) if d not in children]
             ops: list[dict] = []
             add = [child(i, it) for i, it in enumerate(items) if i >= len(children)]

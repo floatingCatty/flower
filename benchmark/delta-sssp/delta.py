@@ -190,5 +190,22 @@ def figure(ok):
     fig.savefig("delta.png", dpi=110)
 
 
+def reference():
+    """Delta against WIEN2k of the published entries in history/QE-history.txt (one per `# ...` section) for the
+    elements in FLOWER_INPUTS["elements"]: what other calculations with the same pseudopotential families found."""
+    I = json.loads(Path(os.environ["FLOWER_INPUTS"]).read_text())
+    pkg = Path(I["wien2k"]).parent
+    ref = table(pkg / "WIEN2k.txt")
+    hist = pkg / "history" / "QE-history.txt"
+    sections = [ln[1:].strip() for ln in open(hist) if ln.startswith("#")]
+    out = {}
+    for sec in sections:
+        t = table(hist, sec)
+        out[sec] = {el: round(delta(t[el], ref[el])[0], 3) for el in I["elements"] if el in t and el in ref}
+    Path("reference.json").write_text(json.dumps(out, indent=1))
+    return {"sections": len(sections), "delta": out}
+
+
 if __name__ == "__main__":
-    print(json.dumps(main(), default=lambda o: o.item()))
+    mode = sys.argv[1] if len(sys.argv) > 1 else "run"
+    print(json.dumps(reference() if mode == "reference" else main(), default=lambda o: o.item()))

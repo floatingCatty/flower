@@ -491,6 +491,31 @@ def test_add_step_inputs_keep_json_types():
         assert _typed(v) == v
 
 
+def test_items_appended_to_a_running_foreach_start_now(cli, home, tmp_path):
+    """BUGS #51: items appended to a foreach list waited until no earlier item was in flight; with items
+    running one after another that meant after the whole step."""
+    import time
+    body = """\
+  - {id: f, kind: shell, foreach: ITEMS, run: 'sleep ${item}; echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
+"""
+    plan = _plan(tmp_path, body.replace("ITEMS", "[3]"), policy="unfinished")
+    code, res = cli("run", str(plan), "--yes", "--detach")
+    rid = res["data"]["run_id"]
+    eng = _eng(home, rid)
+    deadline = time.time() + 20
+    while time.time() < deadline and eng.state().nodes.get("f[0]") is None:
+        eng.tick(); time.sleep(0.2)
+    _plan(tmp_path, body.replace("ITEMS", "[3, 0]"), policy="unfinished")
+    code, res = cli("sync", rid)
+    assert code == 0, res
+    deadline = time.time() + 2.5
+    while time.time() < deadline and "f[1]" not in eng.state().nodes:
+        eng.tick(); time.sleep(0.1)
+    st = eng.state()
+    assert "f[1]" in st.graph().nodes and st.nodes["f[0]"].status == "running", \
+        "the appended item waited for the running one"
+
+
 def test_tune_clusters_amendment_refuses_placement_keys():
     from flower.plan import apply_amendment, PlanInvalid
     plan = {"flower": 1, "id": "x", "clusters": {"box": {"transport": "local", "cpus": 4}}, "nodes": []}
