@@ -62,6 +62,14 @@ What this benchmark found in flower (tests/core/BUGS.md #41–#43, each fixed wi
 * `flower add` gained `--cpus` / `--mem`, and `flower remote exec` / `flower env` gained `--run RUN`, which
   uses the run's cluster and inputs instead of repeating `--inputs` on every call.
 
+## Reproduced from a fresh clone, as a protocol
+
+`flower export j1j2-chain-20261004-000321-0850 analysis` distilled the run into [`protocol.yaml`](protocol.yaml)
+(the 6 steps behind the analysis, without the probes), [`expected.json`](expected.json) and
+[`PROTOCOL.md`](PROTOCOL.md). From a fresh clone of the repository, `flower run j1j2-chain/protocol.yaml -y`
+(with the remote's ssh inputs) ran 28 nodes in 70 minutes (sharing the remote with the S22 campaign), and
+`flower compare RUN j1j2-chain/expected.json` found all 24 expected results equal within 10⁻⁶.
+
 ## Files
 - [`paper.py`](paper.py): the paper and its Table I.
 - [`ed.py`](ed.py): the diagonalization (`sectors` and `run` modes), with checkpoints.

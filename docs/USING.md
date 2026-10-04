@@ -78,7 +78,7 @@ The same commands, plus:
 - **A finished workflow as a protocol:** `flower export RUN STEP` writes, next to the plan, `protocol.yaml` (the
   plan's own definitions of STEP and everything it depends on; probes, previews and side studies drop out),
   `expected.json` (those steps' results) and `PROTOCOL.md` (what it does, needs and took). Anyone can then
-  reproduce it with `flower run protocol.yaml` and check with `flower compare RUN expected.json`.
+  reproduce it with `flower run protocol.yaml -y` and check with `flower compare RUN expected.json`.
 - **History:** `flower log RUN` (every event, actor and decision); the UI's Timeline and Plan history tabs show
   the same.
 

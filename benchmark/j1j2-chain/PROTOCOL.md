@@ -5,7 +5,7 @@ Exported from run `j1j2-chain-20261004-000321-0850`: the steps behind `analysis`
 ## Reproduce
 
 ```bash
-flower run protocol.yaml --inputs my-inputs.json
+flower run protocol.yaml -y --inputs my-inputs.json
 flower compare RUN expected.json      # RUN: the id the first command prints
 ```
 

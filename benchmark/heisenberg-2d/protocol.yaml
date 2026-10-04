@@ -1,5 +1,5 @@
 # A reproducibility protocol exported from run heisenberg-2d-20261004-172331-d4e1 (`flower export`): the steps behind
-# fits. Run it with `flower run protocol.yaml`, then `flower compare RUN expected.json`.
+# fits. Run it with `flower run protocol.yaml -y`, then `flower compare RUN expected.json`.
 flower: 1
 id: heisenberg-2d
 title: 'Reproduce the ground-state parameters of the 2D S=1/2 Heisenberg antiferromagnet by stochastic series expansion

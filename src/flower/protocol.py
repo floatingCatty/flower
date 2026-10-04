@@ -7,7 +7,7 @@
     expected.json    those steps' outputs in this run
     PROTOCOL.md      what it does, what it needs, how long it took, how to reproduce it
 
-Reproducing is `flower run protocol.yaml` and then `flower compare NEW_RUN expected.json`.
+Reproducing is `flower run protocol.yaml -y` and then `flower compare NEW_RUN expected.json`.
 """
 from __future__ import annotations
 
@@ -55,7 +55,7 @@ def export(eng, steps: list[str]) -> dict:
     from .devloop import _Dumper
     (d / "protocol.yaml").write_text(
         f"# A reproducibility protocol exported from run {st.run_id} (`flower export`): the steps behind\n"
-        f"# {', '.join(steps)}. Run it with `flower run protocol.yaml`, then `flower compare RUN expected.json`.\n"
+        f"# {', '.join(steps)}. Run it with `flower run protocol.yaml -y`, then `flower compare RUN expected.json`.\n"
         + yaml.dump(proto, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=110))
     planmod.check(planmod.load_plan_file(str(d / "protocol.yaml")))    # it must stand on its own
     g = st.graph()
@@ -86,7 +86,7 @@ def readme(st, proto: dict, steps: list[str], nodes: set[str]) -> str:
     L = [f"# {title}", ""] + ([desc, ""] if desc and desc != title else []) + [
          f"Exported from run `{st.run_id}`: the steps behind {', '.join(f'`{s}`' for s in steps)}.", "",
          "## Reproduce", "", "```bash",
-         "flower run protocol.yaml" + (" --inputs my-inputs.json" if proto.get("inputs") else ""),
+         "flower run protocol.yaml -y" + (" --inputs my-inputs.json" if proto.get("inputs") else ""),
          "flower compare RUN expected.json      # RUN: the id the first command prints", "```", ""]
     ins = proto.get("inputs") or {}
     if ins:

@@ -904,7 +904,7 @@ def cmd_export(args, out: Out) -> int:
     res = export(eng, args.steps)
     return out.done(res, f"protocol of {', '.join(args.steps)} ({len(res['steps'])} steps, {res['expected']} expected "
                          f"results) in {res['dir']}:\n  " + "\n  ".join(res["files"]),
-                    ["flower run protocol.yaml", "flower compare RUN expected.json"])
+                    ["flower run protocol.yaml -y", "flower compare RUN expected.json"])
 
 
 def _engine_at(ref: str) -> Engine:

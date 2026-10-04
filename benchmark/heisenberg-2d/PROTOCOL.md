@@ -5,7 +5,7 @@ Exported from run `heisenberg-2d-20261004-172331-d4e1`: the steps behind `fits`.
 ## Reproduce
 
 ```bash
-flower run protocol.yaml --inputs my-inputs.json
+flower run protocol.yaml -y --inputs my-inputs.json
 flower compare RUN expected.json      # RUN: the id the first command prints
 ```
 
