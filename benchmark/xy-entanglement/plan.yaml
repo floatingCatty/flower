@@ -1,0 +1,137 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
+# existing cluster, only cpus / max_jobs / min_poll may change.
+
+flower: 1
+id: xy-entanglement
+title: "Reproduce the entanglement entropy of spin blocks in critical and non-critical XY/XX chains (Vidal, Latorre, Rico, Kitaev, PRL 90, 227902 (2003), arXiv:quant-ph/0211074): the log2(L)/3 and log2(L)/6 laws of Eqs. (14)-(15), the saturation of Eq. (16) and the anisotropy dependence of Eq. (18), by free-fermion correlation matrices"
+description: |
+  Reproduce the entanglement entropy of spin blocks in critical and non-critical XY/XX chains (Vidal, Latorre, Rico, Kitaev, PRL 90, 227902 (2003), arXiv:quant-ph/0211074): the log2(L)/3 and log2(L)/6 laws of Eqs. (14)-(15), the saturation of Eq. (16) and the anisotropy dependence of Eq. (18), by free-fermion correlation matrices
+
+clusters: {}
+
+nodes:
+  - id: check
+    kind: shell
+    description: The method against exact diagonalization (open 12-spin chains, four (gamma, h) points, blocks of 1-6 spins) and the infinite-chain correlation matrix against the middle of a 4000-spin chain. Read ed_vs_majorana_max (below 1e-8) and infinite_vs_long_chain_max (below 1e-6).
+    environment: analysis
+    stage_in:
+    - ent.py
+    outputs:
+      ok: boolean
+      ed_vs_majorana_max: number
+      infinite_vs_long_chain_max: number
+    run: python3 ent.py check | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: paper
+    kind: shell
+    description: 'Downloads the paper (arXiv PDF, sha256) and keeps the lines of Eqs. (14)-(16) and (18) from its text layer as evidence (some symbols are lost in the text layer: k2 is read as pi/3). Read sha256_pdf and eq_lines.'
+    outputs:
+      sha256_pdf: string
+      eq_lines: array
+    files:
+      pdf: paper.pdf
+    run: |-
+      curl -fsSL -A "Mozilla/5.0" -o paper.pdf https://arxiv.org/pdf/quant-ph/0211074 && pdftotext paper.pdf paper.txt && python3 -c "
+      import hashlib, json, re
+      t = open(\"paper.txt\", errors=\"replace\").read().split(\"\n\")
+      keep = [l.strip() for l in t if re.search(r\"log2|k[12]\b|\(1[4-8]\)|central charge\", l)][:40]
+      print(json.dumps({\"sha256_pdf\": hashlib.sha256(open(\"paper.pdf\", \"rb\").read()).hexdigest(), \"eq_lines\": keep}))" > "$FLOWER_OUTPUTS"
+
+  - id: curves
+    kind: shell
+    title: ${item.what}
+    description: 'S_L of the infinite chain for one (gamma, h): every L up to 200 for the critical and XY curves, or a few large blocks (500, 1000, 2000 spins) where the entropy saturates off criticality. Read L and S.'
+    needs:
+    - check
+    environment: analysis
+    stage_in:
+    - ent.py
+    env:
+      OMP_NUM_THREADS: '4'
+    resources:
+      cpus_per_task: 4
+    foreach:
+    - what: XX, h = 0
+      mode: curve
+      g: 0.0
+      h: 0.0
+      L: '200'
+    - what: XX, h = 0.5
+      mode: curve
+      g: 0.0
+      h: 0.5
+      L: '200'
+    - what: Ising, critical
+      mode: curve
+      g: 1.0
+      h: 1.0
+      L: '200'
+    - what: XY gamma 0.25, h = 1
+      mode: curve
+      g: 0.25
+      h: 1.0
+      L: '200'
+    - what: XY gamma 0.5, h = 1
+      mode: curve
+      g: 0.5
+      h: 1.0
+      L: '200'
+    - what: XY gamma 2, h = 1
+      mode: curve
+      g: 2.0
+      h: 1.0
+      L: '200'
+    - what: Ising, a = 0.9
+      mode: points
+      g: 1.0
+      h: 1.1111111111
+      L: 500,1000,2000
+    - what: Ising, a = 0.95
+      mode: points
+      g: 1.0
+      h: 1.0526315789
+      L: 500,1000,2000
+    - what: Ising, a = 0.98
+      mode: points
+      g: 1.0
+      h: 1.0204081633
+      L: 500,1000,2000
+    - what: Ising, a = 0.99
+      mode: points
+      g: 1.0
+      h: 1.0101010101
+      L: 500,1000,2000
+    - what: Ising, a = 0.995
+      mode: points
+      g: 1.0
+      h: 1.0050251256
+      L: 500,1000,2000
+    outputs:
+      g: number
+      h: number
+      L: array
+      S: array
+    run: python3 ent.py ${item.mode} ${item.g} ${item.h} ${item.L} | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: analysis
+    kind: shell
+    description: 'The paper''s laws against this run''s curves: the 1/3 and 1/6 slopes of S_L in log2 L (Eqs. 14, 15), the constant k2 (printed as pi/3), the saturation near a = 1 (Eq. 16) and the anisotropy dependence at the critical field (Eq. 18). Read n_reproduced of n_claims and report.md.'
+    environment: analysis
+    outputs:
+      n_claims: integer
+      n_reproduced: integer
+      slope_xx: number
+      slope_ising: number
+      k1_h0: number
+      k2: number
+      slope_eq16: number
+    files:
+      report: report.md
+      figure: entropy.png
+    inputs:
+      curves: ${curves.outputs.items}
+    run: python3 ${plan.dir}/analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"
