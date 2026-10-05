@@ -18,6 +18,8 @@ inputs:
 clusters:
   remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
            remote_root: ~/flower-runs, min_poll: 15s, cpus: 32}
+  remote-quick: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+                 remote_root: ~/flower-runs, min_poll: 5s}   # quick checks, outside the campaign's budget
 
 nodes:
   - id: refs
@@ -26,6 +28,7 @@ nodes:
     outputs:
       n: integer
       names: array
+      atoms: array
     files:
       data: a24.json
       source: A24.py
@@ -59,3 +62,199 @@ nodes:
     files:
       result: result.json
     run: python3 a24.py calc a24.json ${item.i} ${item.level} 28000 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: calc
+    kind: shell
+    title: Dimer ${item.i}, ${item.level}
+    description: 'One dimer at one level, counterpoise corrected, frozen core: HF and MP2 correlation interaction energies in aug-cc-pVTZ or QZ (density fitting), or CCSD(T)-MP2 in aug-cc-pVTZ. The parts of CCSD(T)/CBS that the analysis adds up.'
+    cluster: remote
+    environment: pyscf
+    stage_in:
+    - a24.py
+    - ${refs.files.data}
+    tmpdir: job
+    env:
+      OMP_NUM_THREADS: '8'
+    timeout:
+      total: 12h
+    resources:
+      cpus_per_task: 8
+      mem: 30G
+    foreach:
+    - i: 1
+      level: ccsdt-atz
+    - i: 2
+      level: ccsdt-atz
+    - i: 3
+      level: ccsdt-atz
+    - i: 4
+      level: ccsdt-atz
+    - i: 5
+      level: ccsdt-atz
+    - i: 6
+      level: ccsdt-atz
+    - i: 7
+      level: ccsdt-atz
+    - i: 8
+      level: ccsdt-atz
+    - i: 9
+      level: ccsdt-atz
+    - i: 10
+      level: ccsdt-atz
+    - i: 11
+      level: ccsdt-atz
+    - i: 12
+      level: ccsdt-atz
+    - i: 13
+      level: ccsdt-atz
+    - i: 14
+      level: ccsdt-atz
+    - i: 15
+      level: ccsdt-atz
+    - i: 16
+      level: ccsdt-atz
+    - i: 17
+      level: ccsdt-atz
+    - i: 18
+      level: ccsdt-atz
+    - i: 19
+      level: ccsdt-atz
+    - i: 20
+      level: ccsdt-atz
+    - i: 21
+      level: ccsdt-atz
+    - i: 22
+      level: ccsdt-atz
+    - i: 23
+      level: ccsdt-atz
+    - i: 24
+      level: ccsdt-atz
+    - i: 1
+      level: mp2-aqz
+    - i: 2
+      level: mp2-aqz
+    - i: 3
+      level: mp2-aqz
+    - i: 4
+      level: mp2-aqz
+    - i: 5
+      level: mp2-aqz
+    - i: 6
+      level: mp2-aqz
+    - i: 7
+      level: mp2-aqz
+    - i: 8
+      level: mp2-aqz
+    - i: 9
+      level: mp2-aqz
+    - i: 10
+      level: mp2-aqz
+    - i: 11
+      level: mp2-aqz
+    - i: 12
+      level: mp2-aqz
+    - i: 13
+      level: mp2-aqz
+    - i: 14
+      level: mp2-aqz
+    - i: 15
+      level: mp2-aqz
+    - i: 16
+      level: mp2-aqz
+    - i: 17
+      level: mp2-aqz
+    - i: 18
+      level: mp2-aqz
+    - i: 19
+      level: mp2-aqz
+    - i: 20
+      level: mp2-aqz
+    - i: 21
+      level: mp2-aqz
+    - i: 22
+      level: mp2-aqz
+    - i: 23
+      level: mp2-aqz
+    - i: 24
+      level: mp2-aqz
+    - i: 1
+      level: mp2-atz
+    - i: 2
+      level: mp2-atz
+    - i: 3
+      level: mp2-atz
+    - i: 4
+      level: mp2-atz
+    - i: 5
+      level: mp2-atz
+    - i: 6
+      level: mp2-atz
+    - i: 7
+      level: mp2-atz
+    - i: 8
+      level: mp2-atz
+    - i: 9
+      level: mp2-atz
+    - i: 10
+      level: mp2-atz
+    - i: 11
+      level: mp2-atz
+    - i: 12
+      level: mp2-atz
+    - i: 13
+      level: mp2-atz
+    - i: 14
+      level: mp2-atz
+    - i: 15
+      level: mp2-atz
+    - i: 16
+      level: mp2-atz
+    - i: 17
+      level: mp2-atz
+    - i: 18
+      level: mp2-atz
+    - i: 19
+      level: mp2-atz
+    - i: 20
+      level: mp2-atz
+    - i: 21
+      level: mp2-atz
+    - i: 22
+      level: mp2-atz
+    - i: 23
+      level: mp2-atz
+    - i: 24
+      level: mp2-atz
+    outputs:
+      seconds: number
+      nao: integer
+    files:
+      result: result.json
+    on_failure: continue
+    run: python3 a24.py calc a24.json ${item.i} ${item.level} 28000 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: diag-ar
+    kind: shell
+    description: 'Why the argon dimers (20, 21) failed with nocc = 0 in MP2: the nuclear charges PySCF reports for Ar and for a ghost Ar, the electron count and the frozen-core count a24.py derives, for each of the three counterpoise calculations of dimer 20. Read rows.'
+    cluster: remote-quick
+    environment: pyscf
+    stage_in:
+    - a24.py
+    - ${refs.files.data}
+    resources:
+      cpus_per_task: 1
+    outputs:
+      rows: array
+    run: |-
+      python3 -c "
+      import json, a24
+      from pyscf import gto
+      rec = [r for r in json.load(open(\"a24.json\")) if r[\"index\"] == 20][0]
+      rows = []
+      for tag, s in ((\"dimer\", a24.atoms(rec[\"A\"]) + \"; \" + a24.atoms(rec[\"B\"])), (\"A+ghostB\", a24.atoms(rec[\"A\"]) + \"; \" + a24.atoms(rec[\"B\"], ghost=True)), (\"ghostA+B\", a24.atoms(rec[\"A\"], ghost=True) + \"; \" + a24.atoms(rec[\"B\"]))):
+          m = gto.M(atom=s, basis=\"aug-cc-pvtz\", verbose=0)
+          z = [float(q) for q in m.atom_charges()]
+          nfc = int(sum(1 for q in z if q > 2) + sum(4 for q in z if q > 10))
+          rows.append({\"calc\": tag, \"symbols\": [m.atom_symbol(i) for i in range(m.natm)], \"charges\": z, \"nelec\": m.nelectron, \"nfc\": nfc})
+      print(json.dumps({\"rows\": rows}))
+      " > "$FLOWER_OUTPUTS"

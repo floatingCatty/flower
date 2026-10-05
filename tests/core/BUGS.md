@@ -552,6 +552,17 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** `flower add` rewrites a relative `--stage-in` path that exists from the current directory but not from
   the plan's directory into the path relative to the plan's directory.
 
+## A24 reproduction (2026-10-05)
+
+### 62. `rerun --only` after an edit superseded the step's whole downstream
+- **Test:** `tests/core/test_core_devloop.py::test_rerun_only_after_an_edit_keeps_the_downstream`
+- **Observed:** an output was added to the finished data step of the A24 study and `flower rerun RUN refs --only`
+  run to refresh it. The edit became a superseding amendment, which marks the step and everything downstream
+  stale: 72 calculations, 16 of them finished CCSD(T) results, were queued again although `--only` was given.
+- **Fix:** `rerun --only` marks the edits it picks up `only: true`, and such a superseded step takes only its own
+  foreach items with it. (The results lost in the study could not be reused anyway: the data file staged into every
+  calculation had changed, and staged files are part of a step's cache key.)
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

@@ -614,6 +614,10 @@ def _pick_up_edits(eng: Engine, args, out: Out, node: str | None, via: str) -> t
     eng.tick()  # apply approvals answered since the last pass (e.g. of an earlier edit)
     ed = eng.plan_edits(node, new_inputs=parse_kv(getattr(args, "input", None)))
     notes.extend(f"note: {x}" for x in ed.get("ignored") or [])
+    if getattr(args, "only", False):   # `rerun --only`: a superseded step does not take its downstream with it (#62)
+        for op in ed["ops"]:
+            if op.get("op") == "replace" and op.get("supersede"):
+                op["only"] = True
     auto = bool(args.yes) or not ed["touches_finished"]   # new and unfinished steps change at once
     # older snapshots of the file are superseded (#58): all of them by a sync, those about the same steps by a
     # rerun; an identical one stays only while this edit itself waits (it is that edit)

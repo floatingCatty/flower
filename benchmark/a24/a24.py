@@ -31,11 +31,13 @@ def parse(path):
             if ln == "--":
                 frags.append(cur)
                 cur = []
-            elif re.match(r"^[A-Z][a-z]?\s", ln):
+            elif re.match(r"^[A-Za-z]{1,2}\s+-?\d", ln):        # the file writes argon as AR
                 el, x, y, z = ln.split()[:4]
-                cur.append([el, float(x), float(y), float(z)])
+                cur.append([el.capitalize(), float(x), float(y), float(z)])
         frags.append(cur)
         i = int(i)
+        if len(frags) != 2 or not all(frags):
+            raise SystemExit(f"dimer {i}: expected two non-empty fragments, got {[len(f) for f in frags]}")
         out.append({"index": i, "name": tags.get(i, str(i)), "A": frags[0], "B": frags[1], "ref": ref.get(i)})
     return sorted(out, key=lambda r: r["index"])
 
@@ -81,7 +83,8 @@ if __name__ == "__main__":
         if len(recs) != 24 or any(r["ref"] is None for r in recs):
             sys.exit(f"A24 not found intact: {len(recs)} dimers")
         json.dump(recs, open("a24.json", "w"), indent=1)
-        print(json.dumps({"n": len(recs), "names": [r["name"] for r in recs]}))
+        print(json.dumps({"n": len(recs), "names": [r["name"] for r in recs],
+                          "atoms": [len(r["A"]) + len(r["B"]) for r in recs]}))
     else:
         mem = int(sys.argv[5]) if len(sys.argv) > 5 else 16000
         r = calc(sys.argv[2], int(sys.argv[3]), sys.argv[4], mem)

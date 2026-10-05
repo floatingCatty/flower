@@ -589,7 +589,8 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
 
     ``node_status`` maps node id -> status, used to forbid silent edits of history:
     only *pending* nodes may be replaced/dropped/re-wired; a finished node can only be replaced with
-    ``supersede: true``, which marks it and its downstream cone stale (``effects['stale']``).
+    ``supersede: true``, which marks it and its downstream cone stale (``effects['stale']``); with ``only: true``
+    (`flower rerun --only`) just the node and its foreach items.
     """
     new = copy.deepcopy(contract_view(plan))
     if plan.get("_source"):
@@ -764,9 +765,12 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
         raise PlanInvalid(vissues)
     if effects["stale"]:
         g = Graph(new)
+        alone = {op.get("node") for op in ops if isinstance(op, dict) and op.get("only")}   # `rerun --only`
         cone: list[str] = []
         for nid in effects["stale"]:
-            for x in [nid] + g.descendants(nid):
+            below = [x for x, sp in g.nodes.items() if sp.get("expanded_from") == nid] if nid in alone \
+                else g.descendants(nid)
+            for x in [nid] + below:
                 if x not in cone:
                     cone.append(x)
         effects["stale"] = cone

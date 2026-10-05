@@ -861,3 +861,18 @@ def test_add_tmpdir(cli, home, tmp_path, monkeypatch):
     st = _eng(home, rid).state()
     assert "tmpdir: job" in (tmp_path / "x" / "plan.yaml").read_text()
     assert str(_eng(home, rid).paths.dir) in st.nodes["a"].result.outputs["t"]
+
+
+def test_rerun_only_after_an_edit_keeps_the_downstream(cli, home, tmp_path):
+    """BUGS #62: in the A24 study an output was added to a finished data step and `flower rerun RUN refs --only`
+    picked the edit up as a superseding amendment, which marked its whole downstream (72 finished or running
+    calculations) stale despite --only. Now --only limits the superseding to the step itself."""
+    plan = _plan(tmp_path, A_OK + B_FIXED)
+    rid = _start(cli, plan)
+    _plan(tmp_path, A_OK.replace("outputs: {x: integer}", "outputs: {x: integer}, title: A") + B_FIXED)
+    _plan(tmp_path, A_OK.replace("2}", "2, \\\"z\\\": 1}").replace("outputs: {x: integer}", "outputs: {x: integer, z: integer}") + B_FIXED)
+    code, res = cli("rerun", rid, "a", "--only", "--follow")
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert st.nodes["a"].result.outputs["z"] == 1 and len(st.nodes["a"].attempts) == 2
+    assert len(st.nodes["b"].attempts) == 1 and st.nodes["b"].status == "succeeded", st.nodes["b"].status
