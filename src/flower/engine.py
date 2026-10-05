@@ -474,7 +474,9 @@ class Engine:
                 continue
             pending = status.get(nid, "pending") == "pending"
             res["ops"].append({"op": "replace", "node": nid, "with": spec, **({} if pending else {"supersede": True})})
-            if status.get(nid) == "succeeded":
+            if status.get(nid) == "succeeded" and nid != top:
+                # a finished step's new definition waits for approval, except the step being rerun: re-executing
+                # it is what was asked for, and its earlier attempts stay in the journal
                 res["touches_finished"] = True
         if added:
             res["ops"].append({"op": "add", "nodes": [new[nid] for nid in added]})
@@ -1238,15 +1240,23 @@ class Engine:
         if st.status in TERMINAL_RUN or st.status == "parked":
             self.emit("run.reopened", {"reason": f"amendment {aid} approved", "by": by})
 
-    def withdraw_file_proposals(self, keep_ops: list) -> list[str]:
+    def withdraw_file_proposals(self, keep_ops: list, whole_file: bool = True, keep_identical: bool = True,
+                                step: str | None = None) -> list[str]:
         """A proposal made from the plan file is a snapshot of it; a newer one supersedes it. Withdraw the open
-        ones that differ from ``keep_ops`` so an outdated snapshot cannot park the run (#58)."""
+        ones that differ from ``keep_ops`` so an outdated snapshot cannot park the run (#58). For a rerun of
+        ``step`` (``whole_file`` false) only those about that step or covered by ``keep_ops``: an edit elsewhere
+        still waits."""
+        def steps(ops):
+            return {op.get("node") for op in ops if op.get("node")} | \
+                   {n.get("id") for op in ops for n in op.get("nodes") or [] if isinstance(n, dict)}
         out = []
         with self.lock():
             st = self.state()
             for g in st.open_gates():
                 am = st.amendments.get(g.amendment_id) if g.subject == "amendment" else None
-                if am and am.status == "proposed" and am.rationale.startswith(FILE_EDIT) and am.ops != keep_ops:
+                if am and am.status == "proposed" and am.rationale.startswith(FILE_EDIT) \
+                        and not (keep_identical and am.ops == keep_ops) \
+                        and (whole_file or steps(am.ops) <= steps(keep_ops) | {step}):
                     self.emit("gate.answered", {"gate_id": g.id, "decision": "withdrawn", "by": "system",
                                                 "text": "superseded by a newer version of the plan file"},
                               key=f"gate.answered:{g.id}")

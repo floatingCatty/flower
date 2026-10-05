@@ -609,12 +609,14 @@ def _pick_up_edits(eng: Engine, args, out: Out, node: str | None, via: str) -> t
     eng.tick()  # apply approvals answered since the last pass (e.g. of an earlier edit)
     ed = eng.plan_edits(node, new_inputs=parse_kv(getattr(args, "input", None)))
     notes.extend(f"note: {x}" for x in ed.get("ignored") or [])
-    if node is None:  # the whole file: older snapshots of it are superseded (#58)
-        notes.extend(f"note: withdrew {a}, an older version of the plan file" for a in eng.withdraw_file_proposals(ed["ops"]))
+    auto = bool(args.yes) or not ed["touches_finished"]   # new and unfinished steps change at once
+    # older snapshots of the file are superseded (#58): all of them by a sync, those about the same steps by a
+    # rerun; an identical one stays only while this edit itself waits (it is that edit)
+    notes.extend(f"note: withdrew {a}, an older version of the plan file" for a in
+                 eng.withdraw_file_proposals(ed["ops"], whole_file=node is None, keep_identical=not auto, step=node))
     if not ed["ops"]:
         return notes, None
     st = eng.state()
-    auto = bool(args.yes) or not ed["touches_finished"]   # new and unfinished steps change at once
     what = ", ".join([f"changed {', '.join(ed['changed'])}"] * bool(ed["changed"])
                      + [f"added {', '.join(ed['added'])}"] * bool(ed["added"])
                      + [f"new input {', '.join(ed['new_inputs'])}"] * bool(ed.get("new_inputs"))

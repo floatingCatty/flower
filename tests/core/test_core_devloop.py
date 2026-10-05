@@ -66,15 +66,15 @@ def test_an_edit_of_a_failed_step_applies_and_of_a_succeeded_one_asks(cli, home,
     code, res = cli("rerun", rid, "b", "--follow")         # b failed: unfinished, so the fix applies at once
     assert code == 0, res
     assert _eng(home, rid).state().nodes["b"].result.outputs["y"] == 20
-    _plan(tmp_path, A_OK.replace("2}", "3}") + B_FIXED)    # a succeeded: changing it waits for a decision
+    _plan(tmp_path, A_OK + B_FIXED.replace("* 10", "* 100"))   # b succeeded: an edit reached by rerunning a asks
     code, res = cli("rerun", rid, "a")
     assert code == 3 and res["data"]["gate"].startswith("amend-")
-    assert _eng(home, rid).state().nodes["a"].result.outputs["x"] == 2
+    assert _eng(home, rid).state().nodes["b"].result.outputs["y"] == 20
     code, _ = cli("approve", rid, res["data"]["gate"])        # BUGS #20: approved on a finished run, it applies
     assert code in (0, 3)
     code, res = cli("rerun", rid, "a", "--follow")
     assert code == 0, res
-    assert _eng(home, rid).state().nodes["a"].result.outputs["x"] == 3
+    assert _eng(home, rid).state().nodes["b"].result.outputs["y"] == 200
 
 
 def test_yes_approves_the_edit(cli, home, tmp_path):
@@ -89,9 +89,21 @@ def test_an_edit_of_a_finished_node_asks(cli, home, tmp_path):
     plan = _plan(tmp_path, A_OK + B_FIXED)
     rid = _start(cli, plan)
     assert _eng(home, rid).state().status == "succeeded"
-    _plan(tmp_path, A_OK.replace("2}", "3}") + B_FIXED)  # edit a succeeded node
+    _plan(tmp_path, A_OK + B_FIXED.replace("* 10", "* 100"))  # edit b, finished, reached by a rerun of a
     code, res = cli("rerun", rid, "a")
-    assert code == 3 and res["data"]["changed"] == ["a"]
+    assert code == 3 and res["data"]["changed"] == ["b"]
+
+
+def test_rerunning_the_edited_step_itself_applies_the_edit(cli, home, tmp_path):
+    """`flower rerun RUN STEP` after editing STEP is the request to re-execute it with the new definition; asking
+    for approval added nothing (a rerun without an edit never asks, and earlier attempts stay recorded)."""
+    plan = _plan(tmp_path, A_OK + B_FIXED)
+    rid = _start(cli, plan)
+    _plan(tmp_path, A_OK.replace("2}", "3}") + B_FIXED)
+    code, res = cli("rerun", rid, "a", "--follow")
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert st.nodes["a"].result.outputs["x"] == 3 and len(st.nodes["a"].attempts) == 2
 
 
 def test_new_node_added_by_rerun(cli, home, tmp_path):
@@ -807,3 +819,19 @@ nodes:
     assert code == 0 and res["data"]["same"] == 1, res
     code, res = cli("compare", r1, str(_eng(home, r3).paths.dir))
     assert code == 1 and res["data"]["differ"][0]["diffs"][0]["key"] == ".x", res
+
+
+def test_a_rerun_withdraws_its_own_older_waiting_edit(cli, home, tmp_path):
+    """The proposal a rerun left waiting (before reruns applied their own step's edits) must not park the run
+    once a newer rerun of that step has applied the file; an unrelated waiting edit stays."""
+    plan = _plan(tmp_path, A_OK + B_FIXED)
+    rid = _start(cli, plan)
+    eng = _eng(home, rid)
+    eng.propose_amendment([{"op": "replace", "node": "a", "with": {"kind": "shell", "run": "true"},
+                            "supersede": True}], "plan file edited (changed a); picked up by `flower rerun`")
+    _plan(tmp_path, A_OK.replace("2}", "3}") + B_FIXED)
+    eng.propose_amendment(eng.plan_edits("a")["ops"], "plan file edited (changed a); picked up by `flower rerun`")
+    code, res = cli("rerun", rid, "a", "--follow")       # the same edit is waiting, and now applies at once
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert not st.open_gates() and st.nodes["a"].result.outputs["x"] == 3

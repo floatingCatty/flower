@@ -531,6 +531,19 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   is logged once and the driver keeps what it runs until the next change. (Developing flower in its own worktree,
   with live runs on a stable checkout, avoids the window altogether.)
 
+## EAM elastic-constants reproduction (2026-10-05)
+
+### 60. Editing the step you rerun waited for approval, and the waiting copy then parked the run
+- **Tests:** `tests/core/test_core_devloop.py::test_rerunning_the_edited_step_itself_applies_the_edit`,
+  `::test_a_rerun_withdraws_its_own_older_waiting_edit`
+- **Observed:** in the eam-elastic study a finished fetch step was edited (a second download source) and rerun
+  with `flower rerun RUN potentials`. The edit waited for approval, although a rerun of the same step without an
+  edit never asks and earlier attempts stay in the journal. Once reruns applied such edits, the earlier waiting
+  proposal, identical to the applied edit, stayed open and parked the run (the #58 pattern, for reruns).
+- **Fix:** an edit of the rerun's own step applies at once; edits of other finished steps the rerun reaches still
+  wait. A rerun withdraws waiting proposals made from the plan file that concern its own step or are covered by
+  its edit, including an identical one once the edit applies.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses
