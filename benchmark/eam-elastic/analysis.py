@@ -1,6 +1,7 @@
 """This run's elastic constants against Tables 1-3 of the paper (Rassoulinejad-Mousavi, Mao, Zhang 2016).
 
-  python3 analysis.py      FLOWER_INPUTS {"tables": tables.json, "results": [elastic step outputs, local_dir]}
+  python3 analysis.py      FLOWER_INPUTS {"tables": tables.json, "index": potentials.json,
+                                          "results": [elastic step outputs, local_dir]}
 
 Per (metal, potential) with a complete paper row: the paper's C11, C12, C44 against this run's
   * static: the linear elastic constants (symmetric +-1 % strains, third-order terms cancel), and
@@ -27,6 +28,7 @@ def spearman(a, b):
 def main():
     I = json.loads(Path(os.environ["FLOWER_INPUTS"]).read_text())
     tables = json.loads(Path(I["tables"]).read_text())
+    have = json.loads(Path(I["index"]).read_text())          # the potential files that were found
     ours = {}
     for it in I["results"]:
         if it and it.get("local_dir") and Path(it["local_dir"], "elastic.json").is_file():
@@ -78,9 +80,13 @@ def main():
         cells = ["%.1f / %.1f / %.1f" % (r["paper"][k], r["static"][k], r["rate"][k]) for k in KEYS]
         L.append("| %s | %s | %s | %.4f | %s |" % (r["metal"], r["potential"], " | ".join(cells), r["a300"],
                                                    "✓" if r["ok"] else "✗"))
-    missing = [r for r in rows if not r["found"]]
+    missing = [r for r in rows if r["potential"] not in have]
+    pending = [r for r in rows if r["potential"] in have and not r["found"]]
     L += ["", "Rows whose potential file was not found (not tested): " +
           (", ".join(f"{r['metal']} {r['potential']}" for r in missing) or "none")]
+    if pending:
+        L += ["", "Rows without a result (not run yet, or the run failed): " +
+              ", ".join(f"{r['metal']} {r['potential']}" for r in pending)]
     if bad:
         L += ["", "## Not reproduced", ""] + [
             "- %s %s: paper %s vs this run %s" % (r["metal"], r["potential"],
@@ -89,7 +95,8 @@ def main():
     Path("report.md").write_text("\n".join(L) + "\n")
     json.dump({"claims": claims, "rows": rows}, open("analysis.json", "w"), indent=1, default=float)
     if not done:
-        print(json.dumps({"n_rows": 0, "n_reproduced": 0, "n_not_found": len(missing), "not_reproduced": []}))
+        print(json.dumps({"n_rows": 0, "n_reproduced": 0, "n_not_found": len(missing), "n_pending": len(pending),
+                          "not_reproduced": []}))
         return
     import matplotlib
     matplotlib.use("Agg")
@@ -106,7 +113,7 @@ def main():
         a.set_xlabel(f"{k}, this run (linear, GPa)"); a.set_ylabel(f"{k}, paper (GPa)"); a.set_xlim(lim); a.set_ylim(lim)
     ax[0].legend()
     fig.tight_layout(); fig.savefig("parity.png", dpi=130)
-    print(json.dumps({"n_rows": len(done), "n_reproduced": n_ok, "n_not_found": len(missing),
+    print(json.dumps({"n_rows": len(done), "n_reproduced": n_ok, "n_not_found": len(missing), "n_pending": len(pending),
                       "not_reproduced": [f"{r['metal']} {r['potential']}" for r in bad]}))
 
 

@@ -115,5 +115,6 @@ nodes:
       figure: parity.png
     inputs:
       tables: ${paper.files.tables}
+      index: ${potentials.files.index}
       results: ${elastic.partial}
     run: python3 ${plan.dir}/analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"
