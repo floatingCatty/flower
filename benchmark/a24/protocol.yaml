@@ -1,0 +1,238 @@
+# A reproducibility protocol exported from run a24-20261005-072811-bb36 (`flower export`): the steps behind
+# analysis. Run it with `flower run protocol.yaml -y`, then `flower compare RUN expected.json`.
+flower: 1
+id: a24
+title: 'Reproduce the A24 benchmark interaction energies of 24 small noncovalent dimers (Rezac and Hobza, JCTC 9,
+  2151 (2013)) at the CCSD(T)/CBS level: MP2/CBS from aug-cc-pVTZ/QZ plus a CCSD(T) correction in aug-cc-pVTZ, counterpoise
+  corrected'
+description: |
+  Reproduce the A24 benchmark interaction energies of 24 small noncovalent dimers (Rezac and Hobza, JCTC 9, 2151 (2013)) at the CCSD(T)/CBS level: MP2/CBS from aug-cc-pVTZ/QZ plus a CCSD(T) correction in aug-cc-pVTZ, counterpoise corrected
+inputs:
+  host:
+    type: string
+    required: true
+  ssh_options:
+    type: array
+    required: true
+clusters:
+  remote:
+    transport: ssh
+    host: ${inputs.host}
+    ssh_options: ${inputs.ssh_options}
+    scheduler: none
+    remote_root: ~/flower-runs
+    min_poll: 15s
+    cpus: 32
+  remote-quick:
+    transport: ssh
+    host: ${inputs.host}
+    ssh_options: ${inputs.ssh_options}
+    scheduler: none
+    remote_root: ~/flower-runs
+    min_poll: 5s
+nodes:
+- id: refs
+  kind: shell
+  description: 'The A24 database file of Psi4 (tag v1.9.1, sha256): the 24 dimer geometries split into fragments,
+    and the reference interaction energies (kcal/mol) of Rezac and Hobza. Read n (24 when intact) and names.'
+  outputs:
+    n: integer
+    names: array
+    atoms: array
+  files:
+    data: a24.json
+    source: A24.py
+  run: curl -fsSL -o A24.py https://raw.githubusercontent.com/psi4/psi4/v1.9.1/psi4/share/psi4/databases/A24.py
+    && sha256sum A24.py && python3 ${plan.dir}/a24.py data A24.py | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: calc
+  kind: shell
+  title: Dimer ${item.i}, ${item.level}
+  description: 'One dimer at one level, counterpoise corrected, frozen core: HF and MP2 correlation interaction
+    energies in aug-cc-pVTZ or QZ (density fitting), or CCSD(T)-MP2 in aug-cc-pVTZ. The parts of CCSD(T)/CBS that
+    the analysis adds up.'
+  cluster: remote
+  environment: pyscf
+  stage_in:
+  - a24.py
+  - ${refs.files.data}
+  tmpdir: job
+  env:
+    OMP_NUM_THREADS: '8'
+  timeout:
+    total: 12h
+  resources:
+    cpus_per_task: 8
+    mem: 30G
+  foreach:
+  - i: 1
+    level: ccsdt-atz
+  - i: 2
+    level: ccsdt-atz
+  - i: 3
+    level: ccsdt-atz
+  - i: 4
+    level: ccsdt-atz
+  - i: 5
+    level: ccsdt-atz
+  - i: 6
+    level: ccsdt-atz
+  - i: 7
+    level: ccsdt-atz
+  - i: 8
+    level: ccsdt-atz
+  - i: 9
+    level: ccsdt-atz
+  - i: 10
+    level: ccsdt-atz
+  - i: 11
+    level: ccsdt-atz
+  - i: 12
+    level: ccsdt-atz
+  - i: 13
+    level: ccsdt-atz
+  - i: 14
+    level: ccsdt-atz
+  - i: 15
+    level: ccsdt-atz
+  - i: 16
+    level: ccsdt-atz
+  - i: 17
+    level: ccsdt-atz
+  - i: 18
+    level: ccsdt-atz
+  - i: 19
+    level: ccsdt-atz
+  - i: 20
+    level: ccsdt-atz
+  - i: 21
+    level: ccsdt-atz
+  - i: 22
+    level: ccsdt-atz
+  - i: 23
+    level: ccsdt-atz
+  - i: 24
+    level: ccsdt-atz
+  - i: 1
+    level: mp2-aqz
+  - i: 2
+    level: mp2-aqz
+  - i: 3
+    level: mp2-aqz
+  - i: 4
+    level: mp2-aqz
+  - i: 5
+    level: mp2-aqz
+  - i: 6
+    level: mp2-aqz
+  - i: 7
+    level: mp2-aqz
+  - i: 8
+    level: mp2-aqz
+  - i: 9
+    level: mp2-aqz
+  - i: 10
+    level: mp2-aqz
+  - i: 11
+    level: mp2-aqz
+  - i: 12
+    level: mp2-aqz
+  - i: 13
+    level: mp2-aqz
+  - i: 14
+    level: mp2-aqz
+  - i: 15
+    level: mp2-aqz
+  - i: 16
+    level: mp2-aqz
+  - i: 17
+    level: mp2-aqz
+  - i: 18
+    level: mp2-aqz
+  - i: 19
+    level: mp2-aqz
+  - i: 20
+    level: mp2-aqz
+  - i: 21
+    level: mp2-aqz
+  - i: 22
+    level: mp2-aqz
+  - i: 23
+    level: mp2-aqz
+  - i: 24
+    level: mp2-aqz
+  - i: 1
+    level: mp2-atz
+  - i: 2
+    level: mp2-atz
+  - i: 3
+    level: mp2-atz
+  - i: 4
+    level: mp2-atz
+  - i: 5
+    level: mp2-atz
+  - i: 6
+    level: mp2-atz
+  - i: 7
+    level: mp2-atz
+  - i: 8
+    level: mp2-atz
+  - i: 9
+    level: mp2-atz
+  - i: 10
+    level: mp2-atz
+  - i: 11
+    level: mp2-atz
+  - i: 12
+    level: mp2-atz
+  - i: 13
+    level: mp2-atz
+  - i: 14
+    level: mp2-atz
+  - i: 15
+    level: mp2-atz
+  - i: 16
+    level: mp2-atz
+  - i: 17
+    level: mp2-atz
+  - i: 18
+    level: mp2-atz
+  - i: 19
+    level: mp2-atz
+  - i: 20
+    level: mp2-atz
+  - i: 21
+    level: mp2-atz
+  - i: 22
+    level: mp2-atz
+  - i: 23
+    level: mp2-atz
+  - i: 24
+    level: mp2-atz
+  outputs:
+    seconds: number
+    nao: integer
+  files:
+    result: result.json
+  on_failure: continue
+  run: python3 a24.py calc a24.json ${item.i} ${item.level} 28000 | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: analysis
+  kind: shell
+  description: 'CCSD(T)/CBS per dimer from this run''s parts (HF/aQZ + MP2 correlation extrapolated aTZ-aQZ + [CCSD(T)-MP2]/aTZ)
+    against the A24 references: every dimer within 0.1 kcal/mol, and the mean absolute deviation below 0.05. Read
+    n_within of n_complete, mad, and report.md.'
+  environment: analysis
+  outputs:
+    n_complete: integer
+    n_within: integer
+    mad: number
+    max_abs: number
+    n_claims: integer
+    n_reproduced: integer
+  files:
+    report: report.md
+    figure: a24.png
+    data: analysis.json
+  inputs:
+    data: ${refs.files.data}
+    results: ${calc.outputs.items}
+  run: python3 ${plan.dir}/analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"

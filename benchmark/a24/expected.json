@@ -1,0 +1,668 @@
+{
+ "from_run": "a24-20261005-072811-bb36",
+ "steps": {
+  "analysis": {
+   "mad": 0.008651299872393006,
+   "max_abs": 0.09973077322587454,
+   "n_claims": 2,
+   "n_complete": 24,
+   "n_reproduced": 2,
+   "n_within": 24
+  },
+  "calc[0]": {
+   "delta_int_kcal": 0.06341568753693443,
+   "hf_int_kcal": -4.509649005024992,
+   "index": 1,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.7937314645769844,
+   "name": "water_ammonia_Cs",
+   "nao": 207
+  },
+  "calc[10]": {
+   "delta_int_kcal": 0.05928487520215441,
+   "hf_int_kcal": -0.031076077131852228,
+   "index": 11,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.5468054530248527,
+   "name": "ethene_formaldehyde_Cs",
+   "nao": 322
+  },
+  "calc[11]": {
+   "delta_int_kcal": 0.11994332053347391,
+   "hf_int_kcal": -0.5107875287344474,
+   "index": 12,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.058756310837229,
+   "name": "ethyne_ethyne_C2v",
+   "nao": 276
+  },
+  "calc[12]": {
+   "delta_int_kcal": 0.12040097057354772,
+   "hf_int_kcal": -0.017106043790517823,
+   "index": 13,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.4103328822473191,
+   "name": "ethene_ammonia_Cs",
+   "nao": 299
+  },
+  "calc[13]": {
+   "delta_int_kcal": 0.16222766207926204,
+   "hf_int_kcal": 0.9016593417593171,
+   "index": 14,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -2.0931596792293257,
+   "name": "ethene_ethene_C2v",
+   "nao": 368
+  },
+  "calc[14]": {
+   "delta_int_kcal": 0.04218750061942108,
+   "hf_int_kcal": 0.35969989137548447,
+   "index": 15,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -0.8751740051355692,
+   "name": "methane_ethene_Cs",
+   "nao": 322
+  },
+  "calc[15]": {
+   "delta_int_kcal": -0.059959062739558984,
+   "hf_int_kcal": 1.1828359032990545,
+   "index": 16,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -2.4865586632063215,
+   "name": "borane_methane_Cs",
+   "nao": 253
+  },
+  "calc[16]": {
+   "delta_int_kcal": -0.03868414398891572,
+   "hf_int_kcal": 0.7309670517826325,
+   "index": 17,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.4770610760007827,
+   "name": "methane_ethane_Cs",
+   "nao": 368
+  },
+  "calc[17]": {
+   "delta_int_kcal": -0.06276769674719503,
+   "hf_int_kcal": 0.5389595218767204,
+   "index": 18,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.0499405189812208,
+   "name": "methane_ethane_C3",
+   "nao": 368
+  },
+  "calc[18]": {
+   "delta_int_kcal": -0.04279357762257054,
+   "hf_int_kcal": 0.4834178758553208,
+   "index": 19,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -0.9388137864687626,
+   "name": "methane_methane_D3d",
+   "nao": 276
+  },
+  "calc[19]": {
+   "delta_int_kcal": 0.01705945206831635,
+   "hf_int_kcal": 0.3550684352652316,
+   "index": 20,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -0.7139782072917616,
+   "name": "methane_Ar_C3v",
+   "nao": 188
+  },
+  "calc[1]": {
+   "delta_int_kcal": -0.03528785408389148,
+   "hf_int_kcal": -3.6278876153629254,
+   "index": 2,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.0990082365879879,
+   "name": "water_water_Cs",
+   "nao": 184
+  },
+  "calc[20]": {
+   "delta_int_kcal": 0.0796732375494923,
+   "hf_int_kcal": 0.43006685091748126,
+   "index": 21,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -0.803783536654614,
+   "name": "ethene_Ar_C2v",
+   "nao": 234
+  },
+  "calc[21]": {
+   "delta_int_kcal": 0.3376962741821992,
+   "hf_int_kcal": 3.4000687215537946,
+   "index": 22,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -2.8096221390150093,
+   "name": "ethene_ethyne_C2v",
+   "nao": 322
+  },
+  "calc[22]": {
+   "delta_int_kcal": 0.2436068705433165,
+   "hf_int_kcal": 3.876804724175433,
+   "index": 23,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -3.0807118613469946,
+   "name": "ethene_ethene_D2h",
+   "nao": 368
+  },
+  "calc[23]": {
+   "delta_int_kcal": 0.4318306836685766,
+   "hf_int_kcal": 3.4756750436710084,
+   "index": 24,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -2.6681167725550146,
+   "name": "ethyne_ethyne_D2h",
+   "nao": 276
+  },
+  "calc[24]": {
+   "hf_int_kcal": -4.520191138424044,
+   "index": 1,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.9545845619498765,
+   "name": "water_ammonia_Cs",
+   "nao": 390
+  },
+  "calc[25]": {
+   "hf_int_kcal": -3.6643767561585414,
+   "index": 2,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.2279790516687918,
+   "name": "water_water_Cs",
+   "nao": 344
+  },
+  "calc[26]": {
+   "hf_int_kcal": -4.107170653314204,
+   "index": 3,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -0.7556136535527115,
+   "name": "HCN_HCN_Cxv",
+   "nao": 412
+  },
+  "calc[27]": {
+   "hf_int_kcal": -3.8159622239613196,
+   "index": 4,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -0.5669557484967613,
+   "name": "HF_HF_Cs",
+   "nao": 252
+  },
+  "calc[28]": {
+   "hf_int_kcal": -1.472914461429172,
+   "index": 5,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.6271295076887047,
+   "name": "ammonia_ammonia_C2h",
+   "nao": 436
+  },
+  "calc[29]": {
+   "hf_int_kcal": -0.25221048047257827,
+   "index": 6,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.311188026899086,
+   "name": "methane_HF_C3v",
+   "nao": 390
+  },
+  "calc[2]": {
+   "delta_int_kcal": 0.16913422805982514,
+   "hf_int_kcal": -4.100490612241135,
+   "index": 3,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -0.6823247460143664,
+   "name": "HCN_HCN_Cxv",
+   "nao": 230
+  },
+  "calc[30]": {
+   "hf_int_kcal": 0.028801903672685116,
+   "index": 7,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -0.724333849854402,
+   "name": "ammmonia_methane_C3v",
+   "nao": 482
+  },
+  "calc[31]": {
+   "hf_int_kcal": 0.009614057647141044,
+   "index": 8,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -0.6175935240679948,
+   "name": "methane_water_Cs",
+   "nao": 436
+  },
+  "calc[32]": {
+   "hf_int_kcal": -2.470549175831725,
+   "index": 9,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.9545815736228864,
+   "name": "formaldehyde_formaldehyde_Cs",
+   "nao": 504
+  },
+  "calc[33]": {
+   "hf_int_kcal": -0.872414155164881,
+   "index": 10,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.823281554750819,
+   "name": "ethene_wat_Cs",
+   "nao": 516
+  },
+  "calc[34]": {
+   "hf_int_kcal": -0.02906009235844368,
+   "index": 11,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.6198425871256539,
+   "name": "ethene_formaldehyde_Cs",
+   "nao": 596
+  },
+  "calc[35]": {
+   "hf_int_kcal": -0.5135042459304343,
+   "index": 12,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.1080971764933543,
+   "name": "ethyne_ethyne_C2v",
+   "nao": 504
+  },
+  "calc[36]": {
+   "hf_int_kcal": -0.018868419566306072,
+   "index": 13,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.4604862167961277,
+   "name": "ethene_ammonia_Cs",
+   "nao": 562
+  },
+  "calc[37]": {
+   "hf_int_kcal": 0.8990291610908907,
+   "index": 14,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -2.143148787397203,
+   "name": "ethene_ethene_C2v",
+   "nao": 688
+  },
+  "calc[38]": {
+   "hf_int_kcal": 0.35822239644397297,
+   "index": 15,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -0.8979942549063804,
+   "name": "methane_ethene_Cs",
+   "nao": 608
+  },
+  "calc[39]": {
+   "hf_int_kcal": 1.1785156948742501,
+   "index": 16,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -2.56995432070046,
+   "name": "borane_methane_Cs",
+   "nao": 482
+  },
+  "calc[3]": {
+   "delta_int_kcal": -0.10623583831900867,
+   "hf_int_kcal": -3.7422473308800996,
+   "index": 4,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -0.4518907101455717,
+   "name": "HF_HF_Cs",
+   "nao": 138
+  },
+  "calc[40]": {
+   "hf_int_kcal": 0.7299761072786692,
+   "index": 17,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.5089808322300946,
+   "name": "methane_ethane_Cs",
+   "nao": 700
+  },
+  "calc[41]": {
+   "hf_int_kcal": 0.5385383056030533,
+   "index": 18,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -1.0743333861374846,
+   "name": "methane_ethane_C3",
+   "nao": 700
+  },
+  "calc[42]": {
+   "hf_int_kcal": 0.48283096930234276,
+   "index": 19,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -0.9618362268473724,
+   "name": "methane_methane_D3d",
+   "nao": 528
+  },
+  "calc[43]": {
+   "hf_int_kcal": 0.3566383106788852,
+   "index": 20,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -0.7536128093051891,
+   "name": "methane_Ar_C3v",
+   "nao": 348
+  },
+  "calc[44]": {
+   "hf_int_kcal": 0.4324333443940481,
+   "index": 21,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -0.8444498796135005,
+   "name": "ethene_Ar_C2v",
+   "nao": 428
+  },
+  "calc[45]": {
+   "hf_int_kcal": 3.398798855346786,
+   "index": 22,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -2.8942405064582832,
+   "name": "ethene_ethyne_C2v",
+   "nao": 596
+  },
+  "calc[46]": {
+   "hf_int_kcal": 3.8717610461370757,
+   "index": 23,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -3.1664521976841113,
+   "name": "ethene_ethene_D2h",
+   "nao": 688
+  },
+  "calc[47]": {
+   "hf_int_kcal": 3.473777821255728,
+   "index": 24,
+   "level": "mp2-aqz",
+   "mp2_corr_int_kcal": -2.75554911205476,
+   "name": "ethyne_ethyne_D2h",
+   "nao": 504
+  },
+  "calc[48]": {
+   "hf_int_kcal": -4.509876694217466,
+   "index": 1,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.7961781338126572,
+   "name": "water_ammonia_Cs",
+   "nao": 207
+  },
+  "calc[49]": {
+   "hf_int_kcal": -3.628011799082329,
+   "index": 2,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.1015530691909798,
+   "name": "water_water_Cs",
+   "nao": 184
+  },
+  "calc[4]": {
+   "delta_int_kcal": 0.003281503600594395,
+   "hf_int_kcal": -1.4672165462639872,
+   "index": 5,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.5401335198409691,
+   "name": "ammonia_ammonia_C2h",
+   "nao": 230
+  },
+  "calc[50]": {
+   "hf_int_kcal": -4.100488443937395,
+   "index": 3,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -0.6823392482308462,
+   "name": "HCN_HCN_Cxv",
+   "nao": 230
+  },
+  "calc[51]": {
+   "hf_int_kcal": -3.7422204279532876,
+   "index": 4,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -0.45509328594184,
+   "name": "HF_HF_Cs",
+   "nao": 138
+  },
+  "calc[52]": {
+   "hf_int_kcal": -1.4670665847051767,
+   "index": 5,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.541401257513174,
+   "name": "ammonia_ammonia_C2h",
+   "nao": 230
+  },
+  "calc[53]": {
+   "hf_int_kcal": -0.2564622297315715,
+   "index": 6,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.238770693495743,
+   "name": "methane_HF_C3v",
+   "nao": 207
+  },
+  "calc[54]": {
+   "hf_int_kcal": 0.03125534174805738,
+   "index": 7,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -0.6944955745656354,
+   "name": "ammmonia_methane_C3v",
+   "nao": 253
+  },
+  "calc[55]": {
+   "hf_int_kcal": 0.01124341678602847,
+   "index": 8,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -0.5909646131674781,
+   "name": "methane_water_Cs",
+   "nao": 230
+  },
+  "calc[56]": {
+   "hf_int_kcal": -2.456825845733138,
+   "index": 9,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.7556733543949943,
+   "name": "formaldehyde_formaldehyde_Cs",
+   "nao": 276
+  },
+  "calc[57]": {
+   "hf_int_kcal": -0.8750410514041959,
+   "index": 10,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.733521721633804,
+   "name": "ethene_wat_Cs",
+   "nao": 276
+  },
+  "calc[58]": {
+   "hf_int_kcal": -0.030706885897850117,
+   "index": 11,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.5473627013772637,
+   "name": "ethene_formaldehyde_Cs",
+   "nao": 322
+  },
+  "calc[59]": {
+   "hf_int_kcal": -0.5105406961307701,
+   "index": 12,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.0591246085442252,
+   "name": "ethyne_ethyne_C2v",
+   "nao": 276
+  },
+  "calc[5]": {
+   "delta_int_kcal": -0.05842406409875692,
+   "hf_int_kcal": -0.2566105149264671,
+   "index": 6,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.2373514523703764,
+   "name": "methane_HF_C3v",
+   "nao": 207
+  },
+  "calc[60]": {
+   "hf_int_kcal": -0.017080383322534684,
+   "index": 13,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.4109607356666534,
+   "name": "ethene_ammonia_Cs",
+   "nao": 299
+  },
+  "calc[61]": {
+   "hf_int_kcal": 0.9019672872877715,
+   "index": 14,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -2.09413413977318,
+   "name": "ethene_ethene_C2v",
+   "nao": 368
+  },
+  "calc[62]": {
+   "hf_int_kcal": 0.3598142242687688,
+   "index": 15,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -0.8755905425811138,
+   "name": "methane_ethene_Cs",
+   "nao": 322
+  },
+  "calc[63]": {
+   "hf_int_kcal": 1.183256617819248,
+   "index": 16,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -2.4875828206081914,
+   "name": "borane_methane_Cs",
+   "nao": 253
+  },
+  "calc[64]": {
+   "hf_int_kcal": 0.7312486273621852,
+   "index": 17,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.477435293576299,
+   "name": "methane_ethane_Cs",
+   "nao": 368
+  },
+  "calc[65]": {
+   "hf_int_kcal": 0.5392336081571123,
+   "index": 18,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -1.0501263963772054,
+   "name": "methane_ethane_C3",
+   "nao": 368
+  },
+  "calc[66]": {
+   "hf_int_kcal": 0.48342433477926994,
+   "index": 19,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -0.9389820556314901,
+   "name": "methane_methane_D3d",
+   "nao": 276
+  },
+  "calc[67]": {
+   "hf_int_kcal": 0.3556578061766964,
+   "index": 20,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -0.7143139051481432,
+   "name": "methane_Ar_C3v",
+   "nao": 188
+  },
+  "calc[68]": {
+   "hf_int_kcal": 0.43072305894254675,
+   "index": 21,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -0.8046137353362459,
+   "name": "ethene_Ar_C2v",
+   "nao": 234
+  },
+  "calc[69]": {
+   "hf_int_kcal": 3.4010263011037254,
+   "index": 22,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -2.812533578658823,
+   "name": "ethene_ethyne_C2v",
+   "nao": 322
+  },
+  "calc[6]": {
+   "delta_int_kcal": -0.05780047307555021,
+   "hf_int_kcal": 0.031144776431107055,
+   "index": 7,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -0.6941349196201656,
+   "name": "ammmonia_methane_C3v",
+   "nao": 253
+  },
+  "calc[70]": {
+   "hf_int_kcal": 3.8774544456146316,
+   "index": 23,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -3.083748282329738,
+   "name": "ethene_ethene_D2h",
+   "nao": 368
+  },
+  "calc[71]": {
+   "hf_int_kcal": 3.477424723456037,
+   "index": 24,
+   "level": "mp2-atz",
+   "mp2_corr_int_kcal": -2.671073158129063,
+   "name": "ethyne_ethyne_D2h",
+   "nao": 276
+  },
+  "calc[7]": {
+   "delta_int_kcal": -0.04228100695837693,
+   "hf_int_kcal": 0.011198877674729777,
+   "index": 8,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -0.5905665867813684,
+   "name": "methane_water_Cs",
+   "nao": 230
+  },
+  "calc[8]": {
+   "delta_int_kcal": -0.0034507827130714043,
+   "hf_int_kcal": -2.457622499965212,
+   "index": 9,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.7523341963158996,
+   "name": "formaldehyde_formaldehyde_Cs",
+   "nao": 276
+  },
+  "calc[9]": {
+   "delta_int_kcal": 0.17212966203427726,
+   "hf_int_kcal": -0.8751202481157423,
+   "index": 10,
+   "level": "ccsdt-atz",
+   "mp2_corr_int_kcal": -1.7325543122451024,
+   "name": "ethene_wat_Cs",
+   "nao": 276
+  },
+  "refs": {
+   "atoms": [
+    7,
+    6,
+    6,
+    4,
+    8,
+    7,
+    9,
+    8,
+    8,
+    9,
+    10,
+    8,
+    10,
+    12,
+    11,
+    9,
+    13,
+    13,
+    10,
+    6,
+    7,
+    10,
+    12,
+    8
+   ],
+   "n": 24,
+   "names": [
+    "water_ammonia_Cs",
+    "water_water_Cs",
+    "HCN_HCN_Cxv",
+    "HF_HF_Cs",
+    "ammonia_ammonia_C2h",
+    "methane_HF_C3v",
+    "ammmonia_methane_C3v",
+    "methane_water_Cs",
+    "formaldehyde_formaldehyde_Cs",
+    "ethene_wat_Cs",
+    "ethene_formaldehyde_Cs",
+    "ethyne_ethyne_C2v",
+    "ethene_ammonia_Cs",
+    "ethene_ethene_C2v",
+    "methane_ethene_Cs",
+    "borane_methane_Cs",
+    "methane_ethane_Cs",
+    "methane_ethane_C3",
+    "methane_methane_D3d",
+    "methane_Ar_C3v",
+    "ethene_Ar_C2v",
+    "ethene_ethyne_C2v",
+    "ethene_ethene_D2h",
+    "ethyne_ethyne_D2h"
+   ]
+  }
+ }
+}

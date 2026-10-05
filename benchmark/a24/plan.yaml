@@ -258,3 +258,23 @@ nodes:
           rows.append({\"calc\": tag, \"symbols\": [m.atom_symbol(i) for i in range(m.natm)], \"charges\": z, \"nelec\": m.nelectron, \"nfc\": nfc})
       print(json.dumps({\"rows\": rows}))
       " > "$FLOWER_OUTPUTS"
+
+  - id: analysis
+    kind: shell
+    description: 'CCSD(T)/CBS per dimer from this run''s parts (HF/aQZ + MP2 correlation extrapolated aTZ-aQZ + [CCSD(T)-MP2]/aTZ) against the A24 references: every dimer within 0.1 kcal/mol, and the mean absolute deviation below 0.05. Read n_within of n_complete, mad, and report.md.'
+    environment: analysis
+    outputs:
+      n_complete: integer
+      n_within: integer
+      mad: number
+      max_abs: number
+      n_claims: integer
+      n_reproduced: integer
+    files:
+      report: report.md
+      figure: a24.png
+      data: analysis.json
+    inputs:
+      data: ${refs.files.data}
+      results: ${calc.outputs.items}
+    run: python3 ${plan.dir}/analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"
