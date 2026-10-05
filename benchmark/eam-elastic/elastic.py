@@ -30,6 +30,32 @@ RATE = 0.001                                     # 1/ps, the paper's strain rate
 EMAX = (0.005, 0.01, 0.02)
 
 
+def sanitize(path):
+    """A copy of the potential file without non-finite table entries: NIST's FeNiCr.eam.alloy (Bonny 2011) has INF
+    / NAN at r = 0 of its density and pair tables, which LAMMPS 2023 refuses (older versions read them). Each is
+    replaced by linear extrapolation from the next two values; r = 0 is never sampled. Returns (path, n replaced)."""
+    lines = open(path, errors="replace").read().split("\n")
+    if not any(t.upper() in ("INF", "-INF", "NAN") for l in lines[5:] for t in l.split()):
+        return path, 0
+    toks = [(i, j, t) for i, l in enumerate(lines) if i >= 5 for j, t in enumerate(l.split())]
+    vals = {}
+    n = 0
+    for k, (i, j, t) in enumerate(toks):
+        if t.upper() in ("INF", "-INF", "NAN"):
+            a1, a2 = float(toks[k + 1][2]), float(toks[k + 2][2])
+            vals[(i, j)] = "%.12E" % (2 * a1 - a2)
+            n += 1
+    out = []
+    for i, l in enumerate(lines):
+        parts = l.split()
+        if i >= 5 and any((i, j) in vals for j in range(len(parts))):
+            l = " ".join(vals.get((i, j), t) for j, t in enumerate(parts))
+        out.append(l)
+    fixed = os.path.basename(path) + ".finite"
+    open(fixed, "w").write("\n".join(out))
+    return os.path.abspath(fixed), n
+
+
 def style_and_coeff(path, metal):
     name = os.path.basename(path)
     if name.endswith(".eam"):
@@ -45,6 +71,8 @@ def main(metal, pot, n=10, ps=20.0, eps=0.01):
     t0 = time.time()
     pot = os.path.abspath(pot)
     style, coeff = style_and_coeff(pot, metal)
+    fixed, n_fixed = sanitize(pot)
+    coeff = coeff.replace(pot, fixed)
     steps = int(ps * 1000)                      # 1 fs time step
     model = [f"pair_style {style}", coeff, "neighbor 1.0 bin", "timestep 0.001"]
     L = ["units metal", "boundary p p p", "atom_modify map array",
@@ -96,6 +124,7 @@ def main(metal, pot, n=10, ps=20.0, eps=0.01):
     (sp, esp, _), (sm, esm, _) = state("sp"), state("sm")
     err = lambda a, b: float(np.hypot(a, b) / (2 * eps))
     out = {"metal": metal, "potential": os.path.basename(pot), "style": style, "atoms": 4 * n ** 3,
+           "nonfinite_replaced": n_fixed,
            "a300": a300, "T": float((tp + tm) / 2),
            "C11": float((xp[0] - xm[0]) / (2 * eps)), "C11_err": err(exp_[0], exm[0]),
            "C12": float(((xp[1] + xp[2]) - (xm[1] + xm[2])) / 2 / (2 * eps)),

@@ -6,8 +6,8 @@
 Per (metal, potential) with a complete paper row: the paper's C11, C12, C44 against this run's
   * static: the linear elastic constants (symmetric +-1 % strains, third-order terms cancel), and
   * rate: the paper's own protocol (constant-rate tension/shear, slope on 0-1 % strain).
-A row is reproduced when all three constants agree within 5 % with the static values (the paper's protocol is
-biased low by the third-order constants by a few %, see the README). Writes report.md, analysis.json, parity.png;
+A row is reproduced when all three constants agree within 5 % with this run's values from the paper's own protocol.
+How far that protocol is from the linear constants (third-order terms enter a one-sided fit) is reported apart. Writes report.md, analysis.json, parity.png;
 prints the outputs JSON.
 """
 import json
@@ -47,24 +47,26 @@ def main():
                 row["rate"] = {k: r[k + "_rate_1"] for k in KEYS}
                 row["dev_static"] = {k: (p[k] - r[k]) / r[k] for k in KEYS}
                 row["dev_rate"] = {k: (p[k] - r[k + "_rate_1"]) / r[k + "_rate_1"] for k in KEYS}
-                row["ok"] = all(abs(v) <= TOL for v in row["dev_static"].values())
+                row["ok"] = all(abs(v) <= TOL for v in row["dev_rate"].values())
+                row["bias"] = {k: (r[k + "_rate_1"] - r[k]) / r[k] for k in KEYS}   # protocol vs linear
                 row["a300"] = r["a300"]
             rows.append(row)
     done = [r for r in rows if r["found"]]
     n_ok = sum(r["ok"] for r in done)
-    claims.append({"claim": "Table rows (complete, potential file found) with C11, C12, C44 all within 5 %",
+    claims.append({"claim": "Table rows (complete, file found): C11, C12, C44 all within 5 % of the paper's protocol "
+                            "run here",
                    "paper": f"{len(done)} rows", "this_run": f"{n_ok}/{len(done)}", "ok": n_ok >= 0.8 * len(done)})
-    # the paper's protocol is biased low for C11, C12 (one-sided tension: third-order constants are negative)
+    # the protocol itself: one-sided tension at a constant rate, slope on 0-1 % (third-order terms enter)
     for k in KEYS:
-        d = np.array([r["dev_static"][k] for r in done if r["ok"]])
-        if len(d):
-            claims.append({"claim": f"{k}: paper minus linear value, median over the reproduced rows",
-                           "paper": "-", "this_run": "%+.1f %%" % (100 * np.median(d)), "ok": None})
+        b = np.array([r["bias"][k] for r in done])
+        claims.append({"claim": f"{k}: the paper's protocol vs the linear value, median (range) over all potentials",
+                       "paper": "-", "this_run": "%+.1f %% (%+.1f to %+.1f)" % (100 * np.median(b), 100 * b.min(),
+                                                                         100 * b.max()), "ok": None})
     # does the paper rank the potentials the same way (per metal, by the constant itself)?
     for metal in tables:
         sub = [r for r in done if r["metal"] == metal]
         if len(sub) >= 4:
-            rho = {k: spearman([r["paper"][k] for r in sub], [r["static"][k] for r in sub]) for k in KEYS}
+            rho = {k: spearman([r["paper"][k] for r in sub], [r["rate"][k] for r in sub]) for k in KEYS}
             claims.append({"claim": f"{metal}: the potentials' order by C11, C12, C44 (Spearman rho, n={len(sub)})",
                            "paper": "-", "this_run": ", ".join("%s %.2f" % (k, v) for k, v in rho.items()),
                            "ok": min(rho.values()) >= 0.8})
@@ -91,7 +93,7 @@ def main():
         L += ["", "## Not reproduced", ""] + [
             "- %s %s: paper %s vs this run %s" % (r["metal"], r["potential"],
                                                   ", ".join("%s %.1f" % (k, r["paper"][k]) for k in KEYS),
-                                                  ", ".join("%s %.1f" % (k, r["static"][k]) for k in KEYS)) for r in bad]
+                                                  ", ".join("%s %.1f" % (k, r["rate"][k]) for k in KEYS)) for r in bad]
     Path("report.md").write_text("\n".join(L) + "\n")
     json.dump({"claims": claims, "rows": rows}, open("analysis.json", "w"), indent=1, default=float)
     if not done:
@@ -105,12 +107,12 @@ def main():
     for a, k in zip(ax, KEYS):
         for metal, c in (("Cu", "tab:orange"), ("Al", "tab:gray"), ("Ni", "tab:green")):
             sub = [r for r in done if r["metal"] == metal]
-            a.scatter([r["static"][k] for r in sub], [r["paper"][k] for r in sub], s=14, color=c, label=metal)
-        lim = [0, max(max(r["static"][k], r["paper"][k]) for r in done) * 1.08]
+            a.scatter([r["rate"][k] for r in sub], [r["paper"][k] for r in sub], s=14, color=c, label=metal)
+        lim = [0, max(max(r["rate"][k], r["paper"][k]) for r in done) * 1.08]
         a.plot(lim, lim, "k-", lw=0.6)
         a.plot(lim, [x * (1 - TOL) for x in lim], "k:", lw=0.6)
         a.plot(lim, [x * (1 + TOL) for x in lim], "k:", lw=0.6)
-        a.set_xlabel(f"{k}, this run (linear, GPa)"); a.set_ylabel(f"{k}, paper (GPa)"); a.set_xlim(lim); a.set_ylim(lim)
+        a.set_xlabel(f"{k}, this run, the paper's protocol (GPa)"); a.set_ylabel(f"{k}, paper (GPa)"); a.set_xlim(lim); a.set_ylim(lim)
     ax[0].legend()
     fig.tight_layout(); fig.savefig("parity.png", dpi=130)
     print(json.dumps({"n_rows": len(done), "n_reproduced": n_ok, "n_not_found": len(missing), "n_pending": len(pending),

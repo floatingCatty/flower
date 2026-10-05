@@ -79,7 +79,7 @@ nodes:
   - id: elastic
     kind: shell
     title: C11, C12, C44 of ${item.metal} with ${item.pot} at 300 K
-    description: 'One metal with one potential, 16384 atoms at 300 K: the linear elastic constants by symmetric +-1% strains (C11, C12, C44 with block errors), and the paper''s protocol (constant-rate tension and shear, slopes C*_rate_0.5 / _1 / _2 fitted on 0-0.5%, 1%, 2% strain). Compare both with the papers row for this file.'
+    description: 'One metal with one potential, 16384 atoms at 300 K: the linear elastic constants by symmetric +-1% strains (C11, C12, C44 with block errors), and the paper''s protocol (constant-rate tension and shear, slopes C*_rate_0.5 / _1 / _2 fitted on 0-0.5%, 1%, 2% strain). Compare both with the paper''s row for this file.'
     cluster: remote
     environment: lammps
     stage_in:
@@ -117,4 +117,38 @@ nodes:
       tables: ${paper.files.tables}
       index: ${potentials.files.index}
       results: ${elastic.partial}
+    run: python3 ${plan.dir}/analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: diag-fenicr
+    kind: shell
+    description: 'Why elastic[30] (Ni with FeNiCr.eam.alloy) stopped in LAMMPS after 20 s: a minimal input (fcc Ni, this potential, one energy evaluation), with LAMMPS''s whole screen output kept. Read errors and e_atom.'
+    cluster: remote
+    environment: lammps
+    stage_in:
+    - ${potentials.dir}/potentials/FeNiCr.eam.alloy
+    resources:
+      cpus_per_task: 1
+    outputs:
+      errors: array
+    files:
+      screen: screen.txt
+    run: 'printf "units metal\nlattice fcc 3.52\nregion b block 0 4 0 4 0 4\ncreate_box 1 b\ncreate_atoms 1 box\npair_style eam/alloy\npair_coeff * * FeNiCr.eam.alloy Ni\nthermo_modify norm yes\nrun 0\n" > in.min; mpirun --oversubscribe -np 1 lmp -echo screen -in in.min -log log.txt > screen.txt 2>&1 || true; cat log.txt >> screen.txt 2>/dev/null || true; python3 -c "import json; print(json.dumps({\"errors\": [l.strip() for l in open(\"screen.txt\") if \"ERROR\" in l or \"WARNING\" in l][:10]}))" > "$FLOWER_OUTPUTS"'
+
+  - id: analysis
+    kind: shell
+    description: 'This run''s elastic constants against Tables 1-3: a row is reproduced when C11, C12 and C44 are all within 5% of this run''s values from the paper''s own protocol; also how far that protocol sits from the linear constants, the order of the potentials, and the rows that are not reproduced. Read n_reproduced of n_rows and report.md.'
+    environment: analysis
+    outputs:
+      n_rows: integer
+      n_reproduced: integer
+      n_not_found: integer
+      not_reproduced: array
+    files:
+      report: report.md
+      figure: parity.png
+      data: analysis.json
+    inputs:
+      tables: ${paper.files.tables}
+      index: ${potentials.files.index}
+      results: ${elastic.outputs.items}
     run: python3 ${plan.dir}/analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"
