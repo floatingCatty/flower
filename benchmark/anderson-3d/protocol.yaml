@@ -1,0 +1,389 @@
+# A reproducibility protocol exported from run anderson-3d-20261005-021220-0e6e (`flower export`): the steps behind
+# fss. Run it with `flower run protocol.yaml -y`, then `flower compare RUN expected.json`.
+flower: 1
+id: anderson-3d
+title: Reproduce the critical disorder W_c = 16.54(2) and the localization-length exponent nu = 1.57(2) of the 3D
+  Anderson transition (box distribution), from transfer-matrix localization lengths of L x L bars and finite-size
+  scaling with corrections (Tables II and III of Slevin and Ohtsuki, PRL 82, 382 (1999), arXiv:cond-mat/9812065)
+description: |
+  Reproduce the critical disorder W_c = 16.54(2) and the localization-length exponent nu = 1.57(2) of the 3D Anderson transition (box distribution), from transfer-matrix localization lengths of L x L bars and finite-size scaling with corrections (Tables II and III of Slevin and Ohtsuki, PRL 82, 382 (1999), arXiv:cond-mat/9812065)
+clusters:
+  local:
+    transport: local
+    scheduler: none
+    cpus: 24
+  here:
+    transport: local
+    scheduler: none
+nodes:
+- id: paper
+  kind: shell
+  description: 'Downloads the paper (arXiv PDF, sha256) and parses Tables II and III: W_c, Lambda_c and nu with
+    their 95% intervals, for the box, Gaussian and Lorentz distributions. Read box_Wc and box_nu: the claims.'
+  outputs:
+    sha256_pdf: string
+    sizes: array
+    box_Wc: object
+    box_nu: object
+    box_Lc: object
+  files:
+    pdf: paper.pdf
+    tables: tables.json
+  run: curl -fsSL -A "Mozilla/5.0" -o paper.pdf https://arxiv.org/pdf/cond-mat/9812065v1 && pdftotext -layout paper.pdf
+    paper.txt && python3 ${plan.dir}/tables.py | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: check
+  kind: shell
+  description: The numba transfer-matrix kernel against a dense numpy calculation on the same potentials (L = 2
+    and 3), and the symplectic pairing (s, 1/s) of the transfer matrix's singular values. Read L2_dev, L3_dev (below
+    1e-9) and L*_pair (below 1e-6).
+  environment: numba
+  stage_in:
+  - tm.py
+  outputs:
+    ok: boolean
+    L2_dev: number
+    L3_dev: number
+    L2_pair: number
+    L3_pair: number
+  run: python3 tm.py check | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: tm
+  kind: shell
+  title: 'Lambda: L=${item.L}, W=${item.W}'
+  description: The reduced localization length Lambda = 1/(gamma L) of an L x L bar at disorder W (box distribution,
+    E = 0) to 0.1 % (the paper's accuracy), the data of the finite-size-scaling fit. Read Lambda and rel_err.
+  needs:
+  - check
+  environment: numba
+  stage_in:
+  - tm.py
+  env:
+    OMP_NUM_THREADS: '1'
+  timeout:
+    total: 12h
+  foreach:
+  - L: 14
+    W: 15.0
+    seed: 14000
+  - L: 14
+    W: 15.25
+    seed: 14001
+  - L: 14
+    W: 15.5
+    seed: 14002
+  - L: 14
+    W: 15.75
+    seed: 14003
+  - L: 14
+    W: 16.0
+    seed: 14004
+  - L: 14
+    W: 16.25
+    seed: 14005
+  - L: 14
+    W: 16.5
+    seed: 14006
+  - L: 14
+    W: 16.75
+    seed: 14007
+  - L: 14
+    W: 17.0
+    seed: 14008
+  - L: 14
+    W: 17.25
+    seed: 14009
+  - L: 14
+    W: 17.5
+    seed: 14010
+  - L: 14
+    W: 17.75
+    seed: 14011
+  - L: 14
+    W: 18.0
+    seed: 14012
+  - L: 12
+    W: 15.0
+    seed: 12000
+  - L: 12
+    W: 15.25
+    seed: 12001
+  - L: 12
+    W: 15.5
+    seed: 12002
+  - L: 12
+    W: 15.75
+    seed: 12003
+  - L: 12
+    W: 16.0
+    seed: 12004
+  - L: 12
+    W: 16.25
+    seed: 12005
+  - L: 12
+    W: 16.5
+    seed: 12006
+  - L: 12
+    W: 16.75
+    seed: 12007
+  - L: 12
+    W: 17.0
+    seed: 12008
+  - L: 12
+    W: 17.25
+    seed: 12009
+  - L: 12
+    W: 17.5
+    seed: 12010
+  - L: 12
+    W: 17.75
+    seed: 12011
+  - L: 12
+    W: 18.0
+    seed: 12012
+  - L: 10
+    W: 15.0
+    seed: 10000
+  - L: 10
+    W: 15.25
+    seed: 10001
+  - L: 10
+    W: 15.5
+    seed: 10002
+  - L: 10
+    W: 15.75
+    seed: 10003
+  - L: 10
+    W: 16.0
+    seed: 10004
+  - L: 10
+    W: 16.25
+    seed: 10005
+  - L: 10
+    W: 16.5
+    seed: 10006
+  - L: 10
+    W: 16.75
+    seed: 10007
+  - L: 10
+    W: 17.0
+    seed: 10008
+  - L: 10
+    W: 17.25
+    seed: 10009
+  - L: 10
+    W: 17.5
+    seed: 10010
+  - L: 10
+    W: 17.75
+    seed: 10011
+  - L: 10
+    W: 18.0
+    seed: 10012
+  - L: 8
+    W: 15.0
+    seed: 8000
+  - L: 8
+    W: 15.25
+    seed: 8001
+  - L: 8
+    W: 15.5
+    seed: 8002
+  - L: 8
+    W: 15.75
+    seed: 8003
+  - L: 8
+    W: 16.0
+    seed: 8004
+  - L: 8
+    W: 16.25
+    seed: 8005
+  - L: 8
+    W: 16.5
+    seed: 8006
+  - L: 8
+    W: 16.75
+    seed: 8007
+  - L: 8
+    W: 17.0
+    seed: 8008
+  - L: 8
+    W: 17.25
+    seed: 8009
+  - L: 8
+    W: 17.5
+    seed: 8010
+  - L: 8
+    W: 17.75
+    seed: 8011
+  - L: 8
+    W: 18.0
+    seed: 8012
+  - L: 6
+    W: 15.0
+    seed: 6000
+  - L: 6
+    W: 15.25
+    seed: 6001
+  - L: 6
+    W: 15.5
+    seed: 6002
+  - L: 6
+    W: 15.75
+    seed: 6003
+  - L: 6
+    W: 16.0
+    seed: 6004
+  - L: 6
+    W: 16.25
+    seed: 6005
+  - L: 6
+    W: 16.5
+    seed: 6006
+  - L: 6
+    W: 16.75
+    seed: 6007
+  - L: 6
+    W: 17.0
+    seed: 6008
+  - L: 6
+    W: 17.25
+    seed: 6009
+  - L: 6
+    W: 17.5
+    seed: 6010
+  - L: 6
+    W: 17.75
+    seed: 6011
+  - L: 6
+    W: 18.0
+    seed: 6012
+  - L: 5
+    W: 15.0
+    seed: 5000
+  - L: 5
+    W: 15.25
+    seed: 5001
+  - L: 5
+    W: 15.5
+    seed: 5002
+  - L: 5
+    W: 15.75
+    seed: 5003
+  - L: 5
+    W: 16.0
+    seed: 5004
+  - L: 5
+    W: 16.25
+    seed: 5005
+  - L: 5
+    W: 16.5
+    seed: 5006
+  - L: 5
+    W: 16.75
+    seed: 5007
+  - L: 5
+    W: 17.0
+    seed: 5008
+  - L: 5
+    W: 17.25
+    seed: 5009
+  - L: 5
+    W: 17.5
+    seed: 5010
+  - L: 5
+    W: 17.75
+    seed: 5011
+  - L: 5
+    W: 18.0
+    seed: 5012
+  - L: 4
+    W: 15.0
+    seed: 4000
+  - L: 4
+    W: 15.25
+    seed: 4001
+  - L: 4
+    W: 15.5
+    seed: 4002
+  - L: 4
+    W: 15.75
+    seed: 4003
+  - L: 4
+    W: 16.0
+    seed: 4004
+  - L: 4
+    W: 16.25
+    seed: 4005
+  - L: 4
+    W: 16.5
+    seed: 4006
+  - L: 4
+    W: 16.75
+    seed: 4007
+  - L: 4
+    W: 17.0
+    seed: 4008
+  - L: 4
+    W: 17.25
+    seed: 4009
+  - L: 4
+    W: 17.5
+    seed: 4010
+  - L: 4
+    W: 17.75
+    seed: 4011
+  - L: 4
+    W: 18.0
+    seed: 4012
+  outputs:
+    L: integer
+    W: number
+    Lambda: number
+    Lambda_err: number
+    rel_err: number
+    steps: integer
+  retry:
+    max_attempts: 2
+    true:
+    - lost
+    - node_fail
+    - timeout
+  on_failure: continue
+  run: python3 tm.py run ${item.L} ${item.W} 0.001 30000000 ${item.seed} | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: fss-selftest
+  kind: shell
+  cluster: here
+  description: 'The scaling fit on synthetic data drawn from its own model (W_c 16.54, nu 1.57, y -2.8, 0.1% noise,
+    the paper''s sizes and W grid): it must recover W_c and nu inside its 95% intervals before it is trusted with
+    the campaign.'
+  environment: analysis
+  outputs:
+    ok: boolean
+    Wc: array
+    nu: array
+    Q: number
+  run: python3 ${plan.dir}/fss.py selftest | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: fss
+  kind: shell
+  description: 'The finite-size-scaling fit of all 91 points: with corrections to scaling (the paper''s box fit,
+    12 parameters) and without them on L >= 8 near W_c, W_c, nu and Lambda_c with 95% intervals from 200 resampled
+    fits, against Tables II and III. Read n_reproduced of n_claims and report.md.'
+  needs:
+  - fss-selftest
+  cluster: here
+  environment: analysis
+  outputs:
+    n_claims: integer
+    n_reproduced: integer
+    Wc: array
+    nu: array
+    Lc: array
+    Q: number
+    n_points: integer
+  files:
+    report: report.md
+    figure: fss.png
+    fits: fss.json
+  inputs:
+    tables: ${paper.files.tables}
+    points: ${tm.outputs.items}
+  run: python3 ${plan.dir}/fss.py | tail -n 1 > "$FLOWER_OUTPUTS"

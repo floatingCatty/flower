@@ -32,7 +32,7 @@ nodes:
 
   - id: check
     kind: shell
-    description: The numba transfer-matrix kernel against a dense numpy calculation on the same potentials (L = 2 and 3), and the symplectic pairing (s, 1/s) of the transfer matrix''s singular values. Read L2_dev, L3_dev (below 1e-9) and L*_pair (below 1e-6).
+    description: The numba transfer-matrix kernel against a dense numpy calculation on the same potentials (L = 2 and 3), and the symplectic pairing (s, 1/s) of the transfer matrix's singular values. Read L2_dev, L3_dev (below 1e-9) and L*_pair (below 1e-6).
     environment: numba
     stage_in:
     - tm.py
@@ -77,7 +77,7 @@ nodes:
     env:
       OMP_NUM_THREADS: '1'
     timeout:
-      total: 6h
+      total: 12h
     foreach:
     - L: 14
       W: 15.0
@@ -361,6 +361,7 @@ nodes:
       steps: integer
     retry:
       max_attempts: 2
+      on: [lost, node_fail, timeout]
     on_failure: continue
     run: python3 tm.py run ${item.L} ${item.W} 0.001 30000000 ${item.seed} | tail -n 1 > "$FLOWER_OUTPUTS"
 
@@ -413,3 +414,27 @@ nodes:
     outputs:
       runs: array
     run: python3 tmtrace.py 800000 14:15.0:14000 14:15.0:777 12:15.0:12000 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: fss
+    kind: shell
+    description: 'The finite-size-scaling fit of all 91 points: with corrections to scaling (the paper''s box fit, 12 parameters) and without them on L >= 8 near W_c, W_c, nu and Lambda_c with 95% intervals from 200 resampled fits, against Tables II and III. Read n_reproduced of n_claims and report.md.'
+    needs:
+    - fss-selftest
+    cluster: here
+    environment: analysis
+    outputs:
+      n_claims: integer
+      n_reproduced: integer
+      Wc: array
+      nu: array
+      Lc: array
+      Q: number
+      n_points: integer
+    files:
+      report: report.md
+      figure: fss.png
+      fits: fss.json
+    inputs:
+      tables: ${paper.files.tables}
+      points: ${tm.outputs.items}
+    run: python3 ${plan.dir}/fss.py | tail -n 1 > "$FLOWER_OUTPUTS"
