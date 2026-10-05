@@ -375,3 +375,41 @@ nodes:
       nu: array
       Q: number
     run: python3 ${plan.dir}/fss.py selftest | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: fss-preview
+    kind: shell
+    description: 'The scaling fit on the points finished so far (two L = 14 points on the metallic side were still running): W_c, nu, Lambda_c with 95% intervals against Tables II and III. Not the result; the final fit uses every point.'
+    needs:
+    - fss-selftest
+    cluster: here
+    environment: analysis
+    outputs:
+      n_claims: integer
+      n_reproduced: integer
+      Wc: array
+      nu: array
+      Lc: array
+      Q: number
+      n_points: integer
+    files:
+      report: report.md
+      figure: fss.png
+      fits: fss.json
+    inputs:
+      tables: ${paper.files.tables}
+      points: ${tm.partial}
+    run: python3 ${plan.dir}/fss.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: trace-l14
+    kind: shell
+    description: 'Why L = 14, W = 15 came out at Lambda 0.688 (expected about 0.83 from the L = 12 trend): the block series of Lambda over 800k steps for that seed, a second seed, and L = 12 at W = 15. Read runs[].Lambda and blocks: a drift or a jump points at the algorithm, scatter at statistics.'
+    cluster: here
+    environment: numba
+    stage_in:
+    - tm.py
+    - tmtrace.py
+    env:
+      OMP_NUM_THREADS: '1'
+    outputs:
+      runs: array
+    run: python3 tmtrace.py 800000 14:15.0:14000 14:15.0:777 12:15.0:12000 | tail -n 1 > "$FLOWER_OUTPUTS"

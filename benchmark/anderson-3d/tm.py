@@ -9,8 +9,11 @@ positive Lyapunov exponent gamma is the M-th; Lambda = 1 / (gamma L) is the redu
   python3 tm.py run L W [TARGET_REL_ERR] [MAX_STEPS] [SEED]   -> tm.json, prints the outputs JSON
   python3 tm.py check                                          -> the kernel against a dense calculation
 
-The error of gamma is the standard error over blocks of 2000 re-orthonormalizations; a run stops when it is below
-TARGET_REL_ERR (default 0.002) or at MAX_STEPS.
+The error of gamma is the standard error over blocks of 2000 re-orthonormalizations. The run length is fixed in
+advance from a pilot of 20 blocks (the blocks needed for TARGET_REL_ERR, default 0.002, plus 20 %, at most
+MAX_STEPS), so the estimate is not biased by stopping when it happens to look precise. The potential comes from one
+random stream per run, seeded once (an earlier version reseeded every few slices from its own output: the seeds fell
+into a cycle and the potential along the bar became periodic).
 """
 import json
 import sys
@@ -23,12 +26,17 @@ Q = 8                                     # slices between re-orthonormalization
 
 
 @njit(cache=True)
-def advance(P1, P0, L, W, E, nslices, seed_state):
-    """nslices slices for all columns of P1 (psi_n) and P0 (psi_{n-1}), each (L*L, M), in place.
-    seed_state: a 1-element int64 array, the running seed of the potential (reproducible per run)."""
+def seed(s):
+    """Seed the kernel's random stream once per run; it then continues across calls of advance."""
+    np.random.seed(s)
+
+
+@njit(cache=True)
+def advance(P1, P0, L, W, E, nslices):
+    """nslices slices for all columns of P1 (psi_n) and P0 (psi_{n-1}), each (L*L, M), in place; the potential is
+    drawn from the kernel's random stream (see seed)."""
     LL = L * L
     M = P1.shape[1]
-    np.random.seed(seed_state[0])
     new = np.empty((LL, M))
     for _ in range(nslices):
         V = (np.random.random(LL) - 0.5) * W
@@ -40,20 +48,24 @@ def advance(P1, P0, L, W, E, nslices, seed_state):
                 new[i, m] = e * P1[i, m] + P1[nb[0], m] + P1[nb[1], m] + P1[nb[2], m] + P1[nb[3], m] - P0[i, m]
         P0[:, :] = P1
         P1[:, :] = new
-    seed_state[0] = np.random.randint(0, 2 ** 31 - 1)
 
 
-def lyapunov(L, W, target=0.002, max_steps=10 ** 7, seed=12345, E=0.0, ncols=None, min_steps=20000):
+BLOCK = 2000                              # re-orthonormalizations per block
+PILOT = 20                                # blocks that size the run
+
+
+def lyapunov(L, W, target=0.002, max_steps=10 ** 7, seed_=12345, E=0.0, ncols=None):
     LL = L * L
     M = ncols or LL
-    rng = np.random.default_rng(seed)
+    rng = np.random.default_rng(seed_)
     X, _ = np.linalg.qr(rng.standard_normal((2 * LL, M)))
     P1, P0 = np.ascontiguousarray(X[:LL]), np.ascontiguousarray(X[LL:])
-    state = np.array([seed], dtype=np.int64)
+    seed(seed_)
     acc = np.zeros(M)
     block, blocks, nqr, steps = 0.0, [], 0, 0
-    while True:
-        advance(P1, P0, L, W, E, Q, state)
+    nblocks = PILOT
+    while len(blocks) < nblocks:
+        advance(P1, P0, L, W, E, Q)
         steps += Q
         X, R = np.linalg.qr(np.vstack([P1, P0]))
         d = np.log(np.abs(np.diag(R)))
@@ -61,14 +73,16 @@ def lyapunov(L, W, target=0.002, max_steps=10 ** 7, seed=12345, E=0.0, ncols=Non
         block += d[M - 1]
         nqr += 1
         P1, P0 = np.ascontiguousarray(X[:LL]), np.ascontiguousarray(X[LL:])
-        if nqr % 2000 == 0:
-            blocks.append(block / (2000 * Q))
+        if nqr % BLOCK == 0:
+            blocks.append(block / (BLOCK * Q))
             block = 0.0
-            if len(blocks) >= 10 and steps >= min_steps:
-                g = np.mean(blocks)
-                err = np.std(blocks, ddof=1) / np.sqrt(len(blocks))
-                if err / g < target or steps >= max_steps:
-                    return acc / steps, float(g), float(err), steps
+            if len(blocks) == PILOT:          # fix the length once, from the pilot's scatter
+                g, sd = np.mean(blocks), np.std(blocks, ddof=1)
+                need = int(np.ceil(1.2 * (sd / (target * g)) ** 2))
+                nblocks = max(PILOT, min(need, max_steps // (BLOCK * Q)))
+    g = np.mean(blocks)
+    err = np.std(blocks, ddof=1) / np.sqrt(len(blocks))
+    return acc / steps, float(g), float(err), steps
 
 
 def check():
@@ -82,17 +96,15 @@ def check():
             x, y = i % L, i // L
             for j in (((x + 1) % L) + y * L, ((x - 1) % L) + y * L, x + ((y + 1) % L) * L, x + ((y - 1) % L) * L):
                 Tperp[i, j] += 1.0
-        state = np.array([7], dtype=np.int64)
+        seed(7)
         X = np.linalg.qr(np.random.default_rng(1).standard_normal((2 * LL, 2 * LL)))[0]
         P1, P0 = np.ascontiguousarray(X[:LL]), np.ascontiguousarray(X[LL:])
         acc_k = np.zeros(2 * LL)
         acc_d = np.zeros(2 * LL)
         Y = X.copy()
-        np.random.seed(7)                     # the same stream the kernel draws from, slice by slice
+        np.random.seed(7)                     # numpy's Mersenne twister: the same stream as the kernel's
         for k in range(n):
-            st = state[0]
-            advance(P1, P0, L, W, 0.0, 1, state)
-            np.random.seed(st)
+            advance(P1, P0, L, W, 0.0, 1)
             V = (np.random.random(LL) - 0.5) * W
             T = np.block([[np.diag(-V) + Tperp, -np.eye(LL)], [np.eye(LL), np.zeros((LL, LL))]])
             Y = T @ Y
@@ -120,11 +132,11 @@ def check():
                       **{k + "_pair": v["symplectic_pairing"] for k, v in out.items()}}))
 
 
-def run(L, W, target=0.002, max_steps=10 ** 7, seed=12345):
+def run(L, W, target=0.002, max_steps=10 ** 7, seed_=12345):
     t0 = time.time()
-    gam, g, err, steps = lyapunov(L, W, target, max_steps, seed)
+    gam, g, err, steps = lyapunov(L, W, target, max_steps, seed_)
     out = {"L": L, "W": W, "gamma_min": g, "gamma_err": err, "Lambda": 1 / (g * L), "Lambda_err": err / g / (g * L),
-           "rel_err": err / g, "steps": steps, "seed": seed, "seconds": round(time.time() - t0, 1)}
+           "rel_err": err / g, "steps": steps, "seed": seed_, "seconds": round(time.time() - t0, 1)}
     json.dump(out, open("tm.json", "w"), indent=1)
     print(json.dumps(out))
 
