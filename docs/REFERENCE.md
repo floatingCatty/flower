@@ -52,7 +52,9 @@ clusters:                    # machines a step can run on (`cluster: name`)
   here: {transport: local}   # Slurm on the machine flower runs on
   box:  {transport: ssh, host: mybox, scheduler: none, cpus: 32}   # no batch system: run directly on the host;
                              # cpus: the cores flower may use there, shared by all runs of the project
-                             # (each step counts resources.cpus_per_task, default 1)
+                             # (each step counts resources.cpus_per_task, default 1). Every step on a budgeted
+                             # cluster waits for it: give quick checks their own entry for the same host
+                             # without `cpus` (e.g. here: {transport: local, scheduler: none})
                              # install: never  -> environment steps only check, never run setup.sh
 nodes:                       # `nodes: []` is a valid draft (`flower start`): the run parks until steps are added
   - id: name                 # unique; letters, digits, - _
