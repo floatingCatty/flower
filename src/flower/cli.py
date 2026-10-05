@@ -1441,6 +1441,7 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--env", dest="environment", help="environment recipe (envs/NAME) to activate there")
     s.add_argument("--stage-in", action="append", default=[], help="file to send with it (cluster steps; repeatable)")
     s.add_argument("--retrieve", action="append", default=[], help="glob to fetch back (cluster steps; repeatable)")
+    s.add_argument("--tmpdir", help="job: TMPDIR inside the step's own directory (scratch-heavy codes, small /tmp); or a path")
     s.add_argument("--file", dest="files", action="append", default=[], help="NAME=PATH declared output file (repeatable)")
     s.add_argument("--out", dest="outs", action="append", default=[],
                    help="NAME[:TYPE] output read from the JSON the command writes to $FLOWER_OUTPUTS (repeatable)")

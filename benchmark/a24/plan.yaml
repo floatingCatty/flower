@@ -1,0 +1,61 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
+# existing cluster, only cpus / max_jobs / min_poll may change.
+
+flower: 1
+id: a24
+title: "Reproduce the A24 benchmark interaction energies of 24 small noncovalent dimers (Rezac and Hobza, JCTC 9, 2151 (2013)) at the CCSD(T)/CBS level: MP2/CBS from aug-cc-pVTZ/QZ plus a CCSD(T) correction in aug-cc-pVTZ, counterpoise corrected"
+description: |
+  Reproduce the A24 benchmark interaction energies of 24 small noncovalent dimers (Rezac and Hobza, JCTC 9, 2151 (2013)) at the CCSD(T)/CBS level: MP2/CBS from aug-cc-pVTZ/QZ plus a CCSD(T) correction in aug-cc-pVTZ, counterpoise corrected
+
+inputs:
+  host: {type: string, required: true}
+  ssh_options: {type: array, required: true}
+
+clusters:
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           remote_root: ~/flower-runs, min_poll: 15s, cpus: 32}
+
+nodes:
+  - id: refs
+    kind: shell
+    description: 'The A24 database file of Psi4 (tag v1.9.1, sha256): the 24 dimer geometries split into fragments, and the reference interaction energies (kcal/mol) of Rezac and Hobza. Read n (24 when intact) and names.'
+    outputs:
+      n: integer
+      names: array
+    files:
+      data: a24.json
+      source: A24.py
+    run: curl -fsSL -o A24.py https://raw.githubusercontent.com/psi4/psi4/v1.9.1/psi4/share/psi4/databases/A24.py && sha256sum A24.py && python3 ${plan.dir}/a24.py data A24.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: smoke
+    kind: shell
+    title: 'Smoke: dimer ${item.i}, ${item.level}'
+    description: 'Three calculations that size the campaign: CCSD(T)-MP2/aug-cc-pVTZ for the water dimer (2) and the ethene dimer (23, the largest), and MP2/aug-cc-pVQZ for the ethene dimer: run time, memory, and a first comparison with the reference. Not used in the result.'
+    cluster: remote
+    environment: pyscf
+    stage_in:
+    - a24.py
+    - ${refs.files.data}
+    tmpdir: job
+    env:
+      OMP_NUM_THREADS: '8'
+    resources:
+      cpus_per_task: 8
+      mem: 30G
+    foreach:
+    - i: 2
+      level: ccsdt-atz
+    - i: 23
+      level: ccsdt-atz
+    - i: 23
+      level: mp2-aqz
+    outputs:
+      seconds: number
+      nao: integer
+    files:
+      result: result.json
+    run: python3 a24.py calc a24.json ${item.i} ${item.level} 28000 | tail -n 1 > "$FLOWER_OUTPUTS"

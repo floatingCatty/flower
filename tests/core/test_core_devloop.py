@@ -848,3 +848,16 @@ def test_add_stage_in_path_typed_from_the_current_directory(cli, home, tmp_path,
     code, res = cli("add", rid, "a", "--cluster", "local", "--stage-in", "study/calc.py", "--no-follow", "--", "true")
     plan = (tmp_path / "study" / "plan.yaml").read_text()
     assert "- calc.py" in plan and "study/calc.py" not in plan, plan
+
+
+def test_add_tmpdir(cli, home, tmp_path, monkeypatch):
+    """`flower add --tmpdir job`: quantum chemistry scratch (PySCF) filled a small /tmp in two studies."""
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    rid = res["data"]["run_id"]
+    code, res = cli("add", rid, "a", "--tmpdir", "job", "--out", "t:string", "--",
+                    'echo "{\\"t\\": \\"$TMPDIR\\"}" > "$FLOWER_OUTPUTS"')
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert "tmpdir: job" in (tmp_path / "x" / "plan.yaml").read_text()
+    assert str(_eng(home, rid).paths.dir) in st.nodes["a"].result.outputs["t"]

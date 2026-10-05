@@ -95,6 +95,8 @@ def node_from_args(a, command: list[str]) -> dict:
         n["stage_in"] = list(a.stage_in)
     if a.retrieve:
         n["retrieve"] = list(a.retrieve)
+    if getattr(a, "tmpdir", None):
+        n["tmpdir"] = a.tmpdir
     if a.setenv:
         n["env"] = dict(x.split("=", 1) for x in a.setenv)
     if a.timeout_total:
