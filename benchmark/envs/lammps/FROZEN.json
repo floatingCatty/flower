@@ -1,0 +1,31 @@
+{
+  "by": "human:zhanghao",
+  "drafted_setup": false,
+  "files": {
+    "activate.sh": "c55ad3fa3ff3a1ba22502366e53d08907de688adc9339a27de9f2a952b554d70",
+    "check.sh": "754950a9a3cbb36bf86a782d914aaea0536aabd267ecfa45038ae6e428da7777",
+    "conda-explicit.txt": "33a562e92fbe2d9756a825ed32ca7ec2c073bbe076362f45135402bc2e909cc7",
+    "setup.sh": "089c33dee5a66a95058279c84fad3bfb9f69d5dea56710cf393d0f1d35277242"
+  },
+  "frozen_at": "2026-10-05T00:06:36.681Z",
+  "hash": "sha256:1efd6b925f008e371adb929be35ec238c3a40f63a5fab675e9508021e59c6547",
+  "name": "lammps",
+  "previous": null,
+  "replays": [
+    {
+      "action": "replay",
+      "at": "2026-10-05T00:06:50.749Z",
+      "by": "human:zhanghao",
+      "cluster": "remote",
+      "fresh": true,
+      "ok": true,
+      "prefix": "/home/zhanghao/.flower/envs/lammps-1efd6b925f00-replay-20261005-000643-ddb3",
+      "rc": 0,
+      "seconds": 7.5,
+      "tail": "--------------------------------------------------------------------------\n[<host>:2063906] 1 more process has sent help message help-btl-vader.txt / cma-permission-denied\n[<host>:2063906] Set MCA parameter \"orte_base_help_aggregate\" to 0 to see all help / error messages\nlammps OK: LJ fcc E/atom -7.7615881398 = lattice sum -7.7615881398\nLarge-scale Atomic/Molecular Massively Parallel Simulator - 2 Aug 2023\nenvironment lammps installed in /home/zhanghao/.flower/envs/lammps-1efd6b925f00-replay-20261005-000643-ddb3\n"
+    }
+  ],
+  "sessions": [
+    "2026-10-05.jsonl"
+  ]
+}

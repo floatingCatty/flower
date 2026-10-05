@@ -1,0 +1,101 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step.
+# Each addition is a recorded amendment of the run (see `flower log RUN`).
+#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
+#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
+# existing cluster, only cpus / max_jobs / min_poll may change.
+
+flower: 1
+id: eam-elastic
+title: "Reproduce the room-temperature elastic constants C11, C12, C44 of Cu, Al and Ni predicted by the EAM interatomic potentials of Tables 1-3 of Rassoulinejad-Mousavi, Mao and Zhang, J. Appl. Phys. 119, 245102 (2016), arXiv:1605.09237, by LAMMPS molecular dynamics at 300 K"
+description: |
+  Reproduce the room-temperature elastic constants C11, C12, C44 of Cu, Al and Ni predicted by the EAM interatomic potentials of Tables 1-3 of Rassoulinejad-Mousavi, Mao and Zhang, J. Appl. Phys. 119, 245102 (2016), arXiv:1605.09237, by LAMMPS molecular dynamics at 300 K
+
+inputs:
+  host: {type: string, required: true}
+  ssh_options: {type: array, required: true}
+
+clusters:
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           remote_root: ~/flower-runs, min_poll: 15s, cpus: 32}
+
+nodes:
+  - id: paper
+    kind: shell
+    description: 'Downloads the paper (arXiv PDF, sha256) and parses Tables 1-3: C11, C12, C44 at 300 K per potential file and each table''s experimental reference. Read rows (17 Cu, 24 Al, 19 Ni when intact) and complete (rows with all six numbers).'
+    outputs:
+      sha256_pdf: string
+      rows: object
+      complete: object
+      experiment: object
+    files:
+      pdf: paper.pdf
+      tables: tables.json
+    run: curl -fsSL -A "Mozilla/5.0" -o paper.pdf https://arxiv.org/pdf/1605.09237v1 && pdftotext -layout paper.pdf paper.txt && python3 ${plan.dir}/tables.py | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: potentials
+    kind: shell
+    description: 'Fetches the potential files named in Tables 1-3 by exact file name, from the LAMMPS repository (release stable_2Aug2023_update3) or else the NIST repository''s Cu, Al and Ni pages, with sha256. Read n_found and missing: only found files can be tested; missing ones are listed, not guessed.'
+    outputs:
+      tag: string
+      n_found: integer
+      n_missing: integer
+      missing: array
+      pairs: integer
+      from_nist: integer
+      items: array
+    files:
+      index: potentials.json
+    run: python3 ${plan.dir}/fetch.py "${paper.files.tables}" stable_2Aug2023_update3 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: smoke
+    kind: shell
+    description: 'Two Cu potentials, one per file format (funcfl Cu_u3.eam, setfl Cu01.eam.alloy), on 2048 atoms with 10 ps stages: tests elastic.py and measures run time and the statistical error of C11, C12, C44 before the campaign. Not used in the result.'
+    cluster: remote
+    environment: lammps
+    stage_in:
+    - elastic.py
+    - ${potentials.dir}/potentials/${item.pot}
+    resources:
+      cpus_per_task: 8
+    foreach:
+    - metal: Cu
+      pot: Cu_u3.eam
+    - metal: Cu
+      pot: Cu01.eam.alloy
+    outputs:
+      a300: number
+      C11: number
+      C12: number
+      C44: number
+      C11_err: number
+      C12_err: number
+      C44_err: number
+      seconds: number
+    files:
+      result: elastic.json
+    run: python3 elastic.py ${item.metal} ${item.pot} 8 10 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: elastic
+    kind: shell
+    title: C11, C12, C44 of ${item.metal} with ${item.pot} at 300 K
+    description: 'One metal with one potential, 16384 atoms at 300 K: the linear elastic constants by symmetric +-1% strains (C11, C12, C44 with block errors), and the paper''s protocol (constant-rate tension and shear, slopes C*_rate_0.5 / _1 / _2 fitted on 0-0.5%, 1%, 2% strain). Compare both with the papers row for this file.'
+    cluster: remote
+    environment: lammps
+    stage_in:
+    - elastic.py
+    - ${potentials.dir}/potentials/${item.pot}
+    timeout:
+      total: 3h
+    resources:
+      cpus_per_task: 8
+    foreach: ${potentials.outputs.items}
+    outputs:
+      a300: number
+      C11: number
+      C12: number
+      C44: number
+    files:
+      result: elastic.json
+    on_failure: continue
+    run: python3 elastic.py ${item.metal} ${item.pot} 16 20 | tail -n 1 > "$FLOWER_OUTPUTS"
