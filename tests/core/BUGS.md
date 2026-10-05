@@ -544,6 +544,14 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   wait. A rerun withdraws waiting proposals made from the plan file that concern its own step or are covered by
   its edit, including an identical one once the edit applies.
 
+### 61. A `--stage-in` path typed from the current directory failed at staging
+- **Test:** `tests/core/test_core_devloop.py::test_add_stage_in_path_typed_from_the_current_directory`
+- **Observed:** `flower add RUN smoke --stage-in eam-elastic/elastic.py` from the benchmark directory: stage-in paths
+  are relative to the plan's directory, so the step looked for `eam-elastic/eam-elastic/elastic.py` and failed when
+  it was staged, after the add had already written it into the plan.
+- **Fix:** `flower add` rewrites a relative `--stage-in` path that exists from the current directory but not from
+  the plan's directory into the path relative to the plan's directory.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

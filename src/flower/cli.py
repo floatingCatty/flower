@@ -251,6 +251,11 @@ def cmd_add(args, out: Out) -> int:
         raise FlowerError("no_plan_file", f"run {st.run_id} has no plan file to add to ({src})",
                           "add the step to the run's plan file, then `flower sync RUN`")
     node = devloop.node_from_args(args, args.command)
+    plan_dir = Path(src).resolve().parent
+    for i, f in enumerate(node.get("stage_in") or []):   # a path typed from here means that file, wherever the plan is
+        if isinstance(f, str) and "${" not in f and not os.path.isabs(f) and not (plan_dir / f).exists() \
+                and Path(f).exists():
+            node["stage_in"][i] = os.path.relpath(Path(f).resolve(), plan_dir)
     cur = planmod.load_plan_file(src)
     if any(isinstance(n, dict) and n.get("id") == args.id for n in cur.get("nodes") or []):
         raise FlowerError("exists", f"step {args.id!r} is already in {src}",

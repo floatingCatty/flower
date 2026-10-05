@@ -835,3 +835,16 @@ def test_a_rerun_withdraws_its_own_older_waiting_edit(cli, home, tmp_path):
     assert code == 0, res
     st = _eng(home, rid).state()
     assert not st.open_gates() and st.nodes["a"].result.outputs["x"] == 3
+
+
+def test_add_stage_in_path_typed_from_the_current_directory(cli, home, tmp_path, monkeypatch):
+    """`--stage-in` paths are relative to the plan's directory; one typed from the current directory (the study's
+    parent, as in the eam-elastic benchmark) named a file that did not exist there, and the step failed at staging."""
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    monkeypatch.chdir(tmp_path)
+    _, res = cli("start", "x", "--id", "x", "--dir", "study")
+    rid = res["data"]["run_id"]
+    (tmp_path / "study" / "calc.py").write_text("print(1)\n")
+    code, res = cli("add", rid, "a", "--cluster", "local", "--stage-in", "study/calc.py", "--no-follow", "--", "true")
+    plan = (tmp_path / "study" / "plan.yaml").read_text()
+    assert "- calc.py" in plan and "study/calc.py" not in plan, plan

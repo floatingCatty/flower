@@ -99,3 +99,21 @@ nodes:
       result: elastic.json
     on_failure: continue
     run: python3 elastic.py ${item.metal} ${item.pot} 16 20 | tail -n 1 > "$FLOWER_OUTPUTS"
+
+  - id: analysis-preview
+    kind: shell
+    description: The analysis on the campaign items finished so far, to test analysis.py while the rest run. Not the result; rerun it to refresh.
+    needs:
+    - potentials
+    environment: analysis
+    outputs:
+      n_rows: integer
+      n_reproduced: integer
+      not_reproduced: array
+    files:
+      report: report.md
+      figure: parity.png
+    inputs:
+      tables: ${paper.files.tables}
+      results: ${elastic.partial}
+    run: python3 ${plan.dir}/analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"
