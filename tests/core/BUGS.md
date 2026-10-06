@@ -563,6 +563,17 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   foreach items with it. (The results lost in the study could not be reused anyway: the data file staged into every
   calculation had changed, and staged files are part of a step's cache key.)
 
+## Metal-surfaces reproduction (2026-10-06)
+
+### 63. `${step.dir}` of a cluster or environment step pointed at an empty directory
+- **Test:** `tests/hpc/test_direct.py::test_dir_reference_of_a_job_step_is_where_its_files_are`
+- **Observed:** the input step of the metal-surfaces study (`environment: ase`, so it runs as a job on the implicit
+  `local` cluster) wrote `pseudo/`, and the next step read `${sources.dir}/pseudo`: no such file. A job runs in its
+  attempt's `job/` directory (or on the cluster, fetched back there), while `${step.dir}` gave the attempt's
+  `work/`, which only a plain shell step uses.
+- **Fix:** `${step.dir}` (and `upstream.json`) give where this machine sees the step's files: its `local_dir` for a
+  job, the working directory otherwise.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

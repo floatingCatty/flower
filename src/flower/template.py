@@ -5,7 +5,7 @@ References (resolved at node start, frozen into ``node.started``):
 * ``${inputs.NAME}``                 run input
 * ``${NODE.outputs.KEY[.path...]}``  structured output of the node's latest successful attempt
 * ``${NODE.files.NAME}``             absolute path of a declared output file
-* ``${NODE.dir}``                    the node attempt's working directory
+* ``${NODE.dir}``                    where this machine sees the node attempt's files (a cluster step: local_dir)
 * ``${NODE.summary}``                one-line summary of the node result
 * ``${run.id}`` ``${run.dir}``        run identity
 * ``${item}`` ``${item.field}`` ``${index}``  foreach expansion bindings

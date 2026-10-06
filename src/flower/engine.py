@@ -925,7 +925,7 @@ class Engine:
             r = st.nodes[d].result if d in st.nodes else None
             if r is not None:
                 up_info[d] = {"summary": r.summary, "files": {k: v.get("path") for k, v in r.files.items()},
-                              "outputs_keys": sorted(r.outputs)[:20], "dir": r.workdir}
+                              "outputs_keys": sorted(r.outputs)[:20], "dir": r.files_dir}
         atomic_write_json(adir / "upstream.json", up_info)
         kind = spec["kind"]
         # write-ahead: the attempt exists in the journal before any side effect happens

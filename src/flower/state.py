@@ -40,6 +40,11 @@ class Attempt:
     amendment: dict | None = None
 
     @property
+    def files_dir(self) -> str | None:
+        """${step.dir}: where this machine sees the step's files (a cluster step's local_dir, not the unused work/)."""
+        return self.outputs.get("local_dir") or self.workdir
+
+    @property
     def duration_s(self) -> float | None:
         if not self.started_at:
             return None
@@ -182,7 +187,7 @@ class RunState:
             r = ns.result
             if r is not None:
                 nodes[nid] = {"outputs": r.outputs, "files": {k: v.get("path") for k, v in r.files.items()},
-                              "dir": r.workdir, "summary": r.summary or "", "attempt": r.n}
+                              "dir": r.files_dir, "summary": r.summary or "", "attempt": r.n}
         # ${step.partial}: for a foreach step, its items' outputs so far (null where an item has not succeeded yet)
         kids: dict[str, list] = {}
         for n in self.plan.get("nodes") or []:

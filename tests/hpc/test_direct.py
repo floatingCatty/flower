@@ -77,6 +77,17 @@ def test_direct_job_runs_detached_and_succeeds(ff):
     assert not [l for l in lines if "slurm" in l.lower()], "timeline talks about Slurm for a plain process"
 
 
+def test_dir_reference_of_a_job_step_is_where_its_files_are(ff):
+    """BUGS #63: ${a.dir} of a cluster (or environment) step pointed at the attempt's unused work/ directory."""
+    eng = ff.run(ff.plan([ff.job("a", "mkdir sub && echo hello > sub/x.txt\n" + OUT, outputs={"x": "integer"}),
+                          {"id": "b", "kind": "shell", "run": 'cat ${a.dir}/sub/x.txt > got.txt',
+                           "files": {"got": "got.txt"}}],
+                         clusters=_direct(ff)))
+    st = ff.drive(eng)
+    assert st.status == "succeeded", ff.why(eng)
+    assert Path(st.nodes["b"].result.files["got"]["path"]).read_text().strip() == "hello"
+
+
 def test_direct_nonzero_exit_reports_stderr(ff):
     eng = ff.run(ff.plan([ff.job("a", "echo boom >&2\nexit 3")], clusters=_direct(ff)))
     st = ff.drive(eng)
