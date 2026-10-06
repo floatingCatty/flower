@@ -100,6 +100,28 @@ def test_bad_outputs_json_is_contract_failure(mkplan, start):
     assert eng.state().nodes["a"].last.error["error_class"] == "contract"
 
 
+def test_printed_json_line_is_the_outputs(mkplan, start):
+    """A step that leaves $FLOWER_OUTPUTS empty gets its outputs from its last non-empty stdout line when that is a
+    JSON object (`python3 fit.py` needs no redirection); any other last line gives no outputs."""
+    eng = start(mkplan([sh("a", 'echo working; echo \'{"e": -1.5}\'; echo', outputs={"e": "number"}),
+                        sh("b", 'echo \'{"e": 1}\'; echo done', outputs={"e": "number"}),
+                        sh("c", 'echo \'{"e": 1}\'; ' + out_json({"e": 2}), outputs={"e": "number"})]))
+    drive(eng)
+    st = eng.state()
+    assert st.nodes["a"].result.outputs["e"] == -1.5
+    assert st.nodes["b"].last.error["error_class"] == "contract"           # declared e, printed none last
+    assert st.nodes["c"].result.outputs["e"] == 2                          # $FLOWER_OUTPUTS wins
+
+
+def test_check_outputs_messages():
+    from flower.executors.base import check_outputs
+    decl = {"x": {"type": "number", "minimum": 0}, "n": {"type": "integer"}, "m": {"type": "string"}}
+    assert check_outputs({"x": -1, "n": True}, decl) == [
+        "x: -1 is less than the minimum of 0", "n: true is not of type 'integer'", "(top): 'm' is a required property"]
+    assert check_outputs({"x": 0, "n": 2.0, "m": "s"}, decl) == []
+    assert check_outputs([1], decl) == ["outputs must be a JSON object, got list"]
+
+
 def test_declared_outputs_and_files_contract(mkplan, start):
     eng = start(mkplan([
         sh("good", out_json({"n": 1}) + "\necho hi > result.txt", outputs={"n": "integer"}, files={"res": "result.txt"}),
@@ -177,16 +199,6 @@ def test_trigger_all_done_runs_after_failure(mkplan, start):
     assert rep.status == "failed"
 
 
-def test_trigger_any_success(mkplan, start):
-    eng = start(mkplan([sh("a", "exit 1"), sh("b", "true"),
-                        sh("any", "true", needs=["a", "b"], trigger="any_success"),
-                        sh("none", "true", needs=["a"], trigger="any_success")]))
-    drive(eng)
-    st = eng.state()
-    assert st.nodes["any"].status == "succeeded"
-    assert st.nodes["none"].status == "skipped" and st.nodes["none"].skipped_reason == "no upstream succeeded"
-
-
 def test_on_failure_continue(mkplan, start):
     eng = start(mkplan([sh("a", "exit 1", on_failure="continue"), sh("b", "true", needs=["a"])]))
     rep = drive(eng)
@@ -242,7 +254,7 @@ def test_foreach_expansion_and_collector(mkplan, start):
     assert st.nodes["total"].result.summary == "3"
     assert st.generation == 1
     am = next(iter(st.amendments.values()))
-    assert am.status == "approved" and am.source_node == "sq" and am.decided_by == "policy:foreach"
+    assert am.status == "approved" and am.source_node == "sq" and am.decided_by == "system"
 
 
 def test_foreach_literal_list_and_dict(mkplan, start):

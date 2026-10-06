@@ -421,7 +421,7 @@ def test_cli_fake_slurm_run_follow_status(ff, tmp_path):
             "nodes": [{"id": "a", "kind": "shell", "cluster": "c", "run": OUT_X, "outputs": {"x": "integer"}}]}
     pf = tmp_path / "plan.yaml"
     pf.write_text(yaml.safe_dump(plan))
-    r = _cli(ff, "run", str(pf), "-y", "--no-prompt", "--detach", "--json")
+    r = _cli(ff, "run", str(pf), "--json")
     assert r.returncode == 0, r.stdout + r.stderr
     rid = next(e for e in Path(ff.home, ".flower", "runs").iterdir()).name
     eng = Engine(RunPaths(ff.home, rid))

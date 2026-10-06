@@ -1,7 +1,7 @@
-"""The development loop inside a run: edit the plan file (or the code), `flower rerun RUN NODE --follow`.
+"""The development loop inside a run: edit the plan file (or the code), `flower rerun RUN [NODE] [--follow]`.
 
-* rerun picks up edits to the plan file for the node, its downstream and new nodes, as a recorded amendment;
-* new and unfinished steps change at once; an edit of a finished step waits for approval (or `--yes` from the human running it);
+* rerun picks up edits to the plan file for the node, its downstream and new nodes, as a recorded change of the
+  plan; edits apply at once (a finished step whose definition changed runs again, with its downstream);
 * --follow watches one node until it finishes and exits 0/1 by its result; while someone follows, polling is fast.
 """
 from __future__ import annotations
@@ -36,7 +36,7 @@ B_FIXED = """\
 
 
 def _start(cli, plan: Path) -> str:
-    code, res = cli("run", str(plan), "--yes")
+    code, res = cli("run", str(plan), "--follow")
     return res["data"]["run_id"] if "run_id" in res.get("data", {}) else list_runs(Path(os.environ["FLOWER_HOME"]))[-1]
 
 
@@ -59,44 +59,22 @@ def test_rerun_picks_up_a_plan_edit_and_follows_the_node(cli, home, tmp_path):
     assert not (_eng(home, rid).paths.follow / "b.json").exists()  # the follow marker is gone
 
 
-def test_an_edit_of_a_failed_step_applies_and_of_a_succeeded_one_asks(cli, home, tmp_path):
-    plan = _plan(tmp_path, A_OK + B_FAIL)
-    rid = _start(cli, plan)
-    _plan(tmp_path, A_OK + B_FIXED)
-    code, res = cli("rerun", rid, "b", "--follow")         # b failed: unfinished, so the fix applies at once
-    assert code == 0, res
-    assert _eng(home, rid).state().nodes["b"].result.outputs["y"] == 20
-    _plan(tmp_path, A_OK + B_FIXED.replace("* 10", "* 100"))   # b succeeded: an edit reached by rerunning a asks
-    code, res = cli("rerun", rid, "a")
-    assert code == 3 and res["data"]["gate"].startswith("amend-")
-    assert _eng(home, rid).state().nodes["b"].result.outputs["y"] == 20
-    code, _ = cli("approve", rid, res["data"]["gate"])        # BUGS #20: approved on a finished run, it applies
-    assert code in (0, 3)
-    code, res = cli("rerun", rid, "a", "--follow")
-    assert code == 0, res
-    assert _eng(home, rid).state().nodes["b"].result.outputs["y"] == 200
-
-
-def test_yes_approves_the_edit(cli, home, tmp_path):
-    plan = _plan(tmp_path, A_OK + B_FAIL)
-    rid = _start(cli, plan)
-    _plan(tmp_path, A_OK + B_FIXED)
-    code, res = cli("rerun", rid, "b", "--follow", "--yes")
-    assert code == 0 and _eng(home, rid).state().nodes["b"].result.outputs["y"] == 20
-
-
-def test_an_edit_of_a_finished_node_asks(cli, home, tmp_path):
+def test_an_edit_downstream_of_a_rerun_applies_on_a_finished_run(cli, home, tmp_path):
+    """BUGS #20: a plan change on a finished run was never applied; an edit now applies at once and reopens it."""
     plan = _plan(tmp_path, A_OK + B_FIXED)
     rid = _start(cli, plan)
-    assert _eng(home, rid).state().status == "succeeded"
-    _plan(tmp_path, A_OK + B_FIXED.replace("* 10", "* 100"))  # edit b, finished, reached by a rerun of a
+    _plan(tmp_path, A_OK + B_FIXED.replace("* 10", "* 100"))   # b succeeded; reached by rerunning a
     code, res = cli("rerun", rid, "a")
-    assert code == 3 and res["data"]["changed"] == ["b"]
+    assert code == 0 and "changed b" in res["message"], res
+    code, res = cli("status", rid, "--follow", "--timeout", "30")
+    assert code == 0, res
+    st = _eng(home, rid).state()
+    assert st.nodes["b"].result.outputs["y"] == 200 and len(st.nodes["b"].attempts) == 2
 
 
 def test_rerunning_the_edited_step_itself_applies_the_edit(cli, home, tmp_path):
-    """`flower rerun RUN STEP` after editing STEP is the request to re-execute it with the new definition; asking
-    for approval added nothing (a rerun without an edit never asks, and earlier attempts stay recorded)."""
+    """`flower rerun RUN STEP` after editing STEP re-executes it with the new definition (earlier attempts stay
+    recorded)."""
     plan = _plan(tmp_path, A_OK + B_FIXED)
     rid = _start(cli, plan)
     _plan(tmp_path, A_OK.replace("2}", "3}") + B_FIXED)
@@ -134,7 +112,7 @@ def test_only_the_rerun_cone_is_picked_up(home, tmp_path, cli):
 def test_follow_reports_failure_with_exit_1(cli, home, tmp_path):
     plan = _plan(tmp_path, A_OK + B_FAIL)
     rid = _start(cli, plan)
-    code, res = cli("rerun", rid, "b", "--follow", "--no-edits")
+    code, res = cli("rerun", rid, "b", "--follow")
     assert code == 1 and res["data"]["status"] == "failed"
     assert res["data"]["error"]["error_class"] == "exit_nonzero"
 
@@ -175,7 +153,7 @@ def test_start_creates_a_parked_draft_run(cli, home, tmp_path, monkeypatch):
     st = _eng(home, rid).state()
     assert st.status == "parked" and "no steps yet" in st.status_reason
     plan = (tmp_path / "ans" / "plan.yaml").read_text()
-    assert "nodes: []" in plan and "policies" not in plan
+    assert "nodes: []" in plan and "policies" not in plan and "description:" not in plan   # the goal is the title
     code, res = cli("start", "Find the answer", "--id", "ans", "--dir", str(tmp_path / "ans"))
     assert code != 0 and res["error"]["code"] == "exists"
 
@@ -184,10 +162,10 @@ def test_add_writes_the_step_and_runs_it(cli, home, tmp_path, monkeypatch):
     monkeypatch.setenv("FLOWER_NO_UI", "1")
     _, res = cli("start", "Find the answer", "--id", "ans", "--dir", str(tmp_path / "ans"))
     rid = res["data"]["run_id"]
-    code, res = cli("add", rid, "first", "--out", "x:integer", "--title", "first one", "--",
+    code, res = cli("add", rid, "first", "--out", "x:integer", "--set", "title=first one", "--follow", "--",
                     'echo "{\\"x\\": 41}" > "$FLOWER_OUTPUTS"')
     assert code == 0 and res["data"]["status"] == "succeeded", res
-    code, res = cli("add", rid, "second", "--needs", "first", "--out", "y:integer", "--",
+    code, res = cli("add", rid, "second", "--needs", "first", "--out", "y:integer", "--follow", "--",
                     'echo "{\\"y\\": $((${first.outputs.x} + 1))}" > "$FLOWER_OUTPUTS"')
     assert code == 0, res
     st = _eng(home, rid).state()
@@ -195,6 +173,7 @@ def test_add_writes_the_step_and_runs_it(cli, home, tmp_path, monkeypatch):
     assert st.generation == 2 and st.status == "succeeded"
     text = (tmp_path / "ans" / "plan.yaml").read_text()
     assert "- id: first" in text and "title: first one" in text and "# A draft started" in text  # comments kept
+    assert "kind:" not in text                                       # shell is the default
     code, res = cli("add", rid, "first", "--", "true")
     assert code != 0 and res["error"]["code"] == "exists"
 
@@ -216,7 +195,7 @@ def test_new_inputs_and_clusters_reach_a_running_draft(cli, home, tmp_path, monk
     p.write_text(p.read_text().replace("clusters: {}", (
         "inputs:\n  scratch: {type: string}\n  greeting: {type: string, default: hello}\n\n"
         "clusters:\n  box: {transport: local, scheduler: none, remote_root: \"${inputs.scratch}\"}")))
-    code, res = cli("add", rid, "s", "--cluster", "box", "-i", f"scratch={tmp_path / 'remote'}", "--out",
+    code, res = cli("add", rid, "s", "--cluster", "box", "-i", f"scratch={tmp_path / 'remote'}", "--follow", "--out",
                     "g:string", "--", 'echo "{\\"g\\": \\"${inputs.greeting}\\"}" > "$FLOWER_OUTPUTS"')
     assert code == 0, res
     st = _eng(home, rid).state()
@@ -346,7 +325,7 @@ def test_editing_a_foreach_steps_template_reruns_its_items(cli, home, tmp_path):
     _plan(tmp_path, """\
   - {id: f, kind: shell, foreach: [1, 2], run: 'echo "{\\"v\\": $((${item} * 10))}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
 """)
-    code, res = cli("rerun", rid, "f", "--follow", "--yes")
+    code, res = cli("rerun", rid, "f", "--follow")
     assert code == 0, res
     st = _eng(home, rid).state()
     assert [st.nodes[f"f[{i}]"].result.outputs["v"] for i in (0, 1)] == [10, 20]
@@ -357,7 +336,7 @@ def test_add_a_foreach_step(cli, home, tmp_path, monkeypatch):
     monkeypatch.setenv("FLOWER_NO_UI", "1")
     _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
     rid = res["data"]["run_id"]
-    code, res = cli("add", rid, "sq", "--foreach", "[2, 3]", "--out", "v:integer", "--",
+    code, res = cli("add", rid, "sq", "--foreach", "[2, 3]", "--out", "v:integer", "--follow", "--",
                     'echo "{\\"v\\": $((${item} * ${item}))}" > "$FLOWER_OUTPUTS"')
     assert code == 0, res
     st = _eng(home, rid).state()
@@ -365,26 +344,45 @@ def test_add_a_foreach_step(cli, home, tmp_path, monkeypatch):
     assert "foreach:" in (tmp_path / "x" / "plan.yaml").read_text()
 
 
-def test_add_with_cpus_and_memory(cli, home, tmp_path, monkeypatch):
-    """`flower add --cpus/--mem` write `resources:` (a parallel step needed a hand edit before); they are for
-    cluster steps, and a local step is refused with the reason."""
+def test_add_set_writes_any_step_key(cli, home, tmp_path, monkeypatch):
+    """`flower add --set KEY=VALUE` (a YAML value, a dotted KEY for nested keys) writes the step keys that have no
+    flag of their own; resources are for cluster steps, and a local step asking for them is refused."""
     from types import SimpleNamespace
     from flower.devloop import node_from_args
-    keys = ("title needs cluster environment stage_in retrieve setenv timeout_total foreach outs files retry "
-            "on_failure trigger ins").split()
-    a = SimpleNamespace(id="ed", **{k: None for k in keys}, cpus=8, mem="16G")
-    assert node_from_args(a, ["--", "true"])["resources"] == {"cpus_per_task": 8, "mem": "16G"}
+    a = SimpleNamespace(id="ed", needs=[], sets=["resources.cpus_per_task=8", "resources.mem=16G", "retry=3",
+                                                  "timeout.total=2h", "env.MODE=fast", "retrieve=[out/*]",
+                                                  "on_failure=continue"])
+    assert node_from_args(a, ["--", "true"]) == {
+        "id": "ed", "resources": {"cpus_per_task": 8, "mem": "16G"}, "retry": {"max_attempts": 3},
+        "timeout": {"total": "2h"}, "env": {"MODE": "fast"}, "retrieve": ["out/*"], "on_failure": "continue",
+        "run": "true"}
     monkeypatch.setenv("FLOWER_NO_UI", "1")
     _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
-    code, res = cli("add", res["data"]["run_id"], "par", "--cpus", "6", "--", "true")
+    code, res = cli("add", res["data"]["run_id"], "par", "--set", "resources.cpus_per_task=6", "--", "true")
     assert code != 0 and "cluster" in res["error"]["message"]
     assert "par" not in (tmp_path / "x" / "plan.yaml").read_text()
+
+
+def test_add_a_gate(cli, home, tmp_path, monkeypatch):
+    """`flower add RUN ID --gate MESSAGE`: a person's decision as a step of the growing run."""
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
+    rid = res["data"]["run_id"]
+    cli("add", rid, "a", "--follow", "--", "true")
+    code, res = cli("add", rid, "ok", "--needs", "a", "--gate", "Does a look right?")
+    assert code == 0, res
+    text = (tmp_path / "x" / "plan.yaml").read_text()
+    assert "kind: gate" in text and "message: Does a look right?" in text and "run:" not in text.split("- id: ok")[1]
+    st = _eng(home, rid).state()
+    assert st.nodes["ok"].status == "waiting" and st.open_gates()[0].message == "Does a look right?"
+    code, res = cli("add", rid, "bad", "--gate", "?", "--", "true")
+    assert code == 2 and res["error"]["code"] == "usage"
 
 
 def test_sync_tunes_a_cluster_without_rerunning(cli, home, tmp_path):
     """BUGS #41: `cpus: 16` added to a running plan's cluster was ignored (a run's clusters were fixed), so three
     8-core jobs started on a machine meant to give the study 16 cores. Pacing settings may now change mid-run
-    (`flower sync`, or any rerun/add); where a step runs stays fixed."""
+    (`flower rerun RUN`, or any rerun/add); where a step runs stays fixed. `flower sync RUN` is its earlier name."""
     head = ("flower: 1\nid: dev\nclusters:\n"
             "  box: {transport: local, scheduler: none, max_jobs: 2%s}\nnodes:\n" + A_OK)
     p = tmp_path / "plan.yaml"
@@ -406,33 +404,10 @@ def test_sync_tunes_a_cluster_without_rerunning(cli, home, tmp_path):
     assert "already follows" in res["message"] or "note:" in res["message"]
 
 
-def test_a_newer_plan_file_supersedes_an_older_waiting_edit(cli, home, tmp_path):
-    """BUGS #58: an edit of finished work waits for approval; when the file was edited again and synced, the
-    first proposal stayed open and parked the finished run. Each sync now withdraws older snapshots of the file."""
-    head = "flower: 1\nid: dev\nnodes:\n"
-    p = tmp_path / "plan.yaml"
-    p.write_text(head + A_OK)
-    rid = _start(cli, p)
-    p.write_text(head + A_OK.replace("2}", "3}"))
-    code, res = cli("sync", rid)
-    first = res["data"]["amendment_id"]
-    assert code == 3
-    p.write_text(head + A_OK.replace("2}", "4}"))
-    code, res = cli("sync", rid)
-    second = res["data"]["amendment_id"]
-    assert code == 3 and second != first
-    st = _eng(home, rid).state()
-    assert st.amendments[first].status == "rejected" and [g.amendment_id for g in st.open_gates()] == [second]
-    p.write_text(head + A_OK)                                 # back to what ran: nothing left to decide
-    code, res = cli("sync", rid)
-    st = _eng(home, rid).state()
-    assert code == 0 and not st.open_gates() and st.status == "succeeded", res
-
-
 def test_an_added_environment_step_is_not_seen_as_edited(cli, home, tmp_path, monkeypatch):
     """BUGS #42: a step added with `--env` (implicit cluster `local`) carries `stage_in: []`, `retrieve: []`,
-    `resources: {}` in the run but not in the plan file, so `flower sync` proposed to re-run it, finished and
-    unedited."""
+    `resources: {}` in the run but not in the plan file, so applying the plan file proposed to re-run it, finished
+    and unedited."""
     from flower import envs as envmod
     monkeypatch.setenv("FLOWER_NO_UI", "1")
     monkeypatch.setenv("HOME", str(tmp_path / "userhome"))
@@ -445,9 +420,10 @@ def test_an_added_environment_step_is_not_seen_as_edited(cli, home, tmp_path, mo
     envmod.freeze(d, by="test")
     _, res = cli("start", "x", "--id", "x", "--dir", str(proj / "x"))
     rid = res["data"]["run_id"]
-    code, res = cli("add", rid, "a", "--env", "hello", "--out", "v:integer", "--", 'echo "{\\"v\\": 1}" > "$FLOWER_OUTPUTS"')
+    code, res = cli("add", rid, "a", "--env", "hello", "--out", "v:integer", "--follow", "--",
+                    'echo "{\\"v\\": 1}" > "$FLOWER_OUTPUTS"')
     assert code == 0 and _eng(home, rid).state().nodes["a"].status == "succeeded", res
-    code, res = cli("sync", rid)
+    code, res = cli("rerun", rid)
     assert code == 0 and "already follows" in res["message"], res
 
 
@@ -457,7 +433,7 @@ def test_remote_exec_on_a_run_uses_its_inputs(cli, home, tmp_path, capsys):
     p = tmp_path / "plan.yaml"
     p.write_text("flower: 1\nid: dev\ninputs:\n  where: {type: string}\nclusters:\n"
                  "  box: {transport: local, scheduler: none, prelude: 'export WHERE=${inputs.where}'}\nnodes:\n" + A_OK)
-    code, res = cli("run", str(p), "--yes", "-i", "where=over-there")
+    code, res = cli("run", str(p), "--follow", "-i", "where=over-there")
     rid = res["data"]["run_id"]
     capsys.readouterr()
     code, res = cli("remote", "exec", "--run", rid, "--cluster", "box", "--", 'echo "at $WHERE"')
@@ -479,20 +455,20 @@ def test_rerun_names_edits_it_does_not_apply(cli, home, tmp_path):
     plan = _plan(tmp_path, two)
     rid = _start(cli, plan)
     _plan(tmp_path, two.replace('x\\": 1', 'x\\": 2').replace('y\\": 1', 'y\\": 2'))
-    code, res = cli("rerun", rid, "a", "--yes")
-    assert code == 0 and "also changes b" in res["message"] and "flower sync" in res["message"], res
-    code, res = cli("sync", rid, "--yes")
+    code, res = cli("rerun", rid, "a")
+    assert code == 0 and "also changes b" in res["message"] and f"flower rerun {rid}" in res["message"], res
+    code, res = cli("rerun", rid)
     assert code == 0 and "changed b" in res["message"], res
 
 
 def test_logs_show_the_outputs_of_a_failed_attempt(cli, home, tmp_path):
     """A check step that writes its verdict and exits 1 on a mismatch: the verdict was invisible (`flower output`
-    shows successful results only, `flower logs` only stdout/stderr)."""
+    shows successful results only, the logs only stdout/stderr)."""
     plan = _plan(tmp_path, """\
   - {id: chk, kind: shell, run: 'echo "{\\"z\\": 130}" > "$FLOWER_OUTPUTS"; exit 1', outputs: {z: number}}
 """)
     rid = _start(cli, plan)
-    code, res = cli("logs", rid, "chk")
+    code, res = cli("show", rid, "chk", "--logs")
     assert code == 0 and '"z": 130' in res["data"]["text"] and "did not succeed" in res["data"]["text"], res
 
 
@@ -505,9 +481,9 @@ def test_rerun_keep_state_continues_from_the_checkpoint(cli, home, tmp_path):
 """)
     rid = _start(cli, plan)
     assert _eng(home, rid).state().nodes["long"].status == "failed"        # first part done, then "out of time"
-    cli("rerun", rid, "long", "--wait")
+    cli("rerun", rid, "long", "--follow")
     assert _eng(home, rid).state().nodes["long"].status == "failed"        # a plain rerun starts from scratch
-    code, res = cli("rerun", rid, "long", "--keep-state", "--wait")
+    code, res = cli("rerun", rid, "long", "--keep-state", "--follow")
     st = _eng(home, rid).state()
     assert st.nodes["long"].status == "succeeded" and st.nodes["long"].result.outputs["n"] == 2, res
 
@@ -521,7 +497,7 @@ def test_a_timeout_edit_keeps_finished_foreach_items(cli, home, tmp_path):
     plan = _plan(tmp_path, body.replace("TT", "1h"))
     rid = _start(cli, plan)
     _plan(tmp_path, body.replace("TT", "24h"))
-    code, res = cli("sync", rid, "--yes")
+    code, res = cli("rerun", rid)
     assert code == 0, res
     _eng(home, rid).drive(until="settled", timeout=30)
     st = _eng(home, rid).state()
@@ -534,7 +510,7 @@ def test_a_timeout_edit_keeps_finished_foreach_items(cli, home, tmp_path):
     plan = _plan(tmp_path, one.replace("TT", "1h"))
     rid = _start(cli, plan)
     _plan(tmp_path, one.replace("TT", "2h"))
-    code, res = cli("sync", rid)          # no approval needed: nothing finished is touched
+    code, res = cli("rerun", rid)
     assert code == 0 and "changed g" in res["message"], res
     st = _eng(home, rid).state()
     assert len(st.nodes["g"].attempts) == 1 and st.graph().nodes["g"]["timeout"]["total"] == "2h"
@@ -557,14 +533,14 @@ def test_items_appended_to_a_running_foreach_start_now(cli, home, tmp_path):
   - {id: f, kind: shell, foreach: ITEMS, run: 'sleep ${item}; echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
 """
     plan = _plan(tmp_path, body.replace("ITEMS", "[20]"))
-    code, res = cli("run", str(plan), "--yes", "--detach")
+    code, res = cli("run", str(plan))
     rid = res["data"]["run_id"]
     eng = _eng(home, rid)
     deadline = time.time() + 20
     while time.time() < deadline and eng.state().nodes.get("f[0]") is None:
         eng.tick(); time.sleep(0.2)
     _plan(tmp_path, body.replace("ITEMS", "[20, 0]"))
-    code, res = cli("sync", rid)
+    code, res = cli("rerun", rid)
     assert code == 0, res
     deadline = time.time() + 15     # well inside the first item's 20 s, even on a loaded machine
     while time.time() < deadline and "f[1]" not in eng.state().nodes:
@@ -586,7 +562,7 @@ def test_a_settings_edit_reaches_pending_items_while_one_runs(cli, home, tmp_pat
 """
     p = tmp_path / "plan.yaml"
     p.write_text(head + body.replace("TT", "1h"))
-    code, res = cli("run", str(p), "--yes", "--detach")
+    code, res = cli("run", str(p))
     rid = res["data"]["run_id"]
     eng = _eng(home, rid)
     deadline = time.time() + 20
@@ -594,7 +570,7 @@ def test_a_settings_edit_reaches_pending_items_while_one_runs(cli, home, tmp_pat
                                       or eng.state().nodes["f[0]"].status != "running"):
         eng.tick(); time.sleep(0.2)
     p.write_text(head + body.replace("TT", "2h"))
-    code, res = cli("sync", rid)
+    code, res = cli("rerun", rid)
     assert code == 0, res
     deadline = time.time() + 15
     while time.time() < deadline and eng.state().graph().nodes["f[1]"]["timeout"]["total"] != "2h":
@@ -605,16 +581,16 @@ def test_a_settings_edit_reaches_pending_items_while_one_runs(cli, home, tmp_pat
 
 
 def test_add_description_and_the_warning_without_one(cli, home, tmp_path, monkeypatch):
-    """Every step says what it establishes and how to read its result: `--description` writes it next to the title
-    (and into the amendment's rationale); a step added without one gets a warning, never an error."""
+    """Every step says what it establishes and how to read its result: `--description` writes it before the command
+    (and into the recorded change's rationale); a step added without one gets a warning, never an error."""
     monkeypatch.setenv("FLOWER_NO_UI", "1")
     _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
     rid = res["data"]["run_id"]
-    code, res = cli("add", rid, "a", "--title", "Probe", "--description", "Checks that the machine answers.", "--",
-                    "true")
+    code, res = cli("add", rid, "a", "--set", "title=Probe", "--description", "Checks that the machine answers.",
+                    "--", "true")
     assert code == 0 and "no --description" not in res["message"], res
     text = (tmp_path / "x" / "plan.yaml").read_text()
-    assert text.index("title: Probe") < text.index("description: Checks that the machine answers.") < text.index("run:")
+    assert "title: Probe" in text and text.index("description: Checks that the machine answers.") < text.index("run:")
     st = _eng(home, rid).state()
     assert any("Checks that the machine answers." in (am.rationale or "") for am in st.amendments.values())
     code, res = cli("add", rid, "b", "--", "true")
@@ -642,8 +618,8 @@ def test_a_description_edit_of_an_environment_step_applies_without_rerunning(cli
     code, res = cli("add", rid, "a", "--env", "hello", "--", "true")
     p = proj / "x" / "plan.yaml"
     p.write_text(p.read_text().replace("    environment: hello\n", "    description: Says hello.\n    environment: hello\n"))
-    code, res = cli("sync", rid)
-    assert code == 0 and "plan edits applied" in res["message"], res
+    code, res = cli("rerun", rid)
+    assert code == 0 and "plan file applied" in res["message"], res
     st = _eng(home, rid).state()
     assert st.graph().nodes["a"]["description"] == "Says hello." and len(st.nodes["a"].attempts) == 1
 
@@ -658,8 +634,8 @@ def test_a_description_edit_applies_without_rerunning(cli, home, tmp_path):
     plan = _plan(tmp_path, body.replace("DESC", "old words"))
     rid = _start(cli, plan)
     _plan(tmp_path, body.replace("DESC", "Squares; read v."))
-    code, res = cli("sync", rid)          # no approval: nothing finished is re-run
-    assert code == 0 and "plan edits applied" in res["message"], res
+    code, res = cli("rerun", rid)          # nothing finished is re-run
+    assert code == 0 and "plan file applied" in res["message"], res
     _eng(home, rid).drive(until="settled", timeout=30)
     st = _eng(home, rid).state()
     g = st.graph().nodes
@@ -741,7 +717,7 @@ def test_rerun_after_an_edit_still_reruns_unchanged_items(cli, home, tmp_path):
     rid = _start(cli, plan)
     (tmp_path / "s.py").write_text('import json, sys\nprint(json.dumps({"v": 10 * int(sys.argv[1])}))\n')
     _plan(tmp_path, body.replace("ITEMS", "[1, 2, 3]"))
-    code, res = cli("rerun", rid, "f", "--follow", "--yes")
+    code, res = cli("rerun", rid, "f", "--follow")
     assert code == 0, res
     st = _eng(home, rid).state()
     assert [st.nodes[f"f[{i}]"].result.outputs["v"] for i in range(3)] == [10, 20, 30]
@@ -753,7 +729,7 @@ def test_add_with_step_inputs(cli, home, tmp_path, monkeypatch):
     rid = res["data"]["run_id"]
     cli("add", rid, "sq", "--foreach", "[2, 3]", "--out", "v:integer", "--",
         'echo "{\\"v\\": $((${item} * ${item}))}" > "$FLOWER_OUTPUTS"')
-    code, res = cli("add", rid, "total", "--in", "vals=${sq.outputs.items}", "--out", "s:integer", "--",
+    code, res = cli("add", rid, "total", "--in", "vals=${sq.outputs.items}", "--out", "s:integer", "--follow", "--",
                     'python3 -c "import json, os; d = json.load(open(os.environ[\'FLOWER_INPUTS\'])); '
                     'print(json.dumps({\'s\': sum(x[\'v\'] for x in d[\'vals\'])}))" > "$FLOWER_OUTPUTS"')
     assert code == 0, res
@@ -784,7 +760,7 @@ def test_partial_results_of_a_running_foreach(cli, home, tmp_path):
   - {id: f, kind: shell, foreach: [1, 2, 30], run: 'sleep $(( ${item} / 10 )); echo "{\\"v\\": ${item}}" > "$FLOWER_OUTPUTS"', outputs: {v: integer}}
   - {id: peek, kind: shell, inputs: {sofar: "${f.partial}"}, run: 'python3 -c "import json, os; d = json.load(open(os.environ[\\"FLOWER_INPUTS\\"]))[\\"sofar\\"]; print(json.dumps({\\"n\\": sum(x is not None for x in d)}))" > "$FLOWER_OUTPUTS"', outputs: {n: integer}}
 """)
-    code, res = cli("run", str(plan), "--yes", "--detach")
+    code, res = cli("run", str(plan))
     rid = list_runs(Path(os.environ["FLOWER_HOME"]))[-1]
     eng = _eng(home, rid)
     import time
@@ -811,30 +787,14 @@ inputs: {n: {type: integer, default: 2}}
 nodes:
   - {id: a, kind: shell, run: 'echo "{\\"x\\": ${inputs.n}}" > "$FLOWER_OUTPUTS"', outputs: {x: integer}}
 """)
-    cli("run", str(p), "--yes")
-    cli("run", str(p), "--yes")
-    cli("run", str(p), "--yes", "-i", "n=3")
+    cli("run", str(p), "--follow")
+    cli("run", str(p), "--follow")
+    cli("run", str(p), "--follow", "-i", "n=3")
     r1, r2, r3 = list_runs(Path(os.environ["FLOWER_HOME"]))[-3:]
     code, res = cli("compare", r1, r2)
     assert code == 0 and res["data"]["same"] == 1, res
     code, res = cli("compare", r1, str(_eng(home, r3).paths.dir))
     assert code == 1 and res["data"]["differ"][0]["diffs"][0]["key"] == ".x", res
-
-
-def test_a_rerun_withdraws_its_own_older_waiting_edit(cli, home, tmp_path):
-    """The proposal a rerun left waiting (before reruns applied their own step's edits) must not park the run
-    once a newer rerun of that step has applied the file; an unrelated waiting edit stays."""
-    plan = _plan(tmp_path, A_OK + B_FIXED)
-    rid = _start(cli, plan)
-    eng = _eng(home, rid)
-    eng.propose_amendment([{"op": "replace", "node": "a", "with": {"kind": "shell", "run": "true"},
-                            "supersede": True}], "plan file edited (changed a); picked up by `flower rerun`")
-    _plan(tmp_path, A_OK.replace("2}", "3}") + B_FIXED)
-    eng.propose_amendment(eng.plan_edits("a")["ops"], "plan file edited (changed a); picked up by `flower rerun`")
-    code, res = cli("rerun", rid, "a", "--follow")       # the same edit is waiting, and now applies at once
-    assert code == 0, res
-    st = _eng(home, rid).state()
-    assert not st.open_gates() and st.nodes["a"].result.outputs["x"] == 3
 
 
 def test_add_stage_in_path_typed_from_the_current_directory(cli, home, tmp_path, monkeypatch):
@@ -845,17 +805,17 @@ def test_add_stage_in_path_typed_from_the_current_directory(cli, home, tmp_path,
     _, res = cli("start", "x", "--id", "x", "--dir", "study")
     rid = res["data"]["run_id"]
     (tmp_path / "study" / "calc.py").write_text("print(1)\n")
-    code, res = cli("add", rid, "a", "--cluster", "local", "--stage-in", "study/calc.py", "--no-follow", "--", "true")
+    code, res = cli("add", rid, "a", "--cluster", "local", "--stage-in", "study/calc.py", "--", "true")
     plan = (tmp_path / "study" / "plan.yaml").read_text()
     assert "- calc.py" in plan and "study/calc.py" not in plan, plan
 
 
 def test_add_tmpdir(cli, home, tmp_path, monkeypatch):
-    """`flower add --tmpdir job`: quantum chemistry scratch (PySCF) filled a small /tmp in two studies."""
+    """`flower add --set tmpdir=job`: quantum chemistry scratch (PySCF) filled a small /tmp in two studies."""
     monkeypatch.setenv("FLOWER_NO_UI", "1")
     _, res = cli("start", "x", "--id", "x", "--dir", str(tmp_path / "x"))
     rid = res["data"]["run_id"]
-    code, res = cli("add", rid, "a", "--tmpdir", "job", "--out", "t:string", "--",
+    code, res = cli("add", rid, "a", "--set", "tmpdir=job", "--out", "t:string", "--follow", "--",
                     'echo "{\\"t\\": \\"$TMPDIR\\"}" > "$FLOWER_OUTPUTS"')
     assert code == 0, res
     st = _eng(home, rid).state()

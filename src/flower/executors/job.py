@@ -34,7 +34,7 @@ from ..hpc.transport import CmdResult, make_transport
 from ..rundir import fs_name
 from ..util import (FlowerError, atomic_write_json, atomic_write_text, digest, first_line,
                     parse_duration, read_json, tail_text)
-from .base import scratch_env, RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, check_outputs, collect_files
+from .base import scratch_env, RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, check_outputs, collect_files, printed_outputs
 
 MAX_REMOTE_ERRORS = 8
 POLL_BACKOFF = (30.0, 300.0, 1200.0)
@@ -71,10 +71,10 @@ def _payload(node: dict) -> str:
 def _resources(cluster: dict, node: dict) -> dict:
     res = dict(cluster.get("resources") or {})
     res.update(node.get("resources") or {})
-    if scheduler_for(cluster).NAME == "none" and not res.get("time"):
-        total = (node.get("timeout") or {}).get("total")  # same limit as the node would have locally
+    if not res.get("time"):   # the job's time limit is the step's own (minutes: a format every scheduler takes)
+        total = parse_duration((node.get("timeout") or {}).get("total"))
         if total:
-            res["time"] = total
+            res["time"] = total / 60
     return res
 
 
@@ -242,6 +242,11 @@ class JobExecutor(Executor):
         except _Remote as exc:
             res = exc.result
             msg = (res.err or res.out or f"exit {res.rc}").strip()[-400:]
+            if res.rc == 127:   # a command is missing (rsync, ssh, sbatch): waiting will not bring it
+                ctx.emit("job.remote_error", {"op": exc.op, "error": msg, "transient": False})
+                return Outcome.fail(exc.op, f"command not found ({exc.op}): {first_line(msg, 300)}", retryable=False,
+                                    details={"stderr": msg, "hint": "install rsync/ssh here, or the scheduler's "
+                                                                    "commands on the cluster"})
             if not res.transient and exc.op == "submit":
                 ctx.emit("job.remote_error", {"op": "submit", "error": msg, "transient": False})
                 what = "sbatch rejected the job" if scheduler_for(cluster).NAME == "slurm" else "could not start the process"
@@ -438,7 +443,9 @@ class JobExecutor(Executor):
         out_tail = tail_text(local / out_name, 1500).strip()
         err_tail = tail_text(local / err_name, 1500).strip()
         outputs = {}
-        if (local / "outputs.json").exists():
+        if not (local / "outputs.json").is_file() or not (local / "outputs.json").stat().st_size:
+            outputs = printed_outputs(local / out_name) or {}
+        else:
             try:
                 outputs = json.loads((local / "outputs.json").read_text() or "{}")
             except ValueError as exc:

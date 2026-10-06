@@ -20,7 +20,7 @@ from typing import Any
 
 from . import __version__
 from . import plan as planmod
-from .engine import FILE_EDIT, Engine, create_run, driver_alive
+from .engine import Engine, create_run, driver_alive
 from .rundir import RunPaths, find_root, list_runs, resolve_run
 from .state import TERMINAL_RUN
 from .util import FlowerError, atomic_write_json, default_actor, first_line, hostname, local_clock, now_iso, parse_duration, read_json
@@ -112,7 +112,7 @@ def run_status_code(status: str) -> int:
 def next_for(st, rid: str) -> list[str]:
     nxt = []
     for g in st.open_gates():
-        nxt.append(f"flower show {rid} --gate {g.id}")
+        nxt.append(f"flower show {rid} {g.id}")
         nxt.append(f"flower approve {rid} {g.id}" + (f" <{'|'.join(g.decisions)}>" if len(g.decisions) > 2 else "")
                    + " --note '<why>'")
     if st.status == "failed":
@@ -205,8 +205,8 @@ def cmd_init(args, out: Out) -> int:
 
 
 def cmd_start(args, out: Out) -> int:
-    """A run from minute one: an empty draft plan, approved by the person starting it, parked until steps are
-    added with `flower add` (or edits picked up by `flower rerun`)."""
+    """A run from minute one: an empty draft plan, parked until steps are added with `flower add` (or edits of the
+    plan file picked up by `flower rerun RUN`)."""
     from . import devloop
     root = find_root(create=True)
     pid = args.id or devloop.slug(args.goal)
@@ -219,11 +219,9 @@ def cmd_start(args, out: Out) -> int:
         inputs.update(json.loads(Path(args.inputs).read_text()))
     d.mkdir(parents=True, exist_ok=True)
     p.write_text(devloop.draft_plan_text(pid, args.goal, inputs))
-    eng = create_run(planmod.load_plan_file(str(p)), inputs, actor=args.actor, approve=False,
-                     note="draft started with `flower start`")
     by = args.actor or default_actor()
-    eng.answer("plan", "approve", text="draft started with `flower start` (empty plan; steps are added as "
-               "recorded amendments)", by=by)
+    eng = create_run(planmod.load_plan_file(str(p)), inputs, actor=by, approve=True,
+                     note="draft started with `flower start`")
     eng.tick()
     rid = eng.paths.run_id
     ui = ""
@@ -241,15 +239,15 @@ def cmd_start(args, out: Out) -> int:
 
 
 def cmd_add(args, out: Out) -> int:
-    """Write a shell step into the run's plan file and run it (`flower rerun RUN ID --follow` semantics): the
-    recorded way costs one command, like running it by hand."""
+    """Write a step into the run's plan file and run it (`flower rerun RUN ID` semantics): the recorded way costs
+    one command, like running it by hand."""
     from . import devloop
     eng = get_engine(args)
     st = eng.state()
     src = st.meta.get("plan_source")
     if not src or not Path(src).is_file():
         raise FlowerError("no_plan_file", f"run {st.run_id} has no plan file to add to ({src})",
-                          "add the step to the run's plan file, then `flower sync RUN`")
+                          "add the step to the run's plan file, then `flower rerun RUN`")
     node = devloop.node_from_args(args, args.command)
     plan_dir = Path(src).resolve().parent
     for i, f in enumerate(node.get("stage_in") or []):   # a path typed from here means that file, wherever the plan is
@@ -259,7 +257,7 @@ def cmd_add(args, out: Out) -> int:
     cur = planmod.load_plan_file(src)
     if any(isinstance(n, dict) and n.get("id") == args.id for n in cur.get("nodes") or []):
         raise FlowerError("exists", f"step {args.id!r} is already in {src}",
-                          f"edit it there, then: flower rerun {st.run_id} {args.id} --follow")
+                          f"edit it there, then: flower rerun {st.run_id} {args.id}")
     text = Path(src).read_text()
     new_text = devloop.insert_node(text, node)
     tmp = Path(src).with_name(f".{Path(src).name}.flower-add")
@@ -270,12 +268,12 @@ def cmd_add(args, out: Out) -> int:
         tmp.unlink()
         raise
     os.replace(tmp, src)
-    ns = argparse.Namespace(run=args.run, node=args.id, only=False, cached=False, no_continue=False, wait=False,
-                            reason=f"added with `flower add`", follow=not args.no_follow, no_edits=False,
-                            yes=args.yes, input=args.input, timeout=args.timeout, json=args.json, actor=args.actor)
+    ns = argparse.Namespace(run=args.run, node=args.id, only=False, cached=False, keep_state=False,
+                            reason="added with `flower add`", follow=args.follow, input=args.input,
+                            timeout=args.timeout, json=args.json, actor=args.actor)
     if not node.get("description"):
         ns.pre_notes = [f"warning: step {args.id} has no --description: say in a sentence or two what it establishes "
-                        f"and how to read its result (edit plan.yaml, then `flower sync {st.run_id}`)"]
+                        f"and how to read its result (edit plan.yaml, then `flower rerun {st.run_id}`)"]
         if not out.json:
             print(ns.pre_notes[0], flush=True)
     if not out.json:
@@ -307,16 +305,17 @@ def cmd_plan(args, out: Out) -> int:
                      "warnings": warn},
                     f"✓ {args.file} is valid: {len(plan['nodes'])} nodes, digest {planmod.plan_digest(plan)[7:19]}"
                     + "".join(f"\nwarning: {w}" for w in warn),
-                    [f"flower plan show {args.file}", f"flower run {args.file} -y"])
+                    [f"flower plan show {args.file}", f"flower run {args.file} --follow"])
 
 
 def cmd_run(args, out: Out) -> int:
+    """Create a run from a plan and start it in the background (`--follow` watches it). `--review`: wait for the
+    plan's approval first (`flower approve RUN`)."""
     from .render import plan_overview
     raw = planmod.load_plan_file(args.plan)
     inputs = parse_kv(args.input)
     if args.inputs:
         inputs.update(json.loads(Path(args.inputs).read_text()))
-    approve = bool(args.yes)
     reuse = []
     if args.reuse:
         root = find_root(create=True)
@@ -325,46 +324,30 @@ def cmd_run(args, out: Out) -> int:
         declared = raw.get("inputs") or {}
         inputs = {**{k: v for k, v in Engine(RunPaths(root, reuse[0])).state().inputs.items() if k in declared},
                   **inputs}
-    eng = create_run(raw, inputs, actor=args.actor, approve=False, note=args.note, reuse_from=reuse,
+    eng = create_run(raw, inputs, actor=args.actor, approve=not args.review, note=args.note, reuse_from=reuse,
                      rerun_from=args.rerun_from or [])
     st = eng.state()
     rid = st.run_id
-    if not approve and out.color and sys.stdin.isatty() and not args.no_prompt:
-        print(plan_overview(st.plan, st.inputs))
-        print(f"\nrun {rid} created.  Approve this plan and start? [y/N] ", end="", flush=True)
-        approve = sys.stdin.readline().strip().lower() in ("y", "yes")
-        if not approve:
-            print(f"\nNot started. Approve later with:  flower approve {rid}")
-            return 3
-    if not approve:
-        nxt = [f"flower show {rid} --gate plan", f"flower approve {rid} --note '<who approved and why>'",
-               f"flower reject {rid} --text '<what to change>'"]
+    if args.review:
+        nxt = [f"flower show {rid} plan", f"flower approve {rid} --note '<who approved and why>'",
+               f"flower reject {rid} --note '<what to change>'"]
         return out.done({**summary_data(eng), "overview": plan_overview(st.plan, st.inputs)},
                         plan_overview(st.plan, st.inputs) + f"\n\nrun {rid} is waiting for plan approval.", nxt, code=3)
-    eng.answer("plan", "approve", text=args.note or "approved at launch", by=args.actor or default_actor())
-    return _continue(eng, args, out)
+    return _continue(eng, args, out, f"run {rid} started")
 
 
-def _continue(eng: Engine, args, out: Out) -> int:
+def _continue(eng: Engine, args, out: Out, text: str) -> int:
+    """The one waiting rule: return at once with a background driver, or (`--follow`) watch the run here."""
+    if getattr(args, "follow", False):
+        return _follow_run(eng, out, getattr(args, "timeout", None))
     rid = eng.paths.run_id
-    if getattr(args, "detach", False):
-        eng.tick()
-        info = spawn_driver(eng)
-        st = eng.state()
-        return out.done({**summary_data(eng, st), "driver": info},
-                        f"run {rid} is running in the background (driver pid {info.get('pid')}).",
-                        [f"flower status {rid} --follow --timeout 600", f"flower status {rid}"],
-                        code=0 if st.status not in TERMINAL_RUN else run_status_code(st.status))
-    try:
-        status = live_drive(eng, out, timeout=getattr(args, "timeout", None))
-    except KeyboardInterrupt:
-        st = eng.state()
-        return out.done(summary_data(eng, st), f"\ndetached from {rid} (status {st.status}); "
-                        f"running nodes continue. Pick up: flower status {rid} --follow", code=130)
+    eng.tick()
     st = eng.state()
-    from .render import status_view
-    text = None if out.json else ("\n" + status_view(st, eng.paths, color=out.color))
-    return out.done(summary_data(eng, st), text, next_for(st, rid) if out.json else None, code=run_status_code(status))
+    if st.status not in TERMINAL_RUN:
+        info = spawn_driver(eng)
+        text += f"; it continues in the background (driver pid {info.get('pid')})."
+    st = eng.state()
+    return out.done(summary_data(eng, st), text, next_for(st, rid), code=0)
 
 
 def cmd_status(args, out: Out) -> int:
@@ -393,7 +376,7 @@ def cmd_status(args, out: Out) -> int:
         note = f"\nwarning: running, but no background driver is alive: flower status {st.run_id}"
     return out.done(summary_data(eng, st), status_view(st, eng.paths, color=out.color, all_items=getattr(args, "items", False)) + note,
                     next_for(st, st.run_id) if out.json else None,
-                    code=0)
+                    code=run_status_code(st.status))
 
 
 def _follow_run(eng: Engine, out: Out, timeout: float | None, observe_only: bool = False) -> int:
@@ -439,13 +422,17 @@ def _list_runs(out: Out, limit: int = 30) -> int:
 
 
 def cmd_show(args, out: Out) -> int:
-    """A run, a step (attempts, outputs, errors), one output value (KEY: an output key, a dotted path into it,
-    or a declared file's name, which prints its path) or a gate."""
+    """A run, a step (attempts, outputs, errors; --logs: its raw output), one output value (KEY: an output key, a
+    dotted path into it, or a declared file's name, which prints its path) or a gate (its id instead of STEP)."""
     from .render import gate_detail, node_detail, status_view
     eng = get_engine(args)
     st = eng.state()
-    if args.gate:
-        gid = args.gate
+    gate = args.gate or (args.node if args.node and args.node not in st.nodes and
+                         (args.node in st.gates or any(g.startswith(args.node) for g in st.gates)) else None)
+    if args.logs:
+        return _logs(eng, st, args, out)
+    if gate:
+        gid = gate
         if gid not in st.gates:
             cand = [g for g in st.gates if g.startswith(gid)]
             if len(cand) != 1:
@@ -510,9 +497,8 @@ def cmd_log(args, out: Out) -> int:
     return 0
 
 
-def cmd_logs(args, out: Out) -> int:
-    eng = get_engine(args)
-    st = eng.state()
+def _logs(eng: Engine, st, args, out: Out) -> int:
+    """`flower show RUN STEP --logs [--attempt N]`: a step's raw output (stdout/stderr, a job's logs)."""
     ns = st.nodes.get(args.node)
     if not ns or not ns.attempts:
         raise FlowerError("no_attempt", f"node {args.node} has not run yet")
@@ -553,21 +539,10 @@ def _outputs_part(parts: list, path: Path, attempt) -> None:
                      + path.read_text(errors="replace")[-20000:])
 
 
-def _record_and_continue(eng: Engine, args, out: Out, text: str) -> int:
-    rep = eng.tick()
-    st = eng.state()
-    if not getattr(args, "no_continue", False) and st.status not in TERMINAL_RUN and (rep.running or st.status == "running"):
-        if getattr(args, "wait", False):
-            return _continue(eng, args, out)
-        info = spawn_driver(eng)
-        text += f"\nthe run continues in the background (driver pid {info.get('pid')})."
-    st = eng.state()
-    return out.done(summary_data(eng, st), text, next_for(st, st.run_id), code=0)
-
-
 def cmd_approve(args, out: Out) -> int:
-    """approve RUN [GATE] [DECISION]: the plan, a gate or a plan change (the first decision by default; a gate
-    with more than approve/reject takes the one named). reject: the gate's rejecting decision."""
+    """approve RUN [GATE] [DECISION]: answer the plan or a gate (its first decision by default; a gate with more
+    than approve/reject takes the one named). reject: its rejecting decision. --note: why (a rework step reads a
+    rejection's note as ${feedback})."""
     eng = get_engine(args)
     st = eng.state()
     gid = args.gate or ("plan" if st.gates.get("plan") and st.gates["plan"].status == "open" else None)
@@ -587,10 +562,8 @@ def cmd_approve(args, out: Out) -> int:
         decision = "reject" if "reject" in g.decisions else g.decisions[-1]
     else:
         decision = g.decisions[0]
-    # --text (reject's rework instruction) and --note are one record; keep both when both are given (BUGS #64)
-    text = "\n".join(t for t in (args.text, args.note) if t) or None
-    eng.answer(g.id, decision, text=text, by=args.actor or default_actor())
-    return _record_and_continue(eng, args, out, f"{decision}: {g.id}")
+    eng.answer(g.id, decision, text=args.note, by=args.actor or default_actor())
+    return _continue(eng, args, out, f"{decision}: {g.id}")
 
 
 def cmd_cancel(args, out: Out) -> int:
@@ -608,26 +581,19 @@ def cmd_cancel(args, out: Out) -> int:
     return out.done(summary_data(eng, st), f"cancel requested ({args.node or 'whole run'}); status now {st.status}")
 
 
-def _pick_up_edits(eng: Engine, args, out: Out, node: str | None, via: str) -> tuple[list, int | None]:
-    """The development loop: edits to the plan file become a recorded amendment. Returns (notes, exit code if the
-    edit waits for approval). ``node`` None: the whole file (`flower sync`)."""
+def _pick_up_edits(eng: Engine, args, node: str | None) -> list:
+    """The development loop: edits of the plan file apply at once, recorded as a change of the plan (who, the
+    diff). A finished step whose definition changed runs again with its downstream. ``node`` None: the whole file."""
     by = args.actor or default_actor()
     notes: list = []
-    eng.tick()  # apply approvals answered since the last pass (e.g. of an earlier edit)
     ed = eng.plan_edits(node, new_inputs=parse_kv(getattr(args, "input", None)))
     notes.extend(f"note: {x}" for x in ed.get("ignored") or [])
     if getattr(args, "only", False):   # `rerun --only`: a superseded step does not take its downstream with it (#62)
         for op in ed["ops"]:
             if op.get("op") == "replace" and op.get("supersede"):
                 op["only"] = True
-    auto = bool(args.yes) or not ed["touches_finished"]   # new and unfinished steps change at once
-    # older snapshots of the file are superseded (#58): all of them by a sync, those about the same steps by a
-    # rerun; an identical one stays only while this edit itself waits (it is that edit)
-    notes.extend(f"note: withdrew {a}, an older version of the plan file" for a in
-                 eng.withdraw_file_proposals(ed["ops"], whole_file=node is None, keep_identical=not auto, step=node))
     if not ed["ops"]:
-        return notes, None
-    st = eng.state()
+        return notes
     what = ", ".join([f"changed {', '.join(ed['changed'])}"] * bool(ed["changed"])
                      + [f"added {', '.join(ed['added'])}"] * bool(ed["added"])
                      + [f"new input {', '.join(ed['new_inputs'])}"] * bool(ed.get("new_inputs"))
@@ -637,47 +603,23 @@ def _pick_up_edits(eng: Engine, args, out: Out, node: str | None, via: str) -> t
              if isinstance(n, dict) and n.get("description") and not n.get("generated")]
     if len(descs) == 1:
         what += f": {first_line(descs[0], 160)}"
-    waiting = next((a for a in eng.state().amendments.values() if a.status == "proposed" and a.ops == ed["ops"]), None)
-    if waiting is not None and not auto:  # the same edit is already waiting for a decision
-        aid = waiting.id
-    else:
-        aid = eng.propose_amendment(ed["ops"], f"{FILE_EDIT} ({what}); picked up by `{via}`", by=by,
-                                    auto_approve=auto)
-    st = eng.state()
-    am = st.amendments.get(aid)
-    if am is None or am.status != "approved":
-        return notes, out.done({"amendment_id": aid, "gate": f"amend-{aid}", "changed": ed["changed"],
-                                "added": ed["added"]},
-                               f"the plan file changed ({what}); that edit needs approval first:\n"
-                               f"  flower show {st.run_id} --gate amend-{aid}      # the diff\n"
-                               f"  flower approve {st.run_id} amend-{aid}\n"
-                               f"then run `{via}` again (or `--yes` when you are the approver)", code=3)
-    notes.append(f"plan edits applied as amendment {aid} (generation {st.generation}): {what}")
-    return notes, None
-
-
-def cmd_sync(args, out: Out) -> int:
-    """Make the run follow its plan file: new steps and inputs, edited unfinished steps, a cluster's pacing settings
-    (cpus, max_jobs, min_poll). Nothing is re-run on purpose (that is `flower rerun`)."""
-    eng = get_engine(args)
-    notes, rc = _pick_up_edits(eng, args, out, None, f"flower sync {eng.state().run_id}")
-    if rc is not None:
-        return rc
-    if not any(n.startswith("plan edits applied") for n in notes):
-        notes.append("the run already follows its plan file")
-    return _record_and_continue(eng, args, out, "\n".join(notes))
+    eng.apply_edit(ed["ops"], f"plan file edited ({what})", by=by)
+    notes.append(f"plan file applied (generation {eng.state().generation}): {what}")
+    return notes
 
 
 def cmd_rerun(args, out: Out) -> int:
+    """rerun RUN [STEP]: apply the plan file's edits (a changed finished step runs again with its downstream), and
+    run STEP again with everything downstream of it (--only: STEP alone)."""
     eng = get_engine(args)
     by = args.actor or default_actor()
     notes = list(getattr(args, "pre_notes", None) or [])
-    if not args.no_edits:
-        more, rc = _pick_up_edits(eng, args, out, args.node, f"flower rerun {args.node}")
-        notes += more
-        if rc is not None:
-            return rc
+    notes += _pick_up_edits(eng, args, args.node)
     st = eng.state()
+    if args.node is None:
+        if not any(n.startswith("plan file applied") for n in notes):
+            notes.append("the run already follows its plan file")
+        return _continue(eng, args, out, "\n".join(notes))
     ns = st.nodes.get(args.node)
     if ns is not None and ns.status in ("running", "waiting", "retrying"):
         notes.append(f"{args.node} is already {ns.status}")
@@ -702,7 +644,7 @@ def cmd_rerun(args, out: Out) -> int:
         elif notes:
             out.prefix = "\n".join(notes) + "\n"   # the notes reach --json callers with the follow's result
         return _follow(eng, args.node, out, timeout=args.timeout)
-    return _record_and_continue(eng, args, out, "\n".join(notes))
+    return _continue(eng, args, out, "\n".join(notes))
 
 
 def _follow(eng: Engine, node: str, out: Out, timeout: float | None = None) -> int:
@@ -781,7 +723,7 @@ def _follow(eng: Engine, node: str, out: Out, timeout: float | None = None) -> i
                     text += "\n--- stderr ---\n" + tail
     return out.done({"node": node, "status": ns.status if ns else None, "outputs": r.outputs if r else None,
                      "error": r.error if r else None}, text,
-                    [f"flower logs {eng.paths.run_id} {node}"] if not ok else None, code=0 if ok else 1)
+                    [f"flower show {eng.paths.run_id} {node} --logs"] if not ok else None, code=0 if ok else 1)
 
 
 def cmd_export(args, out: Out) -> int:
@@ -791,7 +733,7 @@ def cmd_export(args, out: Out) -> int:
     res = export(eng, args.steps)
     return out.done(res, f"protocol of {', '.join(args.steps)} ({len(res['steps'])} steps, {res['expected']} expected "
                          f"results) in {res['dir']}:\n  " + "\n  ".join(res["files"]),
-                    ["flower run protocol.yaml -y", "flower compare RUN expected.json"])
+                    ["flower run protocol.yaml --follow", "flower compare RUN expected.json"])
 
 
 def _engine_at(ref: str) -> Engine:
@@ -1122,7 +1064,7 @@ def _plan_cluster(args) -> tuple[dict, Path]:
         if args.cluster not in clusters:
             raise FlowerError("usage", f"run {st.run_id} has no cluster {args.cluster!r}",
                               f"clusters: {', '.join(clusters) or 'none'} (a new one: add it to the plan file, "
-                              f"then `flower sync {st.run_id}`)")
+                              f"then `flower rerun {st.run_id}`)")
         src = Path((st.plan.get("_source") or {}).get("dir") or st.meta.get("plan_dir") or ".")
         return {**clusters[args.cluster], "_name": args.cluster}, src
     raw = planmod.load_plan_file(args.plan)
@@ -1185,7 +1127,6 @@ def cmd_remote(args, out: Out) -> int:
                 'if [ ! -d "$FLOWER_ENV_PREFIX" ]; then echo "not installed on this cluster: $FLOWER_ENV_PREFIX '
                 '(a step using it, or flower env replay, installs it)" >&2; exit 3; fi\n'
                 'set +u; source "$FLOWER_ENV_DIR/activate.sh"\n')
-        args.probe = True
     elif args.env:  # explore with what a real setup gets: a prefix to install into, and the activation so far
         d = envmod.find(args.env, src) or (src / envmod.ENVS_DIR / args.env)
         pre += (f'export FLOWER_ENV_PREFIX="$HOME/.flower/envs/{args.env}-explore"\n'
@@ -1204,15 +1145,21 @@ def cmd_remote(args, out: Out) -> int:
             pre += "set +u\n" + act.read_text() + "\n"
     t0 = time.time()
     r = tr.run(pre + text, timeout=args.timeout)
-    entry = {"at": now_iso(), "cluster": c["_name"], "cmd": text, "rc": r.rc,
-             "probe": bool(args.probe), "seconds": round(time.time() - t0, 2),
-             "out_tail": (r.out or "")[-2000:], "err_tail": (r.err or "")[-2000:], "by": args.actor or default_actor()}
-    logged = str(envmod.log_session(d, entry)) if d is not None else None
+    entry = {"at": now_iso(), "cluster": c["_name"], "cmd": text, "rc": r.rc, "env": args.env,
+             "seconds": round(time.time() - t0, 2), "by": args.actor or default_actor()}
+    _note_in_run(args, f"remote exec on {c['_name']}" + (f" (env {args.env})" if args.env else "")
+                 + f": {first_line(text, 200)} -> exit {r.rc}")
     if out.json:
-        return out.done({**entry, "out": r.out, "err": r.err, "log": logged}, code=0 if r.rc == 0 else 1)
+        return out.done({**entry, "out": r.out, "err": r.err}, code=0 if r.rc == 0 else 1)
     sys.stdout.write(r.out or "")
     sys.stderr.write(r.err or "")
     return r.rc if r.rc < 256 else 1
+
+
+def _note_in_run(args, text: str) -> None:
+    """Work on a machine done with `--run RUN` is part of that run's record."""
+    if getattr(args, "run", None):
+        Engine(resolve_run(find_root(), args.run)).note(text, by=args.actor or default_actor())
 
 
 def _env_dir(args, src: Path | None = None) -> Path:
@@ -1238,13 +1185,7 @@ def cmd_env(args, out: Out) -> int:
         d = _env_dir(args)
         fz = envmod.freeze(d, by=args.actor or default_actor())
         msg = (f"recipe {d.name} unchanged (frozen {envmod.short(fz['hash'])})" if fz.get("unchanged") else
-               f"froze {d.name} as {envmod.short(fz['hash'])}" + (" (setup.sh drafted from the logged commands: "
-                                                                     "review it)" if fz.get("drafted_setup") else ""))
-        lc = envmod.last_check(d)
-        if lc is not None and lc.get("rc") != 0:
-            msg += (f"\nwarning: the last check.sh run while exploring ({lc.get('at')}) failed (exit {lc.get('rc')}); "
-                    "frozen anyway: `flower env replay --fresh` will show whether it works")
-            fz = {**fz, "warning": "last exploration check failed"}
+               f"froze {d.name} as {envmod.short(fz['hash'])}")
         return out.done(fz, msg, [f"flower env replay {d.name} --plan PLAN --cluster C --fresh   # prove it repeats"])
     if act == "show":
         from .util import read_json
@@ -1258,11 +1199,9 @@ def cmd_env(args, out: Out) -> int:
                 continue
             state, fz = envmod.status(d)
             rows.append({"name": n, "dir": str(d), "state": state, "hash": (fz or {}).get("hash"),
-                         "replays": (fz or {}).get("replays", [])[-3:],
-                         "sessions": len(envmod.session_commands(d))})
+                         "frozen_at": (fz or {}).get("frozen_at")})
         text = "\n".join(f"{r['name']:<16} {r['state']:<8} {envmod.short(r['hash'] or '') or '-':<13} "
-                         f"{r['sessions']} logged command(s), {len(r['replays'])} recent replay(s)  {r['dir']}"
-                         for r in rows) or "no environment recipes here"
+                         f"{(r['frozen_at'] or '')[:10]:<11} {r['dir']}" for r in rows) or "no environment recipes here"
         return out.done({"envs": rows}, text)
     # replay / check: on a cluster of a plan
     from .hpc.transport import make_transport
@@ -1291,7 +1230,8 @@ def cmd_env(args, out: Out) -> int:
     rec = {"at": now_iso(), "action": act, "cluster": c["_name"], "fresh": fresh,
            "prefix": pfx, "ok": ok, "rc": r.rc, "seconds": round(time.time() - t0, 1),
            "tail": ((r.out or "") + (r.err or ""))[-1500:], "by": args.actor or default_actor()}
-    envmod.record_replay(d, rec)
+    _note_in_run(args, f"env {act} {args.name} ({envmod.short(h)}) on {c['_name']}: "
+                 + ("OK" if ok else f"FAILED (exit {r.rc})") + f", prefix {pfx}")
     text = (r.out or "") + (r.err or "")
     head = (f"{act} {args.name} ({envmod.short(h)}) on {c['_name']}: " + ("OK" if ok else f"FAILED (exit {r.rc})")
             + f" in {rec['seconds']}s, prefix {pfx}")
@@ -1330,15 +1270,15 @@ def build_parser() -> argparse.ArgumentParser:
         x = ps.add_parser(name, parents=[common], help=h)
         x.add_argument("file")
 
-    s = add("run", cmd_run, "create a run from a plan (asks for approval), then drive it")
+    s = add("run", cmd_run, "create a run from a plan and start it (in the background; --follow watches it)")
     s.add_argument("plan")
     s.add_argument("-i", "--input", action="append", help="NAME=VALUE (repeatable)")
     s.add_argument("--inputs", help="JSON file with inputs")
-    s.add_argument("-y", "--yes", action="store_true", help="approve the plan now (you are the approver)")
-    s.add_argument("--note", help="approval note recorded in the journal")
-    s.add_argument("-d", "--detach", action="store_true", help="continue in a background driver")
-    s.add_argument("--no-prompt", action="store_true", help="never ask interactively")
-    s.add_argument("--timeout", type=float)
+    s.add_argument("--review", action="store_true", help="wait for the plan's approval first (`flower approve RUN`)")
+    s.add_argument("--note", help="recorded with the run")
+    s.add_argument("--follow", action="store_true", help="watch it until it finishes or needs a decision")
+    s.add_argument("--timeout", type=float, help="with --follow: seconds")
+    s.add_argument("-y", "--yes", action="store_true", help=argparse.SUPPRESS)   # what `run` does now; old docs say -y
     s.add_argument("--reuse", action="append", metavar="RUN",
                    help="reuse recorded results of RUN where a node's definition and inputs are unchanged")
     s.add_argument("--rerun-from", action="append", metavar="NODE", help="with --reuse: re-execute NODE and its downstream")
@@ -1351,22 +1291,19 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--no-tick", action="store_true", help="pure read; do not advance the run")
     s.add_argument("--items", action="store_true", help="list every item of large foreach steps")
 
-    s = add("show", cmd_show, "a run, a step (attempts, outputs, errors), one of its outputs, or a gate")
+    s = add("show", cmd_show, "a run, a step (attempts, outputs, errors; --logs: its raw output), one output, or a gate")
     s.add_argument("run", nargs="?")
-    s.add_argument("node", nargs="?")
+    s.add_argument("node", nargs="?", metavar="STEP|GATE")
     s.add_argument("key", nargs="?", help="one output (dotted path) or a declared file's name: print only that")
-    s.add_argument("--gate")
+    s.add_argument("--logs", action="store_true", help="the step's raw output (stdout/stderr, a job's logs)")
+    s.add_argument("--attempt", type=int, help="with --logs: which attempt (default: the last)")
+    s.add_argument("--gate", help=argparse.SUPPRESS)
 
     s = add("log", cmd_log, "human timeline of everything that happened")
     s.add_argument("run", nargs="?")
     s.add_argument("--node")
     s.add_argument("-f", "--follow", action="store_true")
     s.add_argument("--note", metavar="TEXT", help="add a note to the run's record (with --node: about that step)")
-
-    s = add("logs", cmd_logs, "raw output of a step (stdout/stderr, a job's logs)")
-    s.add_argument("run")
-    s.add_argument("node")
-    s.add_argument("--attempt", type=int)
 
     s = add("compare", cmd_compare, "do two runs give the same results? (a rerun, a fresh clone, or a protocol's expected.json)")
     s.add_argument("a", help="run id, the path of a run directory (another project), or an expected.json")
@@ -1375,57 +1312,36 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--atol", type=float, default=0.0, help="absolute tolerance for numbers")
     s.add_argument("--ignore", action="append", help="an output key not to compare (repeatable)")
 
-    s = add("approve", cmd_approve, "approve the plan, a gate or a plan change (or answer a gate: DECISION)")
-    s.add_argument("run", nargs="?")
-    s.add_argument("gate", nargs="?")
-    s.add_argument("decision", nargs="?", help="for a gate with its own decisions: which one")
-    s.add_argument("--note", help="recorded with the approval")
-    s.add_argument("--text", help=argparse.SUPPRESS)
-    s.add_argument("--reject", action="store_true", help=argparse.SUPPRESS)
-    s.add_argument("--no-continue", action="store_true", help="record only; do not start a background driver")
-    s.add_argument("--wait", action="store_true", help="drive in the foreground after approving")
-    s.add_argument("--timeout", type=float)
-
-    s = add("reject", cmd_approve, "reject the plan (or a gate / amendment)")
-    s.add_argument("run", nargs="?")
-    s.add_argument("gate", nargs="?")
-    s.add_argument("--text", help="why / what to change")
-    s.add_argument("--note", help=argparse.SUPPRESS)
-    s.add_argument("--no-continue", action="store_true")
-    s.add_argument("--wait", action="store_true", help="drive in the foreground afterwards")
-    s.add_argument("--timeout", type=float)
-    s.set_defaults(reject=True)
+    for name, help_ in (("approve", "answer the plan or a gate: its first decision, or the DECISION named"),
+                        ("reject", "reject the plan or a gate (a gate with on_reject sends work back with your note)")):
+        s = add(name, cmd_approve, help_)
+        s.add_argument("run", nargs="?")
+        s.add_argument("gate", nargs="?")
+        if name == "approve":
+            s.add_argument("decision", nargs="?", help="for a gate with its own decisions: which one")
+        s.add_argument("-m", "--note", "--text", dest="note", help="why; for a rejection, what to change")
+        s.add_argument("--follow", action="store_true", help="then watch the run until it finishes or needs a decision")
+        s.add_argument("--timeout", type=float, help="with --follow: seconds")
+        s.set_defaults(reject=name == "reject")
 
     s = add("cancel", cmd_cancel, "cancel a run (or one node)")
     s.add_argument("run", nargs="?")
     s.add_argument("--node")
     s.add_argument("--reason")
 
-    s = add("rerun", cmd_rerun, "run a node again (and, by default, everything downstream)")
+    s = add("rerun", cmd_rerun, "apply the plan file's edits; with STEP, run it again (and everything downstream)")
     s.add_argument("run")
-    s.add_argument("node")
-    s.add_argument("--only", action="store_true", help="do not re-run downstream nodes")
+    s.add_argument("node", nargs="?", metavar="STEP")
+    s.add_argument("--only", action="store_true", help="do not re-run downstream steps")
     s.add_argument("--cached", action="store_true", help="allow reuse if definition+inputs are unchanged")
     s.add_argument("--keep-state", action="store_true",
                    help="continue in the last attempt's $FLOWER_STATE_DIR (e.g. a checkpointed job that hit its "
                         "time limit) instead of a fresh one")
     s.add_argument("--reason")
-    s.add_argument("--no-continue", action="store_true")
-    s.add_argument("--wait", action="store_true", help="drive in the foreground afterwards")
     s.add_argument("--follow", action="store_true",
-                   help="watch this node until it finishes (its events, live output, result); exit 0 if it succeeded")
-    s.add_argument("--no-edits", action="store_true", help="ignore edits to the plan file")
-    s.add_argument("-y", "--yes", action="store_true", help="approve the plan-file edits it picks up (you are the approver)")
+                   help="watch STEP (without STEP: the run) until it finishes; exit 0 if it succeeded")
     s.add_argument("-i", "--input", action="append", help="NAME=VALUE for an input newly declared in the plan file")
-    s.add_argument("--timeout", type=float)
-
-    s = add("sync", cmd_sync, "apply the plan file's edits to a run (new steps, edited unfinished steps, a "
-                              "cluster's cpus/max_jobs/min_poll) without re-running anything")
-    s.add_argument("run")
-    s.add_argument("--no-continue", action="store_true")
-    s.add_argument("--wait", action="store_true", help="drive in the foreground afterwards")
-    s.add_argument("-y", "--yes", action="store_true", help="approve the plan-file edits (you are the approver)")
-    s.add_argument("-i", "--input", action="append", help="NAME=VALUE for an input newly declared in the plan file")
+    s.add_argument("--timeout", type=float, help="with --follow: seconds")
 
     s = add("start", cmd_start, "start a run for a goal now, with an empty draft plan that grows step by step")
     s.add_argument("goal", help="what the work is for, in a sentence")
@@ -1439,34 +1355,27 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("run")
     s.add_argument("id", help="step id")
     s.add_argument("command", nargs="*", help="the shell command, after `--`")
-    s.add_argument("--title")
     s.add_argument("--description", help="what the step establishes and how to read its result (1-2 sentences; "
                                          "shown in the UI and in `flower show`)")
     s.add_argument("--needs", action="append", default=[], help="a step this one depends on (repeatable)")
     s.add_argument("--cluster", help="run it on this cluster of the plan (ssh / Slurm)")
     s.add_argument("--env", dest="environment", help="environment recipe (envs/NAME) to activate there")
     s.add_argument("--stage-in", action="append", default=[], help="file to send with it (cluster steps; repeatable)")
-    s.add_argument("--retrieve", action="append", default=[], help="glob to fetch back (cluster steps; repeatable)")
-    s.add_argument("--tmpdir", help="job: TMPDIR inside the step's own directory (scratch-heavy codes, small /tmp); or a path")
-    s.add_argument("--file", dest="files", action="append", default=[], help="NAME=PATH declared output file (repeatable)")
     s.add_argument("--out", dest="outs", action="append", default=[],
-                   help="NAME[:TYPE] output read from the JSON the command writes to $FLOWER_OUTPUTS (repeatable)")
-    s.add_argument("--setenv", action="append", default=[], help="VAR=VALUE for the command (repeatable)")
+                   help="NAME[:TYPE] output, from the JSON object the command writes to $FLOWER_OUTPUTS or prints "
+                        "last (repeatable)")
+    s.add_argument("--file", dest="files", action="append", default=[], help="NAME=PATH declared output file (repeatable)")
     s.add_argument("--in", dest="ins", action="append", default=[],
                    help="NAME=VALUE step input, e.g. --in results='${scan.outputs.items}' (a JSON file at $FLOWER_INPUTS)")
-    s.add_argument("--timeout-total", help="e.g. 2h")
-    s.add_argument("--cpus", type=int, help="cores per run of the step (resources.cpus_per_task; $FLOWER_CPUS)")
-    s.add_argument("--mem", help="memory per run of the step, e.g. 16G (resources.mem; $FLOWER_MEM_MB)")
-    s.add_argument("--retry", type=int, help="max attempts (retries infrastructure failures: lost, node_fail, ...)")
-    s.add_argument("--on-failure", choices=["continue"], help="continue: downstream proceeds if this step fails")
-    s.add_argument("--trigger", choices=["all_success", "all_done", "any_success"],
-                   help="when the step may start (all_done: also after upstream failures, for partial results)")
     s.add_argument("--foreach", help="fan out: a JSON list (use ${item} / ${index} in the command) or a reference "
                                      "such as '${scan.outputs.items}'")
+    s.add_argument("--gate", metavar="MESSAGE", help="a person's decision instead of a command (kind: gate)")
+    s.add_argument("--set", dest="sets", action="append", default=[], metavar="KEY=VALUE",
+                   help="any other step key, VALUE in YAML: retry=3, timeout.total=2h, resources.cpus_per_task=8, "
+                        "on_failure=continue, retrieve=[out/*], tmpdir=job, title=... (repeatable)")
     s.add_argument("-i", "--input", action="append", help="NAME=VALUE for an input newly declared in the plan file")
-    s.add_argument("--no-follow", action="store_true", help="do not watch it; return once it is queued")
-    s.add_argument("-y", "--yes", action="store_true", help="approve the plan-file edit (you are the approver)")
-    s.add_argument("--timeout", type=float, help="stop following after this many seconds")
+    s.add_argument("--follow", action="store_true", help="watch it until it finishes (its output, then its result)")
+    s.add_argument("--timeout", type=float, help="with --follow: seconds")
 
     s = sub.add_parser("hook", parents=[common], help=argparse.SUPPRESS)   # called by the hook `init --hook` installs
     s.set_defaults(fn=cmd_hook)
@@ -1504,8 +1413,7 @@ def build_parser() -> argparse.ArgumentParser:
     rs = s.add_subparsers(dest="remote_action", required=True)
     e = rs.add_parser("exec", parents=[common], help="flower remote exec --run RUN|--plan P --cluster C [--env E] -- <command>")
     plan_cluster_args(e)
-    e.add_argument("--env", help="log the command in envs/<env>/sessions/ (exploration of that environment)")
-    e.add_argument("--probe", action="store_true", help="a look-only command: not drafted into setup.sh")
+    e.add_argument("--env", help="explore environment NAME: an exploration prefix, its activate.sh sourced")
     e.add_argument("--installed", action="store_true",
                    help="with --env: run in the frozen recipe's installed prefix (as steps do), not the exploration one")
     e.add_argument("command", nargs="+", help="the command, after --")
@@ -1514,7 +1422,7 @@ def build_parser() -> argparse.ArgumentParser:
     es = s.add_subparsers(dest="env_action", required=True)
     e = es.add_parser("new", parents=[common], help="create envs/<name>/ with template scripts")
     e.add_argument("name"); e.add_argument("--dir", help="project directory (default: here)")
-    e = es.add_parser("freeze", parents=[common], help="pin the recipe (drafts setup.sh from logged commands if needed)")
+    e = es.add_parser("freeze", parents=[common], help="pin the recipe (hash its files)")
     e.add_argument("name"); e.add_argument("--dir")
     e = es.add_parser("show", parents=[common], help="recipes and their state")
     e.add_argument("name", nargs="?"); e.add_argument("--dir")
@@ -1534,17 +1442,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def _is_decision(args) -> bool:
-    cmd = getattr(args, "cmd", None)
-    if cmd in ("approve", "reject"):
-        return True
-    if cmd == "run" and getattr(args, "yes", False):
-        return True
-    return False
+    return getattr(args, "cmd", None) in ("approve", "reject")
+
+
+ALIASES = {"sync": ["rerun"], "logs": ["show"]}   # earlier names: `sync RUN` = `rerun RUN`, `logs RUN STEP` = `show --logs`
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = build_parser()
     argv = list(sys.argv[1:] if argv is None else argv)
+    if argv and argv[0] in ALIASES:
+        argv = ALIASES[argv[0]] + argv[1:] + (["--logs"] if argv[0] == "logs" else [])
     tail = None
     if "add" in argv and "--" in argv and argv.index("add") < argv.index("--"):
         k = argv.index("--")   # `flower add RUN ID [options] -- <command>`: the command is never parsed as options
@@ -1564,7 +1472,7 @@ def main(argv: list[str] | None = None) -> int:
         return out.error(FlowerError(
             "inside_run", f"`flower {args.cmd}` makes a decision that belongs to the user, and this process is "
             f"running inside a flower node ({os.environ.get('FLOWER_RUN_ID')}/{os.environ.get('FLOWER_NODE_ID')})",
-            "finish the node's task and report in its JSON answer; propose plan changes via an `amendment`"), 2)
+            "finish the step's task and report it in the step's outputs"), 2)
     try:
         return args.fn(args, out)
     except FlowerError as exc:

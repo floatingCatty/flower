@@ -70,7 +70,7 @@ def sha256_file(path: str | os.PathLike) -> str:
 def answer_cmd(rid: str, gid: str, decisions: list[str]) -> str:
     """How to answer a gate from the command line."""
     if list(decisions) == ["approve", "reject"]:
-        return f"flower approve {rid} {gid} --note '…'   ·   flower reject {rid} {gid} --text '…'"
+        return f"flower approve {rid} {gid} --note '…'   ·   flower reject {rid} {gid} --note '…'"
     return f"flower approve {rid} {gid} <{'|'.join(decisions)}> --note '…'"
 
 
@@ -335,23 +335,6 @@ def truncate(text: str | None, n: int) -> str:
         return ""
     text = str(text)
     return text if len(text) <= n else text[: n - 1] + "…"
-
-
-def tail_str(text: str | None, n: int) -> str:
-    """Keep the END of a long text (where an agent's final answer or error explanation lives)."""
-    if not text:
-        return ""
-    text = str(text)
-    return text if len(text) <= n else "…" + text[-(n - 1):]
-
-
-def oneline(text: str | None, n: int = 300) -> str:
-    """Untrusted free text (agent rationale, error messages) made safe for Markdown/table cells."""
-    if not text:
-        return ""
-    s = " ⏎ ".join(l.strip() for l in str(text).strip().splitlines() if l.strip())
-    s = s.replace("```", "ʼʼʼ").replace("|", "/")
-    return truncate(s, n)
 
 
 def first_line(text: str | None, n: int = 100) -> str:

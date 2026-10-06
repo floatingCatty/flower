@@ -15,10 +15,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable
 
-import jsonschema
 
 from .._runner import proc_start_ticks
-from ..util import atomic_write_json, atomic_write_text, hostname, read_json, seconds_since, sha256_file, tail_text
+from ..util import atomic_write_json, hostname, read_json, seconds_since, sha256_file, tail_text
 
 # Failure classes. Retryable-by-default ones are infrastructure problems, not the work itself.
 RETRYABLE_DEFAULT = {"lost", "transient", "remote", "node_fail", "preempted", "quota_retry"}
@@ -141,7 +140,7 @@ class Executor:
 # ====================================================================== local processes
 
 def launch(proc_dir: Path, argv: list[str], *, env: dict | None = None, cwd: str | Path | None = None,
-           stdin_text: str | None = None, timeout_total: float | None = None, timeout_idle: float | None = None,
+           timeout_total: float | None = None, timeout_idle: float | None = None,
            unset_env: list[str] | None = None) -> dict:
     """Start ``argv`` under a detached flower runner. Returns the handle to journal."""
     proc_dir = Path(proc_dir)
@@ -149,9 +148,6 @@ def launch(proc_dir: Path, argv: list[str], *, env: dict | None = None, cwd: str
     spec: dict[str, Any] = {"argv": [str(a) for a in argv], "env": env or {}, "cwd": str(cwd) if cwd else None,
                             "timeout_total": timeout_total, "timeout_idle": timeout_idle,
                             "unset_env": unset_env or []}
-    if stdin_text is not None:
-        atomic_write_text(proc_dir / "stdin.txt", stdin_text)
-        spec["stdin_file"] = str(proc_dir / "stdin.txt")
     atomic_write_json(proc_dir / "spec.json", spec)
     with open(proc_dir / "runner.log", "ab") as log:
         p = subprocess.Popen([sys.executable, "-m", "flower._runner", str(proc_dir)],
@@ -301,17 +297,61 @@ def outputs_schema(declared: dict) -> dict:
     return {"type": "object", "properties": props, "required": required}
 
 
+_PY_TYPES = {"string": str, "number": (int, float), "integer": int, "boolean": bool, "object": dict, "array": list}
+
+
+def _type_ok(v: Any, t: str) -> bool:
+    if t == "boolean" or isinstance(v, bool):        # true is not a number here, and 1 is not a boolean
+        return t == "boolean" and isinstance(v, bool)
+    if t == "integer":
+        return isinstance(v, int) or (isinstance(v, float) and v.is_integer())
+    return isinstance(v, _PY_TYPES[t])
+
+
+def _check(v: Any, s: dict, loc: str, errs: list[str]) -> None:
+    """The part of JSON Schema a step's declared outputs use: type, enum, items, properties, minimum, maximum."""
+    t = s.get("type")
+    if t in _PY_TYPES and not _type_ok(v, t):
+        errs.append(f"{loc}: {json.dumps(v)[:80]} is not of type {t!r}")
+        return
+    if "enum" in s and v not in s["enum"]:
+        errs.append(f"{loc}: {json.dumps(v)[:80]} is not one of {s['enum']}")
+    if isinstance(v, (int, float)) and not isinstance(v, bool):
+        if "minimum" in s and v < s["minimum"]:
+            errs.append(f"{loc}: {v} is less than the minimum of {s['minimum']}")
+        if "maximum" in s and v > s["maximum"]:
+            errs.append(f"{loc}: {v} is greater than the maximum of {s['maximum']}")
+    if isinstance(v, list) and isinstance(s.get("items"), dict):
+        for i, x in enumerate(v):
+            _check(x, s["items"], f"{loc}.{i}", errs)
+    if isinstance(v, dict) and isinstance(s.get("properties"), dict):
+        for k, sub in s["properties"].items():
+            if k in v and isinstance(sub, dict):
+                _check(v[k], sub, f"{loc}.{k}" if loc != "(top)" else k, errs)
+    for k in s.get("required") or []:
+        if isinstance(v, dict) and k not in v:
+            errs.append(f"{loc}: {k!r} is a required property")
+
+
 def check_outputs(outputs: Any, declared: dict) -> list[str]:
     if not isinstance(outputs, dict):
         return [f"outputs must be a JSON object, got {type(outputs).__name__}"]
     if not declared:
         return []
-    v = jsonschema.Draft7Validator(outputs_schema(declared))
-    errs = []
-    for e in sorted(v.iter_errors(outputs), key=lambda e: list(e.path)):
-        loc = ".".join(str(x) for x in e.path) or "(top)"
-        errs.append(f"{loc}: {e.message}")
+    errs: list[str] = []
+    _check(outputs, outputs_schema(declared), "(top)", errs)
     return errs
+
+
+def printed_outputs(stdout: Path) -> dict | None:
+    """A step that leaves $FLOWER_OUTPUTS empty may print its outputs instead: its last non-empty stdout line, when
+    that is a JSON object (so `python3 fit.py` needs no `| tail -n 1 > "$FLOWER_OUTPUTS"`)."""
+    lines = [ln for ln in tail_text(stdout, 4_000_000).splitlines() if ln.strip()]
+    try:
+        data = json.loads(lines[-1]) if lines else None
+    except ValueError:
+        return None
+    return data if isinstance(data, dict) else None
 
 
 def collect_files(declared: dict, workdir: Path) -> tuple[dict, list[str]]:

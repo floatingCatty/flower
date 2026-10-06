@@ -33,10 +33,11 @@ from .util import FlowerError, digest, parse_duration
 
 PLAN_VERSION = 1
 NODE_KINDS = ("shell", "gate")
-TRIGGERS = ("all_success", "all_done", "any_success")
+TRIGGERS = ("all_success", "all_done")   # all_done: also after an upstream failure (older plans; now on_failure: continue)
 OUTPUT_TYPES = ("string", "number", "integer", "boolean", "object", "array", "path", "any")
 ID_RE = re.compile(r"^[A-Za-z][A-Za-z0-9_\-]*(\[\d+\])?$")
-TOP_KEYS = {"flower", "id", "title", "description", "inputs", "defaults", "clusters", "nodes"}
+TOP_KEYS = {"flower", "id", "title", "description", "inputs", "defaults", "clusters", "environments", "nodes"}
+# environments: {name: sha256:...}, the recipe versions a protocol was made with (`flower export` writes it)
 DROPPED_TOP_KEYS = ("policies", "results")   # older plans: edits to unfinished steps now always apply; see `export`
 
 COMMON_KEYS = {"id", "kind", "title", "description", "needs", "when", "trigger", "inputs", "outputs",
@@ -98,14 +99,6 @@ def load_plan_file(path: str | Path) -> dict:
     if not isinstance(raw, dict):
         raise FlowerError("plan_yaml", f"{path}: top level must be a mapping")
     base = path.parent.resolve()
-    # inline prompt files so the approved contract is self-contained and hashable
-    for i, node in enumerate(raw.get("nodes") or []):
-        if isinstance(node, dict) and node.get("prompt_file") and not node.get("prompt"):
-            pf = (base / str(node["prompt_file"])).resolve()
-            try:
-                node["prompt"] = pf.read_text(encoding="utf-8")
-            except FileNotFoundError:
-                raise FlowerError("plan_prompt_file", f"nodes[{i}].prompt_file: {pf} not found") from None
     raw.setdefault("_source", {})["dir"] = str(base)
     raw["_source"]["file"] = str(path.resolve())
     return raw
@@ -135,6 +128,7 @@ def normalize_node(node: dict, defaults: dict) -> dict:
     n = copy.deepcopy(node)
     defaults = defaults if isinstance(defaults, dict) else {}
     n["needs"] = [str(x) for x in _as_list(n.get("needs"))]
+    n.setdefault("kind", "shell")   # the common case needs no `kind:`
     n.setdefault("title", n.get("id"))
     n.setdefault("trigger", "all_success")
     n.setdefault("inputs", {})
@@ -235,6 +229,9 @@ def _expand_environments(plan: dict) -> None:
             if state != "frozen":
                 continue  # validation reports it
             h = fz["hash"]
+            pin = (plan.get("environments") or {}).get(name) if isinstance(plan.get("environments"), dict) else None
+            if pin and pin != h:
+                continue  # validation reports it
             c = (plan.get("clusters") or {}).get(cl) or {}
             en = normalize_node(envmod.env_node(name, cl, d, h, c.get("install", "auto") != "never"),
                                 plan.get("defaults") or {})
@@ -276,6 +273,11 @@ def _environment_issues(plan: dict, n: dict, p: str) -> list:
     if state == "changed":
         return [Issue("environment", f"{p}.environment", f"recipe {d} was edited after it was frozen",
                       f"freeze the new version: flower env freeze {name}")]
+    pin = (plan.get("environments") or {}).get(name) if isinstance(plan.get("environments"), dict) else None
+    if pin and pin != envmod.status(d)[1]["hash"]:
+        return [Issue("environment", f"{p}.environment", f"envs/{name} is not the version this plan pins ({pin[:19]}…)",
+                      "check out the commit the protocol was exported from (`git log -- envs/" + name + "`), "
+                      "or remove the pin to use the current recipe")]
     return []
 
 
@@ -578,7 +580,7 @@ class Graph:
 
 # ====================================================================== amendments
 
-AMEND_OPS = ("add", "replace", "drop", "detour", "set_needs", "stop", "add_clusters", "tune_clusters", "add_inputs")
+AMEND_OPS = ("add", "replace", "drop", "set_needs", "add_clusters", "tune_clusters", "add_inputs")
 # cluster settings that only pace the work (how much of the machine, how often to poll): a running plan may change
 # them (op tune_clusters); where and how a step runs (host, paths, prelude, scheduler) stays fixed
 CLUSTER_TUNABLE = ("cpus", "max_jobs", "min_poll")
@@ -596,12 +598,12 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
     if plan.get("_source"):
         new["_source"] = plan["_source"]   # new environment steps find their recipe next to the plan file
     defaults = new.get("defaults") or {}
-    effects: dict[str, list] = {"stale": [], "stop": [], "added": [], "removed": [], "changed": []}
+    effects: dict[str, list] = {"stale": [], "added": [], "removed": [], "changed": []}
     issues: list[Issue] = []
     by_id = {n["id"]: n for n in new["nodes"]}
 
     def is_pending(nid: str) -> bool:
-        return node_status.get(nid, "pending") in ("pending", "ready")
+        return node_status.get(nid, "pending") == "pending"
 
     for i, op in enumerate(ops or []):
         p = f"ops[{i}]"
@@ -666,38 +668,11 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
                     continue
                 if not is_pending(nid):
                     issues.append(Issue("amend_history", p, f"cannot drop {nid!r}: it is {node_status.get(nid)}",
-                                        "use `stop` for pending work; finished history stays in the record"))
+                                        "finished history stays in the record"))
                     continue
                 new["nodes"] = [n for n in new["nodes"] if n["id"] != nid]
                 by_id.pop(nid)
                 effects["removed"].append(nid)
-        elif kind == "detour":
-            after = op.get("after")
-            specs = _as_list(op.get("nodes"))
-            if after not in by_id or not specs:
-                issues.append(Issue("amend_detour", p, "detour needs `after: <existing node>` and `nodes: [...]`"))
-                continue
-            added = []
-            for spec in specs:
-                if not isinstance(spec, dict) or "id" not in spec or spec["id"] in by_id:
-                    issues.append(Issue("amend_detour", p, f"bad or duplicate detour node {spec!r:.60}"))
-                    continue
-                spec = dict(spec)
-                spec.setdefault("needs", [after] if not added else [added[-1]])
-                nn = normalize_node(spec, defaults)
-                new["nodes"].append(nn)
-                by_id[nn["id"]] = nn
-                added.append(nn["id"])
-            if not added:
-                continue
-            effects["added"].extend(added)
-            leaf = added[-1]
-            for n in new["nodes"]:
-                if n["id"] in added:
-                    continue
-                if after in effective_needs(n) and is_pending(n["id"]):
-                    n["needs"] = list(dict.fromkeys(n["needs"] + [leaf]))
-                    effects["changed"].append(n["id"])
         elif kind == "set_needs":
             nid = op.get("node")
             if nid not in by_id:
@@ -751,12 +726,6 @@ def apply_amendment(plan: dict, ops: list[dict], node_status: dict[str, str]) ->
                                         f"give it `default:` in the plan file, or pass `-i {name}=VALUE`"))
                     continue
                 new.setdefault("inputs", {})[name] = copy.deepcopy(decl)
-        elif kind == "stop":
-            for nid in _as_list(op.get("nodes") or op.get("node")):
-                if nid in by_id and is_pending(nid):
-                    effects["stop"].append(nid)
-                else:
-                    issues.append(Issue("amend_stop", p, f"can only stop pending nodes ({nid!r} is {node_status.get(nid, 'unknown')})"))
     if issues:
         raise PlanInvalid(issues)
     new = normalize(new)

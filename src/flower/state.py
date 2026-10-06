@@ -5,9 +5,7 @@ derivable from the journal alone — the property that makes runs replayable and
 """
 from __future__ import annotations
 
-import copy
 from dataclasses import dataclass, field
-from typing import Any
 
 from .plan import Graph
 from .util import parse_iso
@@ -37,7 +35,6 @@ class Attempt:
     error: dict | None = None
     reused_from: str | None = None
     actor: str | None = None
-    amendment: dict | None = None
 
     @property
     def files_dir(self) -> str | None:
@@ -143,7 +140,6 @@ class RunState:
     completed_at: str | None = None
     last_seq: int = 0
     last_event_at: str | None = None
-    drivers: list[dict] = field(default_factory=list)
 
     # ------------------------------------------------------------------ derived
     @property
@@ -286,8 +282,6 @@ def apply(st: RunState, ev: dict) -> None:  # noqa: C901 - one switch, kept flat
         st.cancel_requested = True
     elif t == "run.note":
         st.notes.append({"at": at, "by": ev.get("actor"), "text": p.get("text"), "node": nid})
-    elif t in ("driver.started", "driver.stopped", "driver.reloaded", "driver.error"):
-        st.drivers.append({"at": at, "event": t, **p})
 
     elif t == "node.started":
         ns = _node(st, nid)
@@ -351,7 +345,6 @@ def apply(st: RunState, ev: dict) -> None:  # noqa: C901 - one switch, kept flat
         a.summary = p.get("summary")
         a.rationale = p.get("rationale")
         a.reused_from = p.get("reused_from")
-        a.amendment = p.get("amendment")
         if p.get("decl_hash"):
             a.decl_hash = p["decl_hash"]
         if p.get("input_hash"):
@@ -444,6 +437,3 @@ def apply(st: RunState, ev: dict) -> None:  # noqa: C901 - one switch, kept flat
             am.decided_by = p.get("by") or ev.get("actor")
             am.effects = {"reason": p.get("reason")}
 
-
-def snapshot(state: RunState) -> RunState:
-    return copy.deepcopy(state)

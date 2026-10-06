@@ -20,12 +20,12 @@ import yaml
 # ---------------------------------------------------------------------- draft plans
 
 DRAFT_HEADER = """\
-# A draft started with `flower start`: the run exists from the first minute and grows step by step.
-# Each addition is a recorded amendment of the run (see `flower log RUN`).
-#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
-#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
-# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
-# existing cluster, only cpus / max_jobs / min_poll may change.
+# A draft started with `flower start`: the run exists from the first minute and grows step by step; every change
+# of this file is recorded in the run (`flower log RUN`).
+#   add a step and run it:  flower add RUN ID -- <command>   (on a cluster: --cluster C --env E; --follow to watch)
+#   or edit this file, then: flower rerun RUN [ID]           (applies the edits; with ID, runs that step again)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and `clusters:` are picked up the same way; of an existing
+# cluster, only cpus / max_jobs / min_poll may change.
 """
 
 
@@ -49,8 +49,7 @@ def input_type(v) -> str:
 
 
 def draft_plan_text(pid: str, goal: str, inputs: dict) -> str:
-    lines = [DRAFT_HEADER, "flower: 1", f"id: {pid}", f"title: {json.dumps(goal, ensure_ascii=False)}",
-             "description: |", *("  " + ln for ln in goal.strip().splitlines()), ""]
+    lines = [DRAFT_HEADER, "flower: 1", f"id: {pid}", f"title: {json.dumps(goal, ensure_ascii=False)}", ""]
     if inputs:
         lines.append("inputs:")
         for k, v in inputs.items():
@@ -75,54 +74,61 @@ _Dumper.add_representer(str, _str_rep)
 
 
 def node_from_args(a, command: list[str]) -> dict:
+    """The step `flower add` writes: its common keys as flags, any other key with `--set KEY=VALUE` (YAML value,
+    dotted KEY for nested keys), a gate with `--gate MESSAGE` instead of a command."""
+    from .util import FlowerError
     cmd = command[1:] if command and command[0] == "--" else command
-    if not cmd:
-        from .util import FlowerError
-        raise FlowerError("usage", "no command given", "flower add RUN ID [options] -- <command>")
-    run = cmd[0] if len(cmd) == 1 else shlex.join(cmd)
-    n: dict = {"id": a.id, "kind": "shell"}
-    if a.title:
-        n["title"] = a.title
+    gate = getattr(a, "gate", None)
+    if not cmd and not gate:
+        raise FlowerError("usage", "no command given", "flower add RUN ID [options] -- <command>   (or --gate MESSAGE)")
+    if cmd and gate:
+        raise FlowerError("usage", "a gate has no command", "flower add RUN ID --gate MESSAGE [--needs STEP]")
+    n: dict = {"id": a.id}
+    if gate:
+        n["kind"] = "gate"
     if getattr(a, "description", None):   # what the step establishes and how to read its result
         n["description"] = a.description
     if a.needs:
         n["needs"] = list(a.needs)
-    if a.cluster:
+    if getattr(a, "cluster", None):
         n["cluster"] = a.cluster
-    if a.environment:
+    if getattr(a, "environment", None):
         n["environment"] = a.environment
-    if a.stage_in:
+    if getattr(a, "stage_in", None):
         n["stage_in"] = list(a.stage_in)
-    if a.retrieve:
-        n["retrieve"] = list(a.retrieve)
-    if getattr(a, "tmpdir", None):
-        n["tmpdir"] = a.tmpdir
-    if a.setenv:
-        n["env"] = dict(x.split("=", 1) for x in a.setenv)
-    if a.timeout_total:
-        n["timeout"] = {"total": a.timeout_total}
-    res = {k: v for k, v in (("cpus_per_task", getattr(a, "cpus", None)), ("mem", getattr(a, "mem", None))) if v}
-    if res:   # cluster steps ask the scheduler (or the host's cpus budget) for these; $FLOWER_CPUS / $FLOWER_MEM_MB
-        n["resources"] = res
     if getattr(a, "foreach", None):
         f = a.foreach.strip()
         try:   # a JSON list (or object), else a reference like ${scan.outputs.items}
             n["foreach"] = json.loads(f)
         except ValueError:
             n["foreach"] = f
-    if a.outs:
+    if getattr(a, "outs", None):
         n["outputs"] = {o.split(":", 1)[0]: (o.split(":", 1)[1] if ":" in o else "any") for o in a.outs}
-    if a.files:
+    if getattr(a, "files", None):
         n["files"] = dict(x.split("=", 1) for x in a.files)
-    if getattr(a, "retry", None):
-        n["retry"] = {"max_attempts": int(a.retry)}
-    if getattr(a, "on_failure", None):
-        n["on_failure"] = a.on_failure
-    if getattr(a, "trigger", None):
-        n["trigger"] = a.trigger
     if getattr(a, "ins", None):   # step inputs (references keep their type), given to the command as $FLOWER_INPUTS
         n["inputs"] = {k: _typed(v) for k, v in (x.split("=", 1) for x in a.ins)}
-    n["run"] = run
+    for kv in getattr(a, "sets", None) or []:
+        if "=" not in kv:
+            raise FlowerError("usage", f"--set {kv!r}: expected KEY=VALUE", "e.g. --set retry=3 --set timeout.total=2h")
+        key, val = kv.split("=", 1)
+        try:
+            val = yaml.safe_load(val) if val.strip() else ""
+        except yaml.YAMLError:
+            pass   # not YAML: the text itself
+        if key == "retry" and isinstance(val, int):
+            val = {"max_attempts": val}
+        *parents, last = key.split(".")
+        d = n
+        for k in parents:
+            d = d.setdefault(k, {})
+            if not isinstance(d, dict):
+                raise FlowerError("usage", f"--set {key}: {k} is not a mapping")
+        d[last] = val
+    if gate:
+        n["message"] = gate
+    else:
+        n["run"] = cmd[0] if len(cmd) == 1 else shlex.join(cmd)
     return n
 
 
@@ -187,15 +193,16 @@ the project's UI (`flower ui`). The full guide is in `.claude/skills/flower/SKIL
 
 1. **Start the run first**, before exploring: `flower start "<goal>"` (prints RUN). Nothing is "too early".
 2. **Every computation is a step**, including the first quick test:
-   `flower add RUN ID --description "<what it establishes, how to read the result>" -- <command>` (remote:
-   `--cluster C --env E --stage-in FILE`). It writes the step into the plan file and runs it. To fix a step:
-   edit its code or the plan file, `flower rerun RUN ID --follow`.
-3. Explore a remote machine with `flower remote exec --run RUN --cluster C [--env E] [--probe] -- <cmd>`
+   `flower add RUN ID --description "<what it establishes, how to read the result>" --follow -- <command>`
+   (remote: `--cluster C --env E --stage-in FILE`). It writes the step into the plan file and runs it; the
+   command prints its outputs as a JSON object on its last line. To fix a step: edit its code or the plan file,
+   `flower rerun RUN ID --follow`.
+3. Explore a remote machine with `flower remote exec --run RUN --cluster C [--env E] -- <cmd>`
    (logged), not raw ssh.
 4. Reading files, papers and results directly is fine; *running* things beside the run is not, including a
    quick check whose answer you rely on (make it a one-line step).
 5. When it is done, `flower export RUN STEP` turns the steps behind STEP into a protocol that anyone re-runs
-   with `flower run protocol.yaml -y` and checks with `flower compare RUN expected.json`.
+   with `flower run protocol.yaml --follow` and checks with `flower compare RUN expected.json`.
 
 If `FLOWER_INSIDE_RUN` is set you are inside a step: do its task and never call flower.
 {AGENTS_END}

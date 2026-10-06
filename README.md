@@ -11,7 +11,7 @@ read and check, and turns it, once it works, into a protocol anyone re-runs with
 - **A run is that plan plus its history.** An append-only journal records every step, attempt, result, plan edit
   and decision, and who made it. `flower ui` shows it; any new session picks it up with `flower status`.
 - **A finished run is a protocol.** `flower export RUN STEP` keeps the steps behind a result and their values;
-  `flower run protocol.yaml -y` reproduces it and `flower compare RUN expected.json` says whether it did.
+  `flower run protocol.yaml --follow` reproduces it and `flower compare RUN expected.json` says whether it did.
 
 ```text
 $ flower status heisenberg-2d-20261004-172331-d4e1
@@ -33,7 +33,7 @@ Reproduce the ground-state parameters of the 2D S=1/2 Heisenberg antiferromagnet
 ## Install
 
 ```bash
-pip install "git+https://github.com/floatingCatty/flower"   # Python ≥ 3.9; dependencies: pyyaml, jsonschema
+pip install "git+https://github.com/floatingCatty/flower"   # Python ≥ 3.9; dependency: pyyaml
 ```
 
 Not on PyPI yet: `pip install flower` installs Celery Flower, an unrelated tool.
@@ -45,14 +45,14 @@ Not on PyPI yet: `pip install flower` installs Celery Flower, an unrelated tool.
 flower init                                         # .flower/ (gitignored) + the agent instructions
 flower start "Reproduce Table 2 of <paper>"         # a run right away, with an empty draft plan
 flower add RUN fetch --description "Downloads the data; n is the number of records." \
-    --out n:integer -- 'python3 fetch.py > "$FLOWER_OUTPUTS"'
+    --out n:integer --follow -- python3 fetch.py   # fetch.py prints {"n": ...} as its last line
 flower rerun RUN fetch --follow                     # after editing the code or the step in plan.yaml
 flower status RUN                                   # what is done, running, failed, waiting for you
 ```
 
 **Reproduce a study** (anyone, from a clone):
 ```bash
-flower run j1j2-chain/protocol.yaml -y --inputs my-machines.json
+flower run j1j2-chain/protocol.yaml --follow --inputs my-machines.json
 flower compare RUN j1j2-chain/expected.json         # 24 step(s) agree within rtol 1e-06, 0 differ
 ```
 
@@ -68,7 +68,6 @@ clusters:
   hpc: {transport: ssh, host: "${inputs.host}", remote_root: ~/flower-runs}
 nodes:
   - id: relax
-    kind: shell
     description: Relaxes the cell; energy and converged are the result.
     cluster: hpc
     environment: qe                                 # a frozen software recipe in envs/qe/
@@ -76,11 +75,10 @@ nodes:
     stage_in: [relax.in]
     run: |
       mpirun pw.x -in relax.in > relax.out
-      python3 parse.py relax.out > "$FLOWER_OUTPUTS"
+      python3 parse.py relax.out                    # prints {"energy": ..., "converged": ...}
     outputs: {energy: number, converged: boolean}
 
   - id: bands
-    kind: shell
     description: Band structure at the relaxed geometry; read bands.png.
     cluster: hpc
     environment: qe
@@ -94,23 +92,23 @@ nodes:
     message: "Bands done (${bands.summary}). Publish?"
 ```
 
-Two step kinds: `shell` (a command) and `gate` (a person's decision). Plus `foreach` fan-out, `when` conditions,
-retries keyed on failure class, timeouts, and caching of unchanged steps.
+Two step kinds: `shell` (a command, the default) and `gate` (a person's decision). Plus `foreach` fan-out, `when`
+conditions, retries keyed on failure class, timeouts, and caching of unchanged steps.
 
 ## Commands
 
 | | |
 |---|---|
 | set up | `init` |
-| grow | `start`, `add`, `rerun`, `sync` |
+| grow | `start`, `add`, `rerun` |
 | run a plan | `run` |
-| follow and read | `status`, `show`, `log`, `logs`, `ui` |
+| follow and read | `status`, `show`, `log`, `ui` |
 | decide | `approve`, `reject`, `cancel` |
 | deliver | `export`, `compare` |
 | machines and software | `remote exec`, `env new\|freeze\|replay\|check\|show`, `plan validate\|show` |
 
-Every command takes `--json` and prints `{ok, data, error, next}`; exit codes are 0 done, 1 failed, 2 error,
-3 waiting for a decision or still running. Details: [docs/REFERENCE.md](docs/REFERENCE.md). How a team adopts
+Every command takes `--json` and prints `{ok, data, error, next}`, and returns at once; `--follow` waits.
+`status` and `--follow` exit 0 succeeded, 1 failed, 3 still running or waiting for a decision; 2 is an error. Details: [docs/REFERENCE.md](docs/REFERENCE.md). How a team adopts
 it: [docs/USING.md](docs/USING.md).
 
 ## What it handles for you
@@ -123,9 +121,10 @@ it: [docs/USING.md](docs/USING.md).
   over ssh. A shared `cpus:` budget keeps several runs from oversubscribing one host.
 - **Software environments.** An agent explores a machine through the logged `flower remote exec` and writes a
   small recipe (`envs/<name>/setup.sh`, `activate.sh`, `check.sh`); `flower env freeze` hashes it and
-  `flower env replay --fresh` proves it installs from scratch. A changed recipe never reuses old results.
-- **Changing a running plan.** Edit the plan file: new and unfinished steps change at once, an edit of finished
-  work waits for approval, and history is never rewritten.
+  `flower env replay --fresh` proves it installs from scratch. A changed recipe never reuses old results, and an
+  exported protocol pins the versions it was made with.
+- **Changing a running plan.** Edit the plan file and `flower rerun RUN`: every edit applies at once and is
+  recorded with who made it; a changed finished step runs again, and history is never rewritten.
 
 ## Tested by reproducing papers
 

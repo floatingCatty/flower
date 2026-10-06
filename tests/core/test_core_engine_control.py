@@ -1,4 +1,4 @@
-"""Control verbs: cancel (node / run), rerun (--downstream, cache reuse, reopen), amendments."""
+"""Control verbs: cancel (node / run), rerun (--downstream, cache reuse, reopen), plan edits (apply at once)."""
 from __future__ import annotations
 
 import json
@@ -222,57 +222,43 @@ def test_rerun_refuses_when_downstream_active(mkplan, start):
 
 # ------------------------------------------------------------------ amendments
 
-def test_amend_add_needs_approval_then_runs(mkplan, start):
+def test_apply_edit_adds_a_step_at_once(mkplan, start):
     eng = start(mkplan([sh("a", out_json({"v": 5})), {"id": "g", "kind": "gate", "needs": ["a"]}]))
     drive(eng)
-    aid = eng.propose_amendment([{"op": "add", "nodes": [sh("extra", 'echo "${a.outputs.v}"')]}], "need extra",
-                                by="human:dev")
-    st = eng.state()
-    assert st.amendments[aid].status == "proposed"
-    assert f"amend-{aid}" in [g.id for g in st.open_gates()]
-    assert "extra" not in st.graph().nodes
-    eng.answer(f"amend-{aid}", "approve", by="human:pi")
-    drive(eng)
+    aid = eng.apply_edit([{"op": "add", "nodes": [sh("extra", 'echo "${a.outputs.v}"')]}], "need extra",
+                         by="human:dev")
     st = eng.state()
     assert st.generation == 1 and st.amendments[aid].status == "approved"
+    assert [g.id for g in st.open_gates()] == ["g#a1"]                 # no gate for the edit itself
+    drive(eng)
+    st = eng.state()
     assert st.nodes["extra"].result.summary == "5"
-    assert st.generations[1]["by"] == "human:pi"
+    assert st.generations[1]["by"] == "human:dev"
+    assert events(eng, "plan.amendment.approved")[0]["actor"] == "human:dev"
     assert eng.paths.current_plan_file.exists() and "extra" in eng.paths.current_plan_file.read_text()
 
 
-def test_amend_rejected_by_gate(mkplan, start):
-    eng = start(mkplan([{"id": "g", "kind": "gate"}]))
-    drive(eng)
-    aid = eng.propose_amendment([{"op": "add", "nodes": [sh("extra", "true")]}], "maybe")
-    eng.answer(f"amend-{aid}", "reject", text="no thanks")
-    eng.tick()
-    st = eng.state()
-    assert st.amendments[aid].status == "rejected" and st.generation == 0
-    assert "extra" not in st.graph().nodes
-
-
-def test_amend_detour_inserts_before_pending_child(mkplan, start):
-    eng = start(mkplan([sh("a", "sleep 0.5"), sh("b", "true", needs=["a"])]))
-    wait_running(eng, "a")
-    eng.propose_amendment([{"op": "detour", "after": "a", "nodes": [sh("d", "true")]}], "check first",
-                          auto_approve=True)
+def test_a_plan_change_gate_of_an_older_flower_is_withdrawn(mkplan, start):
+    """A run made by a flower whose plan edits waited for approval may have such a gate open; it must not park the
+    run now that nothing can answer it usefully."""
+    eng = start(mkplan([sh("a", "true")]))
+    eng.emit("plan.amendment.proposed", {"amendment_id": "am-old", "parent_generation": 0, "ops": [],
+                                         "rationale": "plan file edited", "proposed_by": "human:dev"})
+    eng._request_gate("amend-am-old", subject="amendment", node=None, message="PLAN CHANGE",
+                      decisions=["approve", "reject"], amendment_id="am-old")
     assert drive(eng).status == "succeeded"
-    seq = {(e["eventType"], e.get("nodeId")): e["seq"] for e in eng.journal.read()}
-    assert seq[("node.started", "d")] > seq[("node.succeeded", "a")]
-    assert seq[("node.started", "b")] > seq[("node.succeeded", "d")]
+    st = eng.state()
+    assert st.gates["amend-am-old"].decision == "withdrawn" and st.amendments["am-old"].status == "rejected"
 
 
-def test_amend_replace_pending_and_stop(mkplan, start, tmp_path):
-    eng = start(mkplan([sh("a", "sleep 0.5"), sh("b", "echo old", needs=["a"]), sh("c", "true", needs=["a"]),
-                        sh("d", "true", needs=["c"])]))
+def test_amend_replace_pending(mkplan, start, tmp_path):
+    eng = start(mkplan([sh("a", "sleep 0.5"), sh("b", "echo old", needs=["a"])]))
     wait_running(eng, "a")
-    eng.propose_amendment([{"op": "replace", "node": "b", "with": {"kind": "shell", "run": "echo new", "needs": ["a"]}},
-                           {"op": "stop", "node": "c"}], "swap", auto_approve=True)
+    eng.apply_edit([{"op": "replace", "node": "b", "with": {"kind": "shell", "run": "echo new", "needs": ["a"]}}],
+                   "swap")
     drive(eng)
     st = eng.state()
-    assert st.nodes["b"].result.summary == "new"
-    assert st.nodes["c"].status == "skipped" and "stopped by amendment" in st.nodes["c"].skipped_reason
-    assert st.nodes["d"].status == "skipped"
+    assert st.nodes["b"].result.summary == "new" and len(st.nodes["b"].attempts) == 1
 
 
 def test_amend_illegal_edit_of_finished_node_rejected(mkplan, start):
@@ -282,7 +268,7 @@ def test_amend_illegal_edit_of_finished_node_rejected(mkplan, start):
                 [{"op": "drop", "node": "a"}],
                 [{"op": "set_needs", "node": "a", "needs": ["g"]}]):
         with pytest.raises(PlanInvalid):
-            eng.propose_amendment(ops, "rewrite history")
+            eng.apply_edit(ops, "rewrite history")
     st = eng.state()
     assert st.generation == 0
     assert len(st.amendments) == 3 and all(a.status == "rejected" for a in st.amendments.values())
@@ -293,9 +279,9 @@ def test_amend_supersede_finished_node_reopens_and_reuses(mkplan, start):
     eng = start(mkplan([sh("a", out_json({"v": 1})), sh("b", 'echo "{\\"b\\": ${a.outputs.v}}" > "$FLOWER_OUTPUTS"'),
                         sh("c", out_json({"c": 0}))]))
     assert drive(eng).status == "succeeded"
-    eng.propose_amendment([{"op": "replace", "node": "a", "supersede": True,
-                            "with": {"kind": "shell", "run": "echo different-script; " + out_json({"v": 1})}}],
-                          "new script, same result", auto_approve=True)
+    eng.apply_edit([{"op": "replace", "node": "a", "supersede": True,
+                     "with": {"kind": "shell", "run": "echo different-script; " + out_json({"v": 1})}}],
+                   "new script, same result")
     st = eng.state()
     assert st.status == "running" and st.generation == 1
     assert st.nodes["a"].status == "pending" and st.nodes["b"].status == "pending"
@@ -310,28 +296,14 @@ def test_amend_supersede_finished_node_reopens_and_reuses(mkplan, start):
 def test_amend_before_approval_refused(mkplan, start):
     eng = start(mkplan([sh("a", "true")]), approve=False)
     with pytest.raises(FlowerError) as ei:
-        eng.propose_amendment([{"op": "add", "nodes": [sh("x", "true")]}], "early")
+        eng.apply_edit([{"op": "add", "nodes": [sh("x", "true")]}], "early")
     assert ei.value.code == "run_not_started"
-
-
-def test_amend_that_no_longer_applies_is_rejected_at_approval(mkplan, start):
-    eng = start(mkplan([{"id": "g", "kind": "gate"}, sh("b", "true", needs=["g"])]))
-    drive(eng)
-    aid = eng.propose_amendment([{"op": "replace", "node": "b", "with": {"kind": "shell", "run": "echo v2",
-                                                                         "needs": ["g"]}}], "tweak b")
-    eng.answer("g", "approve")
-    drive(eng)  # b runs and finishes before the amendment is approved
-    assert eng.state().nodes["b"].status == "succeeded"
-    eng.answer(f"amend-{aid}", "approve")
-    eng.tick()
-    am = eng.state().amendments[aid]
-    assert am.status == "rejected" and "no longer applies" in am.effects["reason"]
 
 
 def test_amend_on_finished_run_reopens(mkplan, start):
     eng = start(mkplan([sh("a", "true")]))
     drive(eng)
-    eng.propose_amendment([{"op": "add", "nodes": [sh("more", "echo more", needs=["a"])]}], "grow", auto_approve=True)
+    eng.apply_edit([{"op": "add", "nodes": [sh("more", "echo more", needs=["a"])]}], "grow")
     assert eng.state().status == "running"
     assert drive(eng).status == "succeeded"
     assert eng.state().nodes["more"].result.summary == "more"
@@ -342,8 +314,8 @@ def test_supersede_running_node_does_not_orphan_process(mkplan, start):
     eng = start(mkplan([sh("a", "sleep 30")]))
     info = wait_running(eng, "a")
     try:
-        eng.propose_amendment([{"op": "replace", "node": "a", "supersede": True,
-                                "with": {"kind": "shell", "run": "true"}}], "replace running", auto_approve=True)
+        eng.apply_edit([{"op": "replace", "node": "a", "supersede": True,
+                         "with": {"kind": "shell", "run": "true"}}], "replace running")
     except PlanInvalid:
         return  # refusing is fine
     drive(eng, timeout=10)

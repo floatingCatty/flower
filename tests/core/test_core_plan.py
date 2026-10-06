@@ -1,5 +1,5 @@
 """Plan validation (all issues at once, with suggestions), normalisation, refs-imply-edges, digests, diff,
-and apply_amendment (add / detour / replace / drop / set_needs / stop / supersede + history guards)."""
+and apply_amendment (add / replace / drop / set_needs / supersede + history guards)."""
 from __future__ import annotations
 
 import pytest
@@ -187,19 +187,13 @@ def base():
                             {"id": "c", "kind": "shell", "run": "3", "needs": ["b"]}]))
 
 
-def test_amend_add_and_detour_rewires_pending_children():
+def test_amend_add():
     st = {"a": "succeeded", "b": "pending", "c": "pending"}
     new, eff = planmod.apply_amendment(base(), [
-        {"op": "add", "nodes": [{"id": "extra", "kind": "shell", "run": "x", "needs": ["a"]}]},
-        {"op": "detour", "after": "a", "nodes": [{"id": "d1", "kind": "shell", "run": "x"},
-                                                 {"id": "d2", "kind": "shell", "run": "y"}]},
-    ], st)
+        {"op": "add", "nodes": [{"id": "extra", "run": "x", "needs": ["a"]}]}], st)
     nodes = {n["id"]: n for n in new["nodes"]}
-    assert eff["added"] == ["extra", "d1", "d2"]
-    assert nodes["d1"]["needs"] == ["a"] and nodes["d2"]["needs"] == ["d1"]
-    assert "d2" in nodes["b"]["needs"]          # pending child of `a` now waits for the detour
-    assert "d2" in nodes["extra"]["needs"]      # also pending, also rewired
-    assert nodes["extra"]["retry"]["max_attempts"] == 1  # normalised
+    assert eff["added"] == ["extra"] and nodes["extra"]["needs"] == ["a"]
+    assert nodes["extra"]["retry"]["max_attempts"] == 1 and nodes["extra"]["kind"] == "shell"  # normalised
 
 
 def test_amend_replace_pending_ok_finished_refused_without_supersede():
@@ -224,7 +218,6 @@ def test_amend_supersede_marks_downstream_cone_stale():
 @pytest.mark.parametrize("op", [
     {"op": "drop", "node": "a"},
     {"op": "set_needs", "node": "a", "needs": []},
-    {"op": "stop", "node": "a"},
 ])
 def test_amend_history_is_immutable(op):
     with pytest.raises(PlanInvalid):
@@ -244,11 +237,6 @@ def test_amend_unknown_op_and_duplicates():
     assert codes(ei.value.issues) == ["amend_add", "amend_op"]
 
 
-def test_amend_stop_pending_only():
-    _, eff = planmod.apply_amendment(base(), [{"op": "stop", "nodes": ["b", "c"]}], {"a": "running"})
-    assert eff["stop"] == ["b", "c"]
-
-
 def test_amend_creating_cycle_rejected():
     with pytest.raises(PlanInvalid) as ei:
         planmod.apply_amendment(base(), [{"op": "set_needs", "node": "a", "needs": ["c"]}], {})
@@ -259,8 +247,8 @@ def test_amend_does_not_mutate_input_plan():
     p = base()
     import copy
     snap = copy.deepcopy(p)
-    planmod.apply_amendment(p, [{"op": "detour", "after": "a", "nodes": [{"id": "d", "kind": "shell", "run": "x"}]}],
-                            {})
+    planmod.apply_amendment(p, [{"op": "add", "nodes": [{"id": "d", "kind": "shell", "run": "x"}]},
+                                {"op": "replace", "node": "b", "with": {"kind": "shell", "run": "y"}}], {})
     assert p == snap
 
 

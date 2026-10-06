@@ -63,23 +63,8 @@ def test_freeze_hashes_every_recipe_file_and_detects_edits(tmp_path):
     assert envmod.status(d)[0] == "changed"
     fz2 = envmod.freeze(d, by="t")
     assert fz2["hash"] != fz["hash"] and fz2["previous"] == fz["hash"] and "lock.txt" in fz2["files"]
-    assert (d / "history" / envmod.short(fz["hash"]) / "setup.sh").exists()
-    assert (d / "history" / envmod.short(fz2["hash"]) / "lock.txt").exists()
+    assert not (d / "history").exists()      # git keeps the earlier versions
     assert envmod.freeze(d, by="t").get("unchanged") is True
-
-
-def test_freeze_drafts_setup_from_logged_successful_commands(tmp_path):
-    d = tmp_path / "envs" / "x"
-    envmod.new(d)
-    for cmd, rc, probe in (("which thing", 1, True), ("make thing", 0, False), ("broken", 2, False),
-                           ("thing --version", 0, True), ("install thing", 0, False)):
-        envmod.log_session(d, {"at": "t", "cluster": "c", "cmd": cmd, "rc": rc, "probe": probe})
-    (d / "activate.sh").write_text("export A=1\n")
-    (d / "check.sh").write_text("true\n")
-    fz = envmod.freeze(d, by="t")
-    text = (d / "setup.sh").read_text()
-    assert fz["drafted_setup"] and text.index("make thing") < text.index("install thing")
-    assert "broken" not in text and "--version" not in text and "which thing" not in text
 
 
 def test_freeze_refuses_template_scripts(tmp_path):
@@ -199,26 +184,26 @@ def test_cli_explore_freeze_replay(tmp_path, home_dir):
     env.pop("BASH_ENV", None)
     assert _cli(["env", "new", "hello"], proj, env).returncode == 0
     rx = ["remote", "exec", "--env", "hello", "--plan", "plan.yaml", "--cluster", "box", "--"]
-    probe = ["remote", "exec", "--probe", *rx[2:]]
-    r = _cli([*probe, 'echo "prefix=$FLOWER_ENV_PREFIX"'], proj, env)
+    r = _cli([*rx, 'echo "prefix=$FLOWER_ENV_PREFIX"'], proj, env)
     assert r.returncode == 0 and f"prefix={home_dir}/.flower/envs/hello-explore" in r.stdout
     r = _cli([*rx, HELLO_SETUP.replace("\n", "; ").rstrip("; ")], proj, env)
     assert r.returncode == 0, r.stderr
     d = proj / "envs" / "hello"
     (d / "activate.sh").write_text('export PATH="$FLOWER_ENV_PREFIX/bin:$PATH"\n')
     (d / "check.sh").write_text('hello-tool | grep -q "hello v1"\n')
-    r = _cli([*probe, "hello-tool"], proj, env)  # activate.sh is sourced while exploring
+    r = _cli([*rx, "hello-tool"], proj, env)  # activate.sh is sourced while exploring
     assert r.stdout.strip() == "hello v1", r.stderr
-    r = _cli([*probe, 'bash "$FLOWER_ENV_DIR/check.sh" && echo checked'], proj, env)  # the recipe as written so far
+    r = _cli([*rx, 'bash "$FLOWER_ENV_DIR/check.sh" && echo checked'], proj, env)  # the recipe as written so far
     assert r.returncode == 0 and "checked" in r.stdout, r.stdout + r.stderr
+    (d / "setup.sh").write_text(HELLO_SETUP)                  # what worked, written down
     r = _cli(["env", "freeze", "hello"], proj, env)
-    assert r.returncode == 0 and "drafted" in r.stdout, r.stdout + r.stderr
-    assert "hello-tool" in (d / "setup.sh").read_text() and "echo \"prefix" not in (d / "setup.sh").read_text()
+    assert r.returncode == 0 and "froze hello" in r.stdout, r.stdout + r.stderr
+    prefixes = []
     for _ in range(2):  # from scratch, twice: two fresh prefixes, both pass the check
-        r = _cli(["env", "replay", "hello", "--plan", "plan.yaml", "--cluster", "box", "--fresh"], proj, env)
-        assert r.returncode == 0 and "OK" in r.stdout, r.stdout + r.stderr
-    fz = json.loads((d / "FROZEN.json").read_text())
-    assert [x["ok"] for x in fz["replays"]] == [True, True] and fz["replays"][0]["prefix"] != fz["replays"][1]["prefix"]
+        r = _cli(["env", "replay", "hello", "--plan", "plan.yaml", "--cluster", "box", "--fresh", "--json"], proj, env)
+        assert r.returncode == 0 and json.loads(r.stdout)["data"]["ok"], r.stdout + r.stderr
+        prefixes.append(json.loads(r.stdout)["data"]["prefix"])
+    assert prefixes[0] != prefixes[1]
     r = _cli(["env", "check", "hello", "--plan", "plan.yaml", "--cluster", "box"], proj, env)
     assert r.returncode != 0  # nothing installed at the recipe's own prefix yet: check only, no setup
     r = _cli(["env", "replay", "hello", "--plan", "plan.yaml", "--cluster", "box"], proj, env)
@@ -275,7 +260,7 @@ def test_an_amendment_adds_a_local_step_with_an_environment(ff, tmp_path, home_d
     ff.drive(eng, timeout=30)
     step = {"id": "b", "kind": "shell", "environment": "hello", "cluster": "local",   # as plan_edits delivers it
             "run": 'echo "{\\"v\\": \\"$(hello-tool)\\"}" > "$FLOWER_OUTPUTS"', "outputs": {"v": "string"}}
-    eng.propose_amendment([{"op": "add", "nodes": [step]}], "add a local analysis step", by="test:x", auto_approve=True)
+    eng.apply_edit([{"op": "add", "nodes": [step]}], "add a local analysis step", by="test:x")
     st = ff.drive(eng, timeout=60)
     assert st.plan["clusters"]["local"]["transport"] == "local"
     assert st.nodes["b"].result.outputs["v"] == "hello v1", ff.why(eng)
@@ -299,6 +284,32 @@ def test_a_changed_env_script_is_not_a_plan_edit(ff, tmp_path, home_dir, monkeyp
     assert eng.plan_edits(None)["ops"] == []
     _recipe(src, check='hello-tool | grep -q "hello v1" && echo "hello v1 OK (v2)"\n')   # a new recipe version
     assert "env-hello-local" in eng.plan_edits(None)["changed"]
+
+
+def test_export_pins_the_environment_versions(ff, tmp_path, home_dir):
+    """A protocol says which recipe versions its result was made with (`environments:` in protocol.yaml and
+    expected.json) and keeps only the machines its steps use; a plan whose pin is not the frozen recipe is invalid."""
+    import yaml
+    from flower.plan import PlanInvalid, load_plan_file
+    from flower.protocol import export
+    src = tmp_path / "proj"
+    d = _recipe(src)
+    plan = {"flower": 1, "id": "pin", "clusters": _cluster(ff), "nodes": [
+        {"id": "a", "kind": "shell", "environment": "hello", "run": 'echo "{\\"v\\": 1}" > "$FLOWER_OUTPUTS"',
+         "outputs": {"v": "integer"}}]}
+    (src / "plan.yaml").write_text(json.dumps(plan))
+    eng = ff.run(load_plan_file(str(src / "plan.yaml")))
+    assert ff.drive(eng, timeout=60).status == "succeeded", ff.why(eng)
+    export(eng, ["a"])
+    h = envmod.status(d)[1]["hash"]
+    proto = yaml.safe_load((src / "protocol.yaml").read_text())
+    assert proto["environments"] == {"hello": h} and "box" not in (proto.get("clusters") or {})
+    assert json.loads((src / "expected.json").read_text())["environments"] == {"hello": h}
+    assert "flower run protocol.yaml --follow" in (src / "PROTOCOL.md").read_text()
+    _recipe(src, check='hello-tool | grep -q "hello v1" && echo "hello v1 OK (v2)"\n')   # a new recipe version
+    with pytest.raises(PlanInvalid) as ei:
+        plan_check(load_plan_file(str(src / "protocol.yaml")))
+    assert [i["code"] for i in ei.value.issues] == ["environment"]
 
 
 def test_concurrent_installs_of_one_environment_wait_for_each_other(tmp_path):

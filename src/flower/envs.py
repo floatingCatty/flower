@@ -10,9 +10,7 @@ A recipe is a directory ``envs/<name>/`` next to the plan (or in a parent direct
     activate.sh   sourced before every step that uses it    (make the tools available, nothing else)
     check.sh      exit 0 iff the environment works          (runs after activate; print versions)
     env.yaml      optional notes: description, setup_timeout, check_timeout
-    FROZEN.json   written by `flower env freeze`: hash of the three scripts, who, when, replays
-    sessions/     `flower remote exec --env <name>` logs: how the recipe was found (provenance)
-    history/      earlier frozen versions
+    FROZEN.json   written by `flower env freeze`: the hash of every file, who, when (git keeps earlier versions)
 
 On a target the recipe installs into ``$HOME/.flower/envs/<name>-<hash12>`` ($FLOWER_ENV_PREFIX, which
 setup.sh creates) and its files are copied next to it, ``…/<name>-<hash12>.recipe`` ($FLOWER_ENV_DIR). A
@@ -23,7 +21,6 @@ from __future__ import annotations
 import hashlib
 import json
 import os
-import shutil
 from pathlib import Path
 
 from .util import FlowerError, atomic_write_json, now_iso, parse_duration, read_json
@@ -60,7 +57,7 @@ def find(name: str, start: str | os.PathLike | None) -> Path | None:
     return None
 
 
-BOOKKEEPING = ("FROZEN.json", "sessions", "history")
+BOOKKEEPING = ("FROZEN.json", "sessions", "history")   # not hashed (the last two: from older flowers)
 
 
 def recipe_files(d: Path) -> dict[str, str]:
@@ -219,66 +216,9 @@ def new(d: Path) -> list[str]:
     return made
 
 
-def last_check(d: Path) -> dict | None:
-    """The most recent logged exploration command that ran check.sh (None if there was none)."""
-    best = None
-    for f in sorted((d / "sessions").glob("*.jsonl")):
-        for ln in f.read_text().splitlines():
-            try:
-                e = json.loads(ln)
-            except ValueError:
-                continue
-            if "check.sh" in str(e.get("cmd", "")) and (best is None or str(e.get("at")) >= str(best.get("at"))):
-                best = e
-    return best
-
-
-def log_session(d: Path, entry: dict) -> Path:
-    s = d / "sessions"
-    s.mkdir(parents=True, exist_ok=True)
-    p = s / f"{entry.get('session') or now_iso()[:10]}.jsonl"
-    with open(p, "a") as fh:
-        fh.write(json.dumps(entry, ensure_ascii=False) + "\n")
-    return p
-
-
-def session_commands(d: Path) -> list[dict]:
-    out = []
-    for p in sorted((d / "sessions").glob("*.jsonl")):
-        for line in p.read_text().splitlines():
-            try:
-                out.append(json.loads(line))
-            except ValueError:
-                pass
-    return out
-
-
-def draft_setup(d: Path) -> str | None:
-    """A setup.sh drafted from the logged exploration: the successful, non-probe commands, in order."""
-    cmds = [e for e in session_commands(d) if e.get("rc") == 0 and not e.get("probe")]
-    if not cmds:
-        return None
-    body = [f"# drafted by `flower env freeze` from {len(cmds)} logged command(s); review and edit freely",
-            'cd "$FLOWER_ENV_DIR"']
-    for e in cmds:
-        body.append(f"# {e.get('at')} on {e.get('cluster')}")
-        body.append(e["cmd"])
-    return "\n".join(body) + "\n"
-
-
 def freeze(d: Path, by: str) -> dict:
-    """Pin the recipe: hash the scripts, keep the previous version, record who/when."""
-    drafted = False
-    setup = d / "setup.sh"
-    if not setup.is_file() or setup.read_text() == TEMPLATES["setup.sh"]:
-        text = draft_setup(d)
-        if text is None:
-            raise FlowerError("env_incomplete", f"{setup} is missing or still the template, and no logged "
-                              "commands to draft it from", "write setup.sh, or explore with "
-                              f"`flower remote exec --env {d.name} …` first")
-        setup.write_text(text)
-        drafted = True
-    for f in ("activate.sh", "check.sh"):
+    """Pin the recipe: hash its files, record who/when (git keeps the earlier versions)."""
+    for f in SCRIPTS:
         p = d / f
         if not p.is_file() or p.read_text() == TEMPLATES[f]:
             raise FlowerError("env_incomplete", f"{p} is missing or still the template",
@@ -287,24 +227,7 @@ def freeze(d: Path, by: str) -> dict:
     old = read_json(d / "FROZEN.json") or {}
     if old.get("hash") == h:
         return {**old, "unchanged": True}
-    if old.get("hash"):  # its scripts were snapshotted into history/<hash>/ when it was frozen
-        keep = d / "history" / short(old["hash"])
-        keep.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(d / "FROZEN.json", keep / "FROZEN.json")
-    fz = {"name": d.name, "hash": h, "frozen_at": now_iso(), "by": by, "drafted_setup": drafted,
-          "files": recipe_files(d),
-          "previous": old.get("hash"), "sessions": sorted(p.name for p in (d / "sessions").glob("*.jsonl")),
-          "replays": []}
+    fz = {"name": d.name, "hash": h, "frozen_at": now_iso(), "by": by, "files": recipe_files(d),
+          "previous": old.get("hash")}
     atomic_write_json(d / "FROZEN.json", fz)
-    snap = d / "history" / short(h)
-    snap.mkdir(parents=True, exist_ok=True)
-    for f in recipe_files(d):
-        (snap / f).parent.mkdir(parents=True, exist_ok=True)
-        shutil.copy2(d / f, snap / f)
     return fz
-
-
-def record_replay(d: Path, entry: dict) -> None:
-    fz = read_json(d / "FROZEN.json") or {}
-    fz.setdefault("replays", []).append(entry)
-    atomic_write_json(d / "FROZEN.json", fz)

@@ -22,7 +22,7 @@ from . import plan as planmod
 from . import template as tpl
 from .executors.base import RETRYABLE_DEFAULT, NodeCtx, Outcome
 from .journal import Journal
-from .rundir import RunPaths, find_root, followers, fs_name, list_runs
+from .rundir import RunPaths, find_root, followers, fs_name
 from .state import TERMINAL_NODE, TERMINAL_RUN, Attempt, NodeState, RunState, fold
 from .util import (FlowerError, answer_cmd, atomic_write_json, atomic_write_text, default_actor, digest, hostname,
                    files_fingerprint, new_id, new_run_id, now, now_iso, parse_duration, parse_iso, read_json,
@@ -61,7 +61,6 @@ class TickReport:
 # ====================================================================== run creation
 
 NEVER_RETRY = {"auth", "contract", "template"}
-FILE_EDIT = "plan file edited"  # the rationale prefix of proposals made from the plan file (`flower sync`/`rerun`)
 
 
 def host_key(c: dict) -> str:
@@ -343,7 +342,7 @@ class Engine:
 
         Considered: ``node`` (or its foreach collector), everything downstream of it, the generated
         environment steps those depend on, and nodes that are new in the file. Returns
-        {"ops": [...], "changed": [...], "added": [...], "touches_finished": bool, "file": path}.
+        {"ops": [...], "changed": [...], "added": [...], "file": path}.
 
         New *inputs* (with a `default:`, or a value in ``new_inputs``) and new *clusters* in the file are picked
         up too (ops add_inputs / add_clusters), so a run started as a draft can reach a remote machine later.
@@ -351,7 +350,7 @@ class Engine:
         (``plan.CLUSTER_TUNABLE``: op tune_clusters); other changes to them are reported in ``res["ignored"]``."""
         st = self.state()
         src = st.meta.get("plan_source")
-        res = {"ops": [], "changed": [], "added": [], "touches_finished": False, "file": src, "ignored": [],
+        res = {"ops": [], "changed": [], "added": [], "file": src, "ignored": [],
                "new_inputs": [], "new_clusters": [], "tuned_clusters": []}
         if not src or not Path(src).is_file():
             return res
@@ -419,7 +418,7 @@ class Engine:
                 if res["added"]:
                     res["ops"].append({"op": "add", "nodes": [new[nid] for nid in res["added"]]})
             return res
-        if node is None:   # the whole plan file (`flower sync`)
+        if node is None:   # the whole plan file (`flower rerun RUN`)
             cone = [n for n in cur if not cur[n].get("expanded_from")]
         else:
             cone = [top] + [d for d in g.descendants(top) if not cur[d].get("expanded_from")] if top in cur else []
@@ -442,7 +441,7 @@ class Engine:
                          and n in new and canon(new[n]) != canon(cur[n])]
             if elsewhere:
                 res["ignored"].append(f"the plan file also changes {', '.join(elsewhere)}, outside what this rerun "
-                                      f"touches: not applied (`flower sync {st.run_id}` applies them)")
+                                      f"touches: not applied (`flower rerun {st.run_id}` applies them)")
         for nid in list(changed):  # a node's new environment version needs its env step updated too
             for d in new[nid].get("needs") or []:
                 if str(cur.get(d, {}).get("generated", "")).startswith("env:") and d in new \
@@ -474,10 +473,6 @@ class Engine:
                 continue
             pending = status.get(nid, "pending") == "pending"
             res["ops"].append({"op": "replace", "node": nid, "with": spec, **({} if pending else {"supersede": True})})
-            if status.get(nid) == "succeeded" and nid != top:
-                # a finished step's new definition waits for approval, except the step being rerun: re-executing
-                # it is what was asked for, and its earlier attempts stay in the journal
-                res["touches_finished"] = True
         if added:
             res["ops"].append({"op": "add", "nodes": [new[nid] for nid in added]})
         res["changed"], res["added"] = changed, added
@@ -487,16 +482,17 @@ class Engine:
         by = by or default_actor()
         return self.emit("run.note", {"text": text}, node=node, actor=by)
 
-    def propose_amendment(self, ops: list, rationale: str, by: str | None = None, source_node: str | None = None,
-                          auto_approve: bool = False) -> str:
-        """Record an amendment proposal; open a gate unless auto-approved. Returns the amendment id."""
+    def apply_edit(self, ops: list, rationale: str, by: str | None = None) -> str:
+        """Apply a change of the plan at once and record it (who, why, the diff): a new generation of the plan.
+        A finished step whose definition changed is superseded: it and its downstream run again, and their earlier
+        attempts stay in the record. Returns the change's id."""
         by = by or default_actor()
         with self.lock():
             st = self.state()
             if st.status in ("awaiting_approval", "rejected"):
-                raise FlowerError("run_not_started", "amend the plan file itself before approval",
-                                     "edit the plan and start a new run")
-            return self._propose_locked(ops, rationale, by=by, source_node=source_node, auto=auto_approve)
+                raise FlowerError("run_not_started", "the run's plan has not been approved yet",
+                                     "approve it first, or edit the plan and start a new run")
+            return self._apply_locked(ops, rationale, by=by)
 
     # ------------------------------------------------------------ tick
     def tick(self) -> TickReport:
@@ -535,21 +531,17 @@ class Engine:
                 rep.status = st.status
                 rep.waiting_on = ["plan approval (gate 'plan')"]
                 return rep
-        # --- amendment gates (also on a finished run: an approved change reopens it)
-        if st.status not in ("rejected", "cancelled"):
-            for g in st.gates.values():
-                if g.subject == "amendment" and g.status == "answered" and g.amendment_id:
-                    am = st.amendments.get(g.amendment_id)
-                    if am and am.status == "proposed":
-                        if g.decision == "approve":
-                            try:
-                                self._apply_amendment(am.id, by=g.by)
-                            except planmod.PlanInvalid as exc:
-                                self.emit("plan.amendment.rejected", {"amendment_id": am.id, "by": "flower",
-                                                                      "reason": f"no longer applies: {exc.message}"})
-                        else:
-                            self.emit("plan.amendment.rejected", {"amendment_id": am.id, "by": g.by, "reason": g.text})
-                        rep.changed = True
+        # --- plan edits no longer wait for approval: withdraw a plan-change gate an older flower left open
+        for g in st.open_gates():
+            if g.subject == "amendment":
+                self.emit("gate.answered", {"gate_id": g.id, "decision": "withdrawn", "by": "system",
+                                            "text": "plan edits apply at once now: `flower rerun RUN` applies the plan file"},
+                          key=f"gate.answered:{g.id}")
+                if g.amendment_id:
+                    self.emit("plan.amendment.rejected", {"amendment_id": g.amendment_id, "by": "flower",
+                                                          "reason": "withdrawn: plan edits no longer wait for approval"})
+                (self.paths.pending / f"{fs_name(g.id)}.request.json").unlink(missing_ok=True)
+                rep.changed = True
         st = self.state()
 
         if st.status in TERMINAL_RUN:
@@ -741,11 +733,6 @@ class Engine:
                     f" ({st.nodes[d0].skipped_reason})" if stats[d0] == "skipped" and st.nodes[d0].skipped_reason else ""), \
                     cause_of(d0)
             return "go", None, None
-        if trig == "any_success":
-            if any(ok(d) for d in deps):
-                return "go", None, None
-            causes = {cause_of(d) for d in deps}
-            return "skip", "no upstream succeeded", "failure" if "failure" in causes else sorted(causes)[0]
         return "go", None, None  # all_done
 
     # ------------------------------------------------------------ cpu budget per machine, across runs
@@ -1103,7 +1090,7 @@ class Engine:
                                                   "parent_digest": st.digest, "ops": ops, "proposed_by": "flower",
                                                   "rationale": why, "source_node": nid,
                                                   "diff": planmod.diff_plans(st.plan, new_plan)})
-            self._commit_amendment(aid, new_plan, effects, by="policy:foreach", parent_digest=st.digest)
+            self._commit_amendment(aid, new_plan, effects, by="system", parent_digest=st.digest)
             return True
         if not children:
             return False
@@ -1170,7 +1157,7 @@ class Engine:
             self.emit("node.retry_scheduled", {"next_attempt": n + 1, "not_before": nb, "reason": why},
                       node=nid, attempt=n)
 
-    def _propose_locked(self, ops: list, rationale: str, by: str, source_node: str | None, auto: bool) -> str:
+    def _apply_locked(self, ops: list, rationale: str, by: str) -> str:
         st = self.state()
         status = {k: v.status for k, v in st.nodes.items()}
         aid = new_id("am")
@@ -1180,41 +1167,15 @@ class Engine:
         except planmod.PlanInvalid as exc:
             self.emit("plan.amendment.proposed", {"amendment_id": aid, "parent_generation": st.generation,
                                                   "parent_digest": st.digest, "ops": ops, "rationale": rationale,
-                                                  "proposed_by": by, "source_node": source_node})
+                                                  "proposed_by": by})
             self.emit("plan.amendment.rejected", {"amendment_id": aid, "by": "flower",
                                                   "reason": exc.message, "issues": exc.issues})
             raise
         self.emit("plan.amendment.proposed", {"amendment_id": aid, "parent_generation": st.generation,
                                               "parent_digest": st.digest, "ops": ops, "rationale": rationale,
-                                              "proposed_by": by, "source_node": source_node, "diff": diff})
-        if auto:
-            self._commit_amendment(aid, new_plan, effects, by=f"policy:{source_node or 'auto'}", parent_digest=st.digest)
-        else:
-            from .render import amendment_overview
-            self._request_gate(f"amend-{aid}", subject="amendment", node=None,
-                               message=amendment_overview(rationale, ops, diff, by),
-                               decisions=["approve", "reject"], amendment_id=aid, extra={"diff": diff})
+                                              "proposed_by": by, "diff": diff}, actor=by)
+        self._commit_amendment(aid, new_plan, effects, by=by, parent_digest=st.digest)
         return aid
-
-    def _apply_amendment(self, aid: str, by: str | None) -> None:
-        """Apply an approved amendment. If the plan moved since the reviewer saw the diff, apply only when the
-        recomputed diff is identical; otherwise reject it as stale and re-open a fresh gate (compare-and-swap)."""
-        st = self.state()
-        am = st.amendments[aid]
-        status = {k: v.status for k, v in st.nodes.items()}
-        new_plan, effects = planmod.apply_amendment(st.plan, am.ops, status)
-        if am.parent_generation != st.generation:
-            def key(d):
-                return (sorted(d.get("added") or []), sorted(d.get("removed") or []),
-                        sorted(c["id"] + ":" + ",".join(c["fields"]) for c in d.get("changed") or []))
-            if key(planmod.diff_plans(st.plan, new_plan)) != key(am.diff or {}):
-                self.emit("plan.amendment.rejected", {"amendment_id": aid, "by": "flower",
-                                                      "reason": f"stale: reviewed against generation {am.parent_generation},"
-                                                                f" plan is now at {st.generation} and the change would "
-                                                                "differ; re-proposed for a fresh review"})
-                self._propose_locked(am.ops, am.rationale, by=am.proposed_by, source_node=am.source_node, auto=False)
-                return
-        self._commit_amendment(aid, new_plan, effects, by=by or "system")
 
     def _commit_amendment(self, aid: str, new_plan: dict, effects: dict, by: str,
                           parent_digest: str | None = None) -> None:
@@ -1233,41 +1194,9 @@ class Engine:
         for nid in effects.get("stale", []):
             if nid in st.nodes and st.nodes[nid].status not in ("pending",):
                 self.emit("node.stale", {"reason": f"superseded by amendment {aid}", "by": by}, node=nid)
-        for nid in effects.get("stop", []):
-            self.emit("node.skipped", {"reason": f"stopped by amendment {aid}", "cause": "stopped"}, node=nid)
-        st = self.state()
         st = self.state()
         if st.status in TERMINAL_RUN or st.status == "parked":
-            self.emit("run.reopened", {"reason": f"amendment {aid} approved", "by": by})
-
-    def withdraw_file_proposals(self, keep_ops: list, whole_file: bool = True, keep_identical: bool = True,
-                                step: str | None = None) -> list[str]:
-        """A proposal made from the plan file is a snapshot of it; a newer one supersedes it. Withdraw the open
-        ones that differ from ``keep_ops`` so an outdated snapshot cannot park the run (#58). For a rerun of
-        ``step`` (``whole_file`` false) only those about that step or covered by ``keep_ops``: an edit elsewhere
-        still waits."""
-        def steps(ops):
-            return {op.get("node") for op in ops if op.get("node")} | \
-                   {n.get("id") for op in ops for n in op.get("nodes") or [] if isinstance(n, dict)}
-        out = []
-        with self.lock():
-            st = self.state()
-            for g in st.open_gates():
-                am = st.amendments.get(g.amendment_id) if g.subject == "amendment" else None
-                if am and am.status == "proposed" and am.rationale.startswith(FILE_EDIT) \
-                        and not (keep_identical and am.ops == keep_ops) \
-                        and (whole_file or steps(am.ops) <= steps(keep_ops) | {step}):
-                    self.emit("gate.answered", {"gate_id": g.id, "decision": "withdrawn", "by": "system",
-                                                "text": "superseded by a newer version of the plan file"},
-                              key=f"gate.answered:{g.id}")
-                    self.emit("plan.amendment.rejected", {"amendment_id": am.id, "by": "flower",
-                                                          "reason": "superseded by a newer version of the plan file"})
-                    try:
-                        (self.paths.pending / f"{fs_name(g.id)}.request.json").unlink()
-                    except FileNotFoundError:
-                        pass
-                    out.append(am.id)
-        return out
+            self.emit("run.reopened", {"reason": f"plan changed ({aid})", "by": by})
 
     # ------------------------------------------------------------ gates
     def _resolve_node_gate(self, st: RunState, ns: NodeState, g) -> None:

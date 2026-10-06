@@ -7,7 +7,7 @@
     expected.json    those steps' outputs in this run
     PROTOCOL.md      what it does, what it needs, how long it took, how to reproduce it
 
-Reproducing is `flower run protocol.yaml -y` and then `flower compare NEW_RUN expected.json`.
+Reproducing is `flower run protocol.yaml --follow` and then `flower compare NEW_RUN expected.json`.
 """
 from __future__ import annotations
 
@@ -47,25 +47,37 @@ def export(eng, steps: list[str]) -> dict:
     drift = [n for n in eng.plan_edits(None)["changed"] if n in ids]
     if drift:
         raise FlowerError("plan_drift", f"the plan file differs from what ran for {', '.join(drift)}",
-                          "export the version that ran: check it out in git (or `flower sync` the run first)")
+                          "export the version that ran: check it out in git (or `flower rerun RUN` first)")
     raw = yaml.safe_load(Path(src).read_text()) or {}
-    proto = {k: v for k, v in raw.items() if k != "nodes"}
+    proto = {k: v for k, v in raw.items() if k not in ("nodes", "environments")}
+    g = st.graph()
+    pins = {}   # the recipe versions the result was made with: a later `flower run` refuses any other
+    for n in nodes:
+        gen = str(g.nodes[n].get("generated", ""))
+        if gen.startswith("env:"):
+            name, h = gen.split(":", 2)[1:]
+            pins[name] = h
+    if pins:
+        proto["environments"] = dict(sorted(pins.items()))
+    used = {g.nodes[n].get("cluster") for n in nodes}
+    if isinstance(proto.get("clusters"), dict):   # only the machines the protocol's steps run on
+        proto["clusters"] = {k: v for k, v in proto["clusters"].items() if k in used}
     proto["nodes"] = [n for n in raw.get("nodes") or [] if isinstance(n, dict) and n.get("id") in ids]
     d = Path(src).parent
     from .devloop import _Dumper
     (d / "protocol.yaml").write_text(
         f"# A reproducibility protocol exported from run {st.run_id} (`flower export`): the steps behind\n"
-        f"# {', '.join(steps)}. Run it with `flower run protocol.yaml -y`, then `flower compare RUN expected.json`.\n"
+        f"# {', '.join(steps)}. Run it with `flower run protocol.yaml --follow`, then `flower compare RUN expected.json`.\n"
         + yaml.dump(proto, Dumper=_Dumper, sort_keys=False, allow_unicode=True, width=110))
     planmod.check(planmod.load_plan_file(str(d / "protocol.yaml")))    # it must stand on its own
-    g = st.graph()
     expected = {}
     for n in sorted(nodes):
         spec, ns = g.nodes[n], st.nodes.get(n)
         if str(spec.get("generated", "")).startswith("env:") or spec.get("foreach") is not None or not ns or not ns.result:
             continue
         expected[n] = {k: v for k, v in (ns.result.outputs or {}).items() if k not in SKIP}
-    (d / "expected.json").write_text(json.dumps({"from_run": st.run_id, "steps": expected}, indent=1, default=str))
+    (d / "expected.json").write_text(json.dumps({"from_run": st.run_id, "environments": pins, "steps": expected},
+                                                indent=1, default=str))
     (d / "PROTOCOL.md").write_text(readme(st, proto, steps, nodes))
     return {"dir": str(d), "steps": sorted(ids), "expected": len(expected),
             "files": [str(d / f) for f in ("protocol.yaml", "expected.json", "PROTOCOL.md")]}
@@ -86,7 +98,7 @@ def readme(st, proto: dict, steps: list[str], nodes: set[str]) -> str:
     L = [f"# {title}", ""] + ([desc, ""] if desc and desc != title else []) + [
          f"Exported from run `{st.run_id}`: the steps behind {', '.join(f'`{s}`' for s in steps)}.", "",
          "## Reproduce", "", "```bash",
-         "flower run protocol.yaml -y" + (" --inputs my-inputs.json" if proto.get("inputs") else ""),
+         "flower run protocol.yaml --follow" + (" --inputs my-inputs.json" if proto.get("inputs") else ""),
          "flower compare RUN expected.json      # RUN: the id the first command prints", "```", ""]
     ins = proto.get("inputs") or {}
     if ins:
@@ -98,7 +110,8 @@ def readme(st, proto: dict, steps: list[str], nodes: set[str]) -> str:
     if envs or cls:
         L += ["## Needs", ""]
         L += [f"- machines: {', '.join(cls)} (see `clusters:` in protocol.yaml)"] if cls else []
-        L += [f"- software: {', '.join(f'envs/{e}' for e in envs)} (frozen recipes, installed by the run)"] if envs else []
+        L += [f"- software: {', '.join(f'envs/{e}' for e in envs)} (frozen recipes, installed by the run; "
+              "`environments:` in protocol.yaml pins their versions)"] if envs else []
         L.append("")
     L += ["## Steps", "", "| step | what it establishes | took |", "|---|---|---|"]
     for n in order:

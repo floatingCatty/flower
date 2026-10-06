@@ -33,7 +33,7 @@ EVENT_TYPES = {
     "plan.amendment.proposed", "plan.amendment.approved", "plan.amendment.rejected",
     # nodes
     "node.started", "node.progress", "node.succeeded", "node.failed", "node.skipped",
-    "node.cancelled", "node.stale", "node.retry_scheduled", "node.held", "node.released",
+    "node.cancelled", "node.stale", "node.retry_scheduled",
     # hpc job specifics
     "job.submit_intent", "job.staged", "job.submitted", "job.observed", "job.exited", "job.retrieved",
     "job.remote_error", "job.lost", "job.cancel_requested", "job.orphan_detected",

@@ -9,7 +9,7 @@ Every command and plan field is in the [reference](REFERENCE.md).
 pip install "git+https://github.com/floatingCatty/flower"
 ```
 
-Python ≥ 3.9; the only dependencies are pyyaml and jsonschema. Install it on the machine that drives the work,
+Python ≥ 3.9; the only dependency is pyyaml. Install it on the machine that drives the work,
 usually a login node or a workstation. Remote machines that flower reaches over ssh do not need it.
 
 > The package is not on PyPI yet, and **`pip install flower` installs Celery Flower**, an unrelated tool.
@@ -45,20 +45,25 @@ The skill and the `AGENTS.md` block teach an agent this loop:
 ```bash
 flower start "Reproduce Table 2 of <paper>"            # a run exists from the first minute
 flower add RUN fetch --description "Downloads the data; n is the number of records." \
-    --out n:integer -- 'python3 fetch.py > "$FLOWER_OUTPUTS"'
-flower add RUN fit --cluster box --env pyscf --cpus 8 --stage-in fit.py \
-    --description "Fits the model; read chi2 (about 1 is good)." -- 'python3 fit.py'
+    --out n:integer --follow -- python3 fetch.py      # fetch.py prints {"n": ...} as its last line
+flower add RUN fit --cluster box --env pyscf --set resources.cpus_per_task=8 --stage-in fit.py \
+    --description "Fits the model; read chi2 (about 1 is good)." -- python3 fit.py
 # fix code or plan.yaml, then:
 flower rerun RUN fit --follow        # re-run a step (and what depends on it)
-flower sync RUN                      # apply plan-file edits without re-running anything
+flower rerun RUN                     # apply plan-file edits (a new step, a description, a cluster's cpus)
 ```
 
 - **Every computation is a step,** including quick checks whose answers the agent relies on.
 - **Every step has a `--description`**: what it establishes and how to read its result. A missing one only
   warns.
-- **Reading results:** `flower status RUN`, `flower show RUN STEP [KEY]` and `flower logs RUN STEP` all take
-  `--json`. `flower status RUN --follow` waits until the run finishes or needs a decision. Exit codes: 0 done,
-  1 failed, 2 error, 3 needs a decision or still running.
+- **Outputs:** a step's command prints a JSON object as its last line (or writes it to `$FLOWER_OUTPUTS`);
+  `--out NAME:TYPE` declares what it must contain.
+- **Edits apply at once and are recorded** (who, the diff): a finished step whose command changed runs again
+  with what depends on it; its earlier result stays in the record.
+- **Reading results:** `flower status RUN`, `flower show RUN STEP [KEY]` and `flower show RUN STEP --logs` all
+  take `--json`. Commands return at once; `--follow` waits (`flower status RUN --follow`: until the run
+  finishes or needs a decision). `status` and `--follow` exit 0 succeeded, 1 failed, 3 still running or waiting;
+  any command exits 2 on an error.
 - **Long work** runs in a background driver; the agent never needs to hold a terminal open.
 - **Attribution:** set `FLOWER_ACTOR` (for example `agent:claude`, `agent:codex`) so the log says who did what.
   The default is `human:$USER`. The name is declared, not authenticated.
@@ -70,20 +75,21 @@ The same commands, plus:
 - **The web UI:** `flower ui` starts or reuses the project's UI server and prints its address and token. From a
   laptop, `flower ui user@host:/path/to/project` opens it through an ssh tunnel. Each step shows its
   description, what it ran, and what it found (outputs, files, reports rendered in place).
-- **Decisions:** plan approvals, plan changes that touch finished work, and `gate` steps wait for a person. Answer
-  them in the UI or with `flower approve RUN [GATE] [DECISION] --note "…"` / `flower reject RUN [GATE] --text "…"`.
+- **Decisions:** `gate` steps (and a plan started with `flower run --review`) wait for a person. Answer them in
+  the UI or with `flower approve RUN [GATE] [DECISION] --note "…"` / `flower reject RUN [GATE] --note "…"`; a
+  gate with `on_reject` sends the work back with the note as `${feedback}`.
 - **History:** `flower log RUN` (every event, actor and decision; `--note "…"` adds one); the UI's Timeline and
   Plan history tabs show the same.
 
 ## 5. A finished study as a protocol
 
 `flower export RUN STEP` writes, next to the plan:
-- `protocol.yaml`: the plan's own definitions of STEP and everything it depends on. Probes, previews and side
-  studies drop out.
+- `protocol.yaml`: the plan's own definitions of STEP and everything it depends on, with the versions of the
+  environment recipes they used pinned (`environments:`). Probes, previews and side studies drop out.
 - `expected.json`: those steps' results.
 - `PROTOCOL.md`: what it does, needs and took.
 
-Commit the three. Anyone reproduces the study with `flower run protocol.yaml -y` (plus `--inputs` for machine
+Commit the three. Anyone reproduces the study with `flower run protocol.yaml --follow` (plus `--inputs` for machine
 details) and checks it with `flower compare RUN expected.json`. To re-run a study with one step changed,
 `flower run plan.yaml --reuse RUN --rerun-from STEP` takes the earlier run's results and inputs for everything
 upstream.
@@ -95,7 +101,7 @@ upstream.
   `--inputs file.json`. They are stored with the run, never in the plan file, so a plan can be shared without
   anyone's machine details.
 - **`cpus: N`** on a cluster is a core budget shared by all runs of the project on that host. Change it in a
-  running plan with `flower sync`.
+  running plan by editing the plan file, then `flower rerun RUN`.
 - **Software** comes from frozen recipes in `envs/<name>/`: setup, activate and check scripts, pinned and
   hashed. Explore with `flower remote exec --run RUN --cluster C --env NAME -- <cmd>`, then run
   `flower env freeze NAME` and `flower env replay NAME --run RUN --cluster C --fresh`. Steps use a recipe with

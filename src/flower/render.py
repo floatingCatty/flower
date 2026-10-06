@@ -6,15 +6,13 @@ workflow, where is it, why did it do that, and what should I do next?".
 from __future__ import annotations
 
 import json
-import re
 import os
+import re
 import sys
-from pathlib import Path
-from typing import Any
 
 from .plan import Graph, on_cluster
 from .rundir import RunPaths
-from .state import TERMINAL_RUN, NodeState, RunState
+from .state import NodeState, RunState
 from .util import (answer_cmd, first_line, fmt_duration, local_clock, local_stamp, local_zone, parse_iso,
                    seconds_since, short, tail_text, truncate)
 
@@ -141,26 +139,6 @@ def plan_overview(plan: dict, inputs: dict | None = None) -> str:
     return "\n".join(out)
 
 
-def amendment_overview(rationale: str, ops: list, diff: dict, by: str) -> str:
-    out = [f"PLAN CHANGE proposed by {by}", "", f"Why: {rationale or '(no rationale given)'}", ""]
-    if diff.get("added"):
-        out.append("Adds:     " + ", ".join(diff["added"]))
-    if diff.get("removed"):
-        out.append("Removes:  " + ", ".join(diff["removed"]))
-    for c in diff.get("changed") or []:
-        out.append(f"Changes:  {c['id']} ({', '.join(c['fields'])})")
-    for op in ops:
-        for nd in op.get("nodes") or ([{"id": op.get("node"), **op["with"]}] if op.get("with") else []):
-            if isinstance(nd, dict):
-                out.append(f"  + {nd.get('id')}: {nd.get('kind')} — {what(nd)}")
-        for name, spec in (op.get("clusters") or {}).items() if op.get("op") in ("add_clusters", "tune_clusters") else ():
-            verb = "new cluster" if op["op"] == "add_clusters" else "cluster"
-            out.append(f"  {verb} {name}: " + ", ".join(f"{k}={v}" for k, v in (spec or {}).items()))
-        if op.get("op") == "add_inputs":
-            out.append("  new input " + ", ".join(sorted(op.get("inputs") or {})))
-    return "\n".join(out)
-
-
 # ====================================================================== status
 
 def node_activity(st: RunState, paths: RunPaths, ns: NodeState, spec: dict) -> str:
@@ -265,6 +243,10 @@ def status_view(st: RunState, paths: RunPaths, color: bool = False, width: int |
         name = ("  " * depth.get(nid, 0) + nid)[:name_w]
         att = f"#{ns.last.n}" if ns.last and ns.last.n > 1 else ""
         act = node_activity(st, paths, ns, spec)
+        if parent:   # an item says which one it is: its title when the step's title is templated (`${item.case}`)
+            t = re.sub(r"\s*\[\d+\]$", "", str(spec.get("title") or ""))
+            if t and t not in (parent, str(g.nodes.get(parent, {}).get("title") or "")):
+                act = t + (f" · {act}" if act else "")
         room = max(30, width - name_w - 36)
         row = f"  {ICON.get(ns.status, '?')}  {name:<{name_w}} {kind_label(spec)[:20]:<20} {node_time(ns):>7}  {truncate(act, room)}"
         lines.append(paint(row, ns.status, color) if ns.status in ("failed", "running", "waiting", "retrying") else
@@ -293,7 +275,7 @@ def next_steps(st: RunState) -> list[str]:
         for g in gates:
             first = first_line(g.message, 100)
             out.append(f"  • gate {g.id}: {first}")
-            out.append(f"      flower show {rid} --gate {g.id}            # read it in full")
+            out.append(f"      flower show {rid} {g.id}            # read it in full")
             out.append(f"      {answer_cmd(rid, g.id, g.decisions)}")
     if st.status == "failed":
         failed = [n for n, s in st.nodes.items() if s.status == "failed"]

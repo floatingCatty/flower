@@ -35,11 +35,11 @@ from pathlib import Path
 
 from . import __version__
 from .engine import Engine, driver_alive
-from .plan import Graph, diff_plans, on_cluster
+from .plan import diff_plans, on_cluster
 from .render import bound, command_text, describe_event, display_title, kind_label, node_activity, node_time, what
 from .rundir import STATE_DIR, RunPaths, list_runs
 from .state import TERMINAL_RUN, NodeState, RunState
-from .util import (FlowerError, atomic_write_json, first_line, fmt_duration, hostname, now_iso, parse_iso,
+from .util import (FlowerError, atomic_write_json, fmt_duration, hostname, now_iso, parse_iso,
                    read_json, seconds_since, tail_text)
 
 MAX_TEXT = 200_000

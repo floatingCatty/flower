@@ -231,7 +231,8 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   - The UI shows browser-local time, with the UTC stamp in the tooltip.
 
 ### 20. An approved amendment on a finished run was never applied
-- **Test:** `test_core_devloop.py::test_an_edit_of_a_failed_step_applies_and_of_a_succeeded_one_asks`
+- **Test:** `test_core_devloop.py::test_an_edit_downstream_of_a_rerun_applies_on_a_finished_run` (plan edits
+  no longer wait for approval: they apply at once and reopen the run)
 - **Observed:** `flower amend` (or `rerun` picking up a plan edit) on a failed run, followed by
   `flower approve RUN amend-…`. The amendment stayed `proposed` forever.
 - **Root cause:** `_tick` returned early for runs in a terminal state, *before* processing answered
@@ -515,7 +516,7 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 ## Hydrogen-chain reproduction (2026-10-04)
 
 ### 58. An outdated plan-file edit parked a finished run
-- **Test:** `tests/core/test_core_devloop.py::test_a_newer_plan_file_supersedes_an_older_waiting_edit`
+- **Test:** none any more: plan edits no longer wait for approval, so no waiting snapshot can park a run
 - **Observed:** two `flower sync` calls on the hydrogen-chain run each proposed the plan file's edit of the
   `chains` foreach. The first touched finished work and opened a gate; the second was applied. The first gate
   stayed open, and when the last items finished the run parked on it with nothing left to decide.
@@ -534,8 +535,8 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 ## EAM elastic-constants reproduction (2026-10-05)
 
 ### 60. Editing the step you rerun waited for approval, and the waiting copy then parked the run
-- **Tests:** `tests/core/test_core_devloop.py::test_rerunning_the_edited_step_itself_applies_the_edit`,
-  `::test_a_rerun_withdraws_its_own_older_waiting_edit`
+- **Test:** `tests/core/test_core_devloop.py::test_rerunning_the_edited_step_itself_applies_the_edit` (the
+  waiting-proposal half is gone with the approval of edits)
 - **Observed:** in the eam-elastic study a finished fetch step was edited (a second download source) and rerun
   with `flower rerun RUN potentials`. The edit waited for approval, although a rerun of the same step without an
   edit never asks and earlier attempts stay in the journal. Once reruns applied such edits, the earlier waiting
@@ -575,7 +576,8 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   job, the working directory otherwise.
 
 ### 64. A rejection's `--text` was dropped when `--note` was given too
-- **Test:** `tests/core/test_core_cli.py::test_reject_with_text_and_note_keeps_the_text`
+- **Test:** `tests/core/test_core_cli.py::test_reject_text_is_the_rework_instruction` (`--text` is now another
+  name of `--note`)
 - **Observed:** the settings gate of the metal-surfaces study was rejected with
   `flower reject RUN settings#a1 --text "vacuum=16" --note "user chose in chat: ..."`. The answer recorded only
   the note, so the reworked step read the note as `${feedback}`, found no override, and the gate asked the same
@@ -602,8 +604,7 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   this machine `BASH_ENV=~/.bashrc` made every shell node source the user's bashrc (about 0.5 s each,
   and not reproducible). The suite unsets it. Consider adding `BASH_ENV`/`ENV` to `unset_env` for shell
   nodes, or recording the environment in the attempt for provenance.
-- **`flower status` always exits 0**, even for failed or parked runs (`cli.py:311-312`). `wait` and
-  `run` carry the verdict. This is documented by `test_status_exit_code_is_informational`. If `status`
-  is meant to follow the exit-code vocabulary, it should use `run_status_code(st.status)`.
+- **`flower status` always exited 0**, even for failed or parked runs. It now exits with
+  `run_status_code(st.status)` (`test_status_exits_with_the_runs_status_code`).
 - **A missing `flower:` key is silently accepted.** `normalize` defaults it to 1, so the `version`
   issue only fires for an explicit wrong value.

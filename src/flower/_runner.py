@@ -1,13 +1,13 @@
 """Detached process supervisor: ``python -m flower._runner <proc_dir>``.
 
-Every local node process (shell, function, agent harness) runs under one of these. The runner is
+Every local step process runs under one of these. The runner is
 started in its own session by the engine and is *not* a child the engine waits on, so a node keeps
 running when the CLI/driver exits or crashes; any later ``tick`` re-attaches by reading the files below
 (the "park on job" pattern of Smithers 1.0 / Temporal async completion, applied to local processes).
 
 Files in ``proc_dir``::
 
-    spec.json      written by the engine: argv, env, cwd, stdin, timeouts
+    spec.json      written by the engine: argv, env, cwd, timeouts
     runner.json    written at start: runner pid/pgid, child pid/pgid, host, /proc start ticks
     heartbeat      touched every HEARTBEAT seconds while alive (liveness across hosts)
     stdout.log / stderr.log
@@ -72,9 +72,6 @@ def main(proc_dir: str) -> int:
     env.update({k: str(v) for k, v in (spec.get("env") or {}).items()})
     for k in spec.get("unset_env") or []:
         env.pop(k, None)
-    stdin = subprocess.DEVNULL
-    if spec.get("stdin_file"):
-        stdin = open(spec["stdin_file"], "rb")
     started = time.time()
     started_iso = _now()
     exe = spec["argv"][0]
@@ -93,7 +90,7 @@ def main(proc_dir: str) -> int:
             # runner is killed while the payload keeps going (poll_process falls back to child_rc)
             wrapped = ["/bin/sh", "-c", 'trap "" HUP; "$@"; rc=$?; echo "$rc" > "$0.tmp" && mv "$0.tmp" "$0"; exit "$rc"',
                        str(d / "child_rc"), *spec["argv"]]
-            child = subprocess.Popen(wrapped, cwd=spec.get("cwd") or None, env=env, stdin=stdin,
+            child = subprocess.Popen(wrapped, cwd=spec.get("cwd") or None, env=env, stdin=subprocess.DEVNULL,
                                      stdout=out, stderr=err, start_new_session=True)
         except OSError as exc:
             err.write(f"flower: failed to start {spec['argv'][0]!r}: {exc}\n".encode())
@@ -101,8 +98,6 @@ def main(proc_dir: str) -> int:
                                           "idle_timeout": False, "cancelled": False, "spawn_error": str(exc),
                                           "started_at": started_iso, "ended_at": _now(), "duration_s": 0.0})
             return 0
-    if stdin is not subprocess.DEVNULL:
-        stdin.close()
     import socket
     _write_json(d / "runner.json", {
         "runner_pid": os.getpid(), "runner_pgid": os.getpgid(0), "runner_start": proc_start_ticks(os.getpid()),

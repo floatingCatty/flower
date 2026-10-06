@@ -4,7 +4,8 @@ from __future__ import annotations
 import json
 
 from ..util import atomic_write_json, atomic_write_text, first_line, parse_duration, tail_text
-from .base import Executor, NodeCtx, Outcome, cancel_process, exit_failure, finish_contract, launch, poll_process
+from .base import (Executor, NodeCtx, Outcome, cancel_process, exit_failure, finish_contract, launch, poll_process,
+                   printed_outputs)
 
 
 def _timeouts(node: dict) -> tuple[float | None, float | None]:
@@ -14,8 +15,8 @@ def _timeouts(node: dict) -> tuple[float | None, float | None]:
 
 def _read_outputs(ctx: NodeCtx) -> tuple[dict | None, str | None]:
     path = ctx.attempt_dir / "outputs.json"
-    if not path.exists():
-        return {}, None
+    if not path.exists() or not path.stat().st_size:
+        return printed_outputs(ctx.proc_dir / "stdout.log") or {}, None
     try:
         data = json.loads(path.read_text() or "{}")
     except ValueError as exc:
