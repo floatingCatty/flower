@@ -574,6 +574,15 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** `${step.dir}` (and `upstream.json`) give where this machine sees the step's files: its `local_dir` for a
   job, the working directory otherwise.
 
+### 64. A rejection's `--text` was dropped when `--note` was given too
+- **Test:** `tests/core/test_core_cli.py::test_reject_with_text_and_note_keeps_the_text`
+- **Observed:** the settings gate of the metal-surfaces study was rejected with
+  `flower reject RUN settings#a1 --text "vacuum=16" --note "user chose in chat: ..."`. The answer recorded only
+  the note, so the reworked step read the note as `${feedback}`, found no override, and the gate asked the same
+  question again. (The study's report now says when a rejection text sets nothing.)
+- **Fix:** `--text` and `--note` are one record of the answer; both are kept, the text first. Also: a step that
+  never ran no longer shows as "queued again" in `flower status` after a rerun upstream of it.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

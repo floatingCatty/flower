@@ -587,7 +587,9 @@ def cmd_approve(args, out: Out) -> int:
         decision = "reject" if "reject" in g.decisions else g.decisions[-1]
     else:
         decision = g.decisions[0]
-    eng.answer(g.id, decision, text=args.note or args.text, by=args.actor or default_actor())
+    # --text (reject's rework instruction) and --note are one record; keep both when both are given (BUGS #64)
+    text = "\n".join(t for t in (args.text, args.note) if t) or None
+    eng.answer(g.id, decision, text=text, by=args.actor or default_actor())
     return _record_and_continue(eng, args, out, f"{decision}: {g.id}")
 
 

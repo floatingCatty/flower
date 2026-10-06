@@ -149,6 +149,18 @@ def test_gate_parks_exit_3_answer_resumes(cli, tmp_path, home):
     assert code == 2 and out["error"]["code"] in ("gate_closed", "gate_not_found", "which_gate")
 
 
+def test_reject_with_text_and_note_keeps_the_text(cli, tmp_path, home):
+    """BUGS #64: `reject --text T --note N` dropped T, the rework instruction the re-run step reads."""
+    p = write_plan(tmp_path, [sh("a", "echo '${feedback}' > fb.txt", files={"fb": "fb.txt"}),
+                              {"id": "review", "kind": "gate", "needs": ["a"], "on_reject": {"rerun": ["a"]}}])
+    code, out = cli("run", str(p), "--yes", "--timeout", "30")
+    rid = out["data"]["run_id"]
+    code, out = cli("reject", rid, "review", "--text", "k=20", "--note", "asked in chat", "--wait", "--timeout", "30")
+    assert code == 3, out
+    fb = Engine(RunPaths(home, rid)).state().nodes["a"].result.files["fb"]["path"]
+    assert open(fb).read().split()[0] == "k=20"
+
+
 def test_status_follow_list_show_log(cli, tmp_path, home):
     p = write_plan(tmp_path, [sh("a", out_json({"v": {"deep": [10, 20]}, "s": "hi"}) + "\necho data > f.txt",
                                  files={"f": "f.txt"})])

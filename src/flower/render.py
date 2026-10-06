@@ -206,7 +206,7 @@ def node_activity(st: RunState, paths: RunPaths, ns: NodeState, spec: dict) -> s
             return f"{j.get('state') or 'QUEUED'} · slurm job {j['job_id']}" + (f" ({j.get('sched')})" if j.get("sched") else "")
         out = tail_text(paths.attempt_dir(ns.id, a.n) / "proc" / "stdout.log", 400).strip().splitlines()
         return first_line(out[-1], 100) if out else "running…"
-    if ns.stale:
+    if ns.stale and a:                  # a step that never ran is just pending, not "again"
         return f"queued again ({first_line(ns.stale_reason, 80)})"
     return ""
 
