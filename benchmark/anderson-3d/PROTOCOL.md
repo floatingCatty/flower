@@ -5,7 +5,7 @@ Exported from run `anderson-3d-20261005-021220-0e6e`: the steps behind `fss`.
 ## Reproduce
 
 ```bash
-flower run protocol.yaml -y
+flower run protocol.yaml --follow
 flower compare RUN expected.json      # RUN: the id the first command prints
 ```
 

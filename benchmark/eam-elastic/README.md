@@ -75,7 +75,7 @@ What the study found:
 ## Reproduce
 
 [`protocol.yaml`](protocol.yaml), [`expected.json`](expected.json), [`PROTOCOL.md`](PROTOCOL.md):
-`flower run eam-elastic/protocol.yaml -y --inputs my-machines.json`, then `flower compare RUN eam-elastic/expected.json`.
+`flower run eam-elastic/protocol.yaml --follow --inputs my-machines.json`, then `flower compare RUN eam-elastic/expected.json`.
 
 ## Files
 - [`tables.py`](tables.py): Tables 1–3 from the paper's text layer.

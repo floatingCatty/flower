@@ -1,5 +1,5 @@
 # A reproducibility protocol exported from run a24-20261005-072811-bb36 (`flower export`): the steps behind
-# analysis. Run it with `flower run protocol.yaml -y`, then `flower compare RUN expected.json`.
+# analysis. Run it with `flower run protocol.yaml --follow`, then `flower compare RUN expected.json`.
 flower: 1
 id: a24
 title: 'Reproduce the A24 benchmark interaction energies of 24 small noncovalent dimers (Rezac and Hobza, JCTC 9,

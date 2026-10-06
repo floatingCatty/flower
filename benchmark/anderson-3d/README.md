@@ -58,7 +58,7 @@ the quick steps, and the reference now says so.
 ## Reproduce
 
 [`protocol.yaml`](protocol.yaml), [`expected.json`](expected.json), [`PROTOCOL.md`](PROTOCOL.md):
-`flower run anderson-3d/protocol.yaml -y`, then `flower compare RUN anderson-3d/expected.json`.
+`flower run anderson-3d/protocol.yaml --follow`, then `flower compare RUN anderson-3d/expected.json`.
 
 ## Files
 - [`tables.py`](tables.py): Tables II and III from the paper's text layer.

@@ -1,5 +1,5 @@
 # A reproducibility protocol exported from run anderson-3d-20261005-021220-0e6e (`flower export`): the steps behind
-# fss. Run it with `flower run protocol.yaml -y`, then `flower compare RUN expected.json`.
+# fss. Run it with `flower run protocol.yaml --follow`, then `flower compare RUN expected.json`.
 flower: 1
 id: anderson-3d
 title: Reproduce the critical disorder W_c = 16.54(2) and the localization-length exponent nu = 1.57(2) of the 3D

@@ -52,7 +52,7 @@ What this benchmark found in flower (tests/core/BUGS.md #41–#43, each fixed wi
 
 * a `cpus:` budget added to a running draft's cluster was silently ignored, so three 8-core jobs started on a
   machine meant to give the study 16 cores. A cluster's pacing settings (`cpus`, `max_jobs`, `min_poll`) may
-  now change in a running plan, and `flower sync RUN` applies plan-file edits without re-running anything.
+  now change in a running plan, and `flower rerun RUN` applies plan-file edits without re-running anything.
   Notes such as an ignored edit now reach `--json` output;
 * `flower sync` saw finished steps with an `environment:` as edited (empty `stage_in`/`resources` in the run,
   absent in the file) and proposed to re-run them;
@@ -66,7 +66,7 @@ What this benchmark found in flower (tests/core/BUGS.md #41–#43, each fixed wi
 
 `flower export j1j2-chain-20261004-000321-0850 analysis` distilled the run into [`protocol.yaml`](protocol.yaml)
 (the 6 steps behind the analysis, without the probes), [`expected.json`](expected.json) and
-[`PROTOCOL.md`](PROTOCOL.md). From a fresh clone of the repository, `flower run j1j2-chain/protocol.yaml -y`
+[`PROTOCOL.md`](PROTOCOL.md). From a fresh clone of the repository, `flower run j1j2-chain/protocol.yaml --follow`
 (with the remote's ssh inputs) ran 28 nodes in 70 minutes (sharing the remote with the S22 campaign), and
 `flower compare RUN j1j2-chain/expected.json` found all 24 expected results equal within 10⁻⁶.
 

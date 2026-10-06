@@ -1,5 +1,5 @@
 # A reproducibility protocol exported from run xy-entanglement-20261005-132320-e713 (`flower export`): the steps behind
-# analysis. Run it with `flower run protocol.yaml -y`, then `flower compare RUN expected.json`.
+# analysis. Run it with `flower run protocol.yaml --follow`, then `flower compare RUN expected.json`.
 flower: 1
 id: xy-entanglement
 title: 'Reproduce the entanglement entropy of spin blocks in critical and non-critical XY/XX chains (Vidal, Latorre,

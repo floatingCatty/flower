@@ -5,7 +5,7 @@ Exported from run `eam-elastic-20261004-235527-038f`: the steps behind `analysis
 ## Reproduce
 
 ```bash
-flower run protocol.yaml -y --inputs my-inputs.json
+flower run protocol.yaml --follow --inputs my-inputs.json
 flower compare RUN expected.json      # RUN: the id the first command prints
 ```
 

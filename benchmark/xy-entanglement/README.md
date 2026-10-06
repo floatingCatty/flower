@@ -52,7 +52,7 @@ RUN check` re-ran the curves and the analysis below it).
 ## Reproduce
 
 [`protocol.yaml`](protocol.yaml), [`expected.json`](expected.json), [`PROTOCOL.md`](PROTOCOL.md):
-`flower run xy-entanglement/protocol.yaml -y`, then `flower compare RUN xy-entanglement/expected.json`.
+`flower run xy-entanglement/protocol.yaml --follow`, then `flower compare RUN xy-entanglement/expected.json`.
 
 ## Files
 - [`ent.py`](ent.py): the Majorana method, its check, curves and large blocks.

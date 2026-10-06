@@ -1,9 +1,9 @@
-# A draft started with `flower start`: the run exists from the first minute and grows step by step.
-# Each addition is a recorded amendment of the run (see `flower log RUN`).
-#   add a step and run it:   flower add RUN ID -- <command>         (on a cluster: --cluster C --env E)
-#   or edit this file, then: flower rerun RUN ID --follow   (or `flower sync RUN`: apply edits, re-run nothing)
-# New `inputs:` (with a default, or `-i NAME=VALUE`) and new `clusters:` are picked up the same way; of an
-# existing cluster, only cpus / max_jobs / min_poll may change.
+# A draft started with `flower start`: the run exists from the first minute and grows step by step; every change
+# of this file is recorded in the run (`flower log RUN`).
+#   add a step and run it:  flower add RUN ID -- <command>   (on a cluster: --cluster C --env E; --follow to watch)
+#   or edit this file, then: flower rerun RUN [ID]           (applies the edits; with ID, runs that step again)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and `clusters:` are picked up the same way; of an existing
+# cluster, only cpus / max_jobs / min_poll may change.
 
 flower: 1
 id: xy-entanglement

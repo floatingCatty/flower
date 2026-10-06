@@ -1,5 +1,5 @@
 # A reproducibility protocol exported from run eam-elastic-20261004-235527-038f (`flower export`): the steps behind
-# analysis. Run it with `flower run protocol.yaml -y`, then `flower compare RUN expected.json`.
+# analysis. Run it with `flower run protocol.yaml --follow`, then `flower compare RUN expected.json`.
 flower: 1
 id: eam-elastic
 title: Reproduce the room-temperature elastic constants C11, C12, C44 of Cu, Al and Ni predicted by the EAM interatomic

@@ -49,7 +49,7 @@ What the study found:
 ## Reproduce
 
 [`protocol.yaml`](protocol.yaml), [`expected.json`](expected.json), [`PROTOCOL.md`](PROTOCOL.md):
-`flower run a24/protocol.yaml -y --inputs my-machines.json`, then `flower compare RUN a24/expected.json`.
+`flower run a24/protocol.yaml --follow --inputs my-machines.json`, then `flower compare RUN a24/expected.json`.
 
 ## Files
 - [`a24.py`](a24.py): the database parser and one dimer at one level.

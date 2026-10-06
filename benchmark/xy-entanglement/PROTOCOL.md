@@ -5,7 +5,7 @@ Exported from run `xy-entanglement-20261005-132320-e713`: the steps behind `anal
 ## Reproduce
 
 ```bash
-flower run protocol.yaml -y
+flower run protocol.yaml --follow
 flower compare RUN expected.json      # RUN: the id the first command prints
 ```
 
