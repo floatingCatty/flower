@@ -1,2 +1,0 @@
-export PATH="$FLOWER_ENV_PREFIX/bin:$PATH"
-export OMP_NUM_THREADS="${OMP_NUM_THREADS:-4}"
