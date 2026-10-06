@@ -57,7 +57,7 @@ def find(name: str, start: str | os.PathLike | None) -> Path | None:
     return None
 
 
-BOOKKEEPING = ("FROZEN.json", "sessions", "history")   # not hashed (the last two: from older flowers)
+BOOKKEEPING = ("FROZEN.json", "sessions", "history")   # not hashed (the last two: left by older flowers)
 
 
 def recipe_files(d: Path) -> dict[str, str]:
