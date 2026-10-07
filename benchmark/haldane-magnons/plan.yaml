@@ -1,0 +1,122 @@
+# A draft started with `flower start`: the run exists from the first minute and grows step by step; every change
+# of this file is recorded in the run (`flower log RUN`).
+#   add a step and run it:  flower add RUN ID -- <command>   (on a cluster: --cluster C --env E; --follow to watch)
+#   or edit this file, then: flower rerun RUN [ID]           (applies the edits; with ID, runs that step again)
+# New `inputs:` (with a default, or `-i NAME=VALUE`) and `clusters:` are picked up the same way; of an existing
+# cluster, only cpus / max_jobs / min_poll may change.
+
+flower: 1
+id: haldane-magnons
+title: "Reproduce the low-lying spectrum of the open S=1 Heisenberg chain by DMRG (Sorensen and Affleck, PRL 71, 1633 (1993), arXiv:cond-mat/9306036): the L=100 energies of Table I, the gap and spin-wave velocity from the finite-size fit, the free-fermion magnon states with 1-3 magnons"
+
+inputs:
+  host: {type: string, required: true}
+  ssh_options: {type: array, required: true}
+
+clusters:
+  remote: {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", scheduler: none,
+           min_poll: 10s, cpus: 32}
+
+nodes:
+  - id: paper
+    description: 'The paper (arXiv v1, sha256) and its numbers: Table I (L = 100 energies of the lowest M = 1..4 states) and the fit results, each checked against the PDF text. n_checked should be 12.'
+    environment: analysis
+    outputs:
+      sha256: string
+      n_checked: integer
+    files:
+      claims: claims.json
+    run: python3 '${plan.dir}/paper.py'
+
+  - id: check
+    description: 'DMRG against exact diagonalization: the lowest energy of every S^z sector M = 0..4 of an open L = 10 chain. max_diff should be below 1e-9.'
+    cluster: remote
+    environment: tenpy
+    stage_in:
+    - haldane.py
+    outputs:
+      ok: boolean
+      max_diff: number
+    resources:
+      cpus_per_task: 2
+    run: python3 haldane.py check
+
+  - id: chi
+    description: 'Convergence in the bond dimension: the lowest M = 0..4 energies of the L = 100 chain at chi = ${item}. E should change by far less than the paper''s last digit (1e-6) between the two largest chi.'
+    needs:
+    - check
+    cluster: remote
+    environment: tenpy
+    stage_in:
+    - haldane.py
+    foreach:
+    - 64
+    - 128
+    - 256
+    outputs:
+      L: integer
+      chi: integer
+      E: array
+    resources:
+      cpus_per_task: 4
+    title: Bond dimension ${item}
+    run: python3 haldane.py point 100 '${item}'
+
+  - id: levels
+    description: 'The lowest M = 0..4 states of the open chain of length ${item} at chi = 256 (converged at L = 100, see chi): energies, <S^z_i>, bond energies and parity. The analysis fits the gaps E_M - E_1 against 1/(L-1)^2.'
+    needs:
+    - chi
+    cluster: remote
+    environment: tenpy
+    stage_in:
+    - haldane.py
+    foreach:
+    - 20
+    - 24
+    - 28
+    - 32
+    - 36
+    - 40
+    - 44
+    - 48
+    - 52
+    - 56
+    - 60
+    - 64
+    - 68
+    - 72
+    - 76
+    - 80
+    - 84
+    - 88
+    - 92
+    - 96
+    - 100
+    - 120
+    - 140
+    - 160
+    outputs:
+      L: integer
+      E: array
+      parity: array
+    resources:
+      cpus_per_task: 4
+    title: L = ${item}
+    retry:
+      max_attempts: 2
+    run: python3 haldane.py point '${item}' 256 --profiles
+
+  - id: analysis
+    description: 'The claims: Table I at L = 100, the gap and velocity from E_2 - E_1 against 1/(L-1)^2 (L <= 100), the 2- and 3-magnon fits (sum n^2 = 5 and 14 for free fermions), the magnon profiles of Figs. 1-3 and the parities. Read n_reproduced of n_claims and report.md.'
+    environment: analysis
+    outputs:
+      n_claims: integer
+      n_reproduced: integer
+    files:
+      report: report.md
+      figure: magnons.png
+      data: analysis.json
+    inputs:
+      levels: ${levels.outputs.items}
+      claims: ${paper.files.claims}
+    run: python3 '${plan.dir}/analysis.py'
