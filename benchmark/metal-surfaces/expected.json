@@ -1,0 +1,5220 @@
+{
+ "from_run": "metal-surfaces-20261006-184156-1093",
+ "environments": {
+  "qe": "sha256:a263b400fb5370caf57af21cd3dbb5f6fd66f177dc9b31fca37090bb9e101efa",
+  "ase": "sha256:a00ce319c08bcc7f3bba7da548911c655c8247fc418ef3fea7be9871b000047a",
+  "analysis": "sha256:0e1294d20e1771ce93e613c5141c0d0cf3ec698d1b0a213e59824bfaee111d31"
+ },
+ "steps": {
+  "analysis": {
+   "by_table": {
+    "I": [
+     7,
+     8
+    ],
+    "II": [
+     27,
+     36
+    ],
+    "III": [
+     26,
+     36
+    ],
+    "IV": [
+     11,
+     12
+    ],
+    "text": [
+     4,
+     5
+    ]
+   },
+   "n_claims": 97,
+   "n_reproduced": 75
+  },
+  "conv-in": {
+   "items": [
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 4.06,
+     "case": "slab-Al111-k24",
+     "cost": 247.5,
+     "el": "Al",
+     "face": "111",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.98,
+     "case": "slab-Pd100-k24",
+     "cost": 247.5,
+     "el": "Pd",
+     "face": "100",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.99,
+     "case": "slab-Pt110-k24",
+     "cost": 175.3,
+     "el": "Pt",
+     "face": "110",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 4.06,
+     "case": "slab-Al111-k20",
+     "cost": 171.9,
+     "el": "Al",
+     "face": "111",
+     "kind": "series",
+     "kslab": 20,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.98,
+     "case": "slab-Pd100-k20",
+     "cost": 171.9,
+     "el": "Pd",
+     "face": "100",
+     "kind": "series",
+     "kslab": 20,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.99,
+     "case": "slab-Pt110-k20",
+     "cost": 120.3,
+     "el": "Pt",
+     "face": "110",
+     "kind": "series",
+     "kslab": 20,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 4.06,
+     "case": "slab-Al111-k16",
+     "cost": 110.0,
+     "el": "Al",
+     "face": "111",
+     "kind": "series",
+     "kslab": 16,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 4.06,
+     "case": "slab-Al111-k16-vac12",
+     "cost": 110.0,
+     "el": "Al",
+     "face": "111",
+     "kind": "series",
+     "kslab": 16,
+     "n_inputs": 3,
+     "vacuum": 12.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 4.06,
+     "case": "slab-Al111-k16-vac20",
+     "cost": 110.0,
+     "el": "Al",
+     "face": "111",
+     "kind": "series",
+     "kslab": 16,
+     "n_inputs": 3,
+     "vacuum": 20.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.98,
+     "case": "slab-Pd100-k16",
+     "cost": 110.0,
+     "el": "Pd",
+     "face": "100",
+     "kind": "series",
+     "kslab": 16,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.98,
+     "case": "slab-Pd100-k16-vac12",
+     "cost": 110.0,
+     "el": "Pd",
+     "face": "100",
+     "kind": "series",
+     "kslab": 16,
+     "n_inputs": 3,
+     "vacuum": 12.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.98,
+     "case": "slab-Pd100-k16-vac20",
+     "cost": 110.0,
+     "el": "Pd",
+     "face": "100",
+     "kind": "series",
+     "kslab": 16,
+     "n_inputs": 3,
+     "vacuum": 20.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.99,
+     "case": "slab-Pt110-k16",
+     "cost": 75.6,
+     "el": "Pt",
+     "face": "110",
+     "kind": "series",
+     "kslab": 16,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.99,
+     "case": "slab-Pt110-k16-vac12",
+     "cost": 75.6,
+     "el": "Pt",
+     "face": "110",
+     "kind": "series",
+     "kslab": 16,
+     "n_inputs": 3,
+     "vacuum": 12.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.99,
+     "case": "slab-Pt110-k16-vac20",
+     "cost": 75.6,
+     "el": "Pt",
+     "face": "110",
+     "kind": "series",
+     "kslab": 16,
+     "n_inputs": 3,
+     "vacuum": 20.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 4.06,
+     "case": "slab-Al111-k12",
+     "cost": 61.9,
+     "el": "Al",
+     "face": "111",
+     "kind": "series",
+     "kslab": 12,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.98,
+     "case": "slab-Pd100-k12",
+     "cost": 61.9,
+     "el": "Pd",
+     "face": "100",
+     "kind": "series",
+     "kslab": 12,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.99,
+     "case": "slab-Pt110-k12",
+     "cost": 41.2,
+     "el": "Pt",
+     "face": "110",
+     "kind": "series",
+     "kslab": 12,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 4.06,
+     "case": "slab-Al111-k8",
+     "cost": 27.5,
+     "el": "Al",
+     "face": "111",
+     "kind": "series",
+     "kslab": 8,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.98,
+     "case": "slab-Pd100-k8",
+     "cost": 27.5,
+     "el": "Pd",
+     "face": "100",
+     "kind": "series",
+     "kslab": 8,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5,
+      6,
+      7
+     ],
+     "a0": 3.99,
+     "case": "slab-Pt110-k8",
+     "cost": 20.6,
+     "el": "Pt",
+     "face": "110",
+     "kind": "series",
+     "kslab": 8,
+     "n_inputs": 3,
+     "vacuum": 16.0
+    },
+    {
+     "case": "eos-Al-k12",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Al",
+     "k": 12,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Al-k16",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Al",
+     "k": 16,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Al-k20",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Al",
+     "k": 20,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Al-k24",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Al",
+     "k": 24,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Al-k16-ecut48",
+     "cost": 7,
+     "ecutwfc": 48,
+     "el": "Al",
+     "k": 16,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pd-k12",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Pd",
+     "k": 12,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pd-k16",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Pd",
+     "k": 16,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pd-k20",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Pd",
+     "k": 20,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pd-k24",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Pd",
+     "k": 24,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pd-k16-ecut48",
+     "cost": 7,
+     "ecutwfc": 48,
+     "el": "Pd",
+     "k": 16,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pt-k12",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Pt",
+     "k": 12,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pt-k16",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Pt",
+     "k": 16,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pt-k20",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Pt",
+     "k": 20,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pt-k24",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Pt",
+     "k": 24,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Pt-k16-ecut48",
+     "cost": 7,
+     "ecutwfc": 48,
+     "el": "Pt",
+     "k": 16,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Au-k12",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Au",
+     "k": 12,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Au-k16",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Au",
+     "k": 16,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Au-k20",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Au",
+     "k": 20,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Au-k24",
+     "cost": 7,
+     "ecutwfc": 32,
+     "el": "Au",
+     "k": 24,
+     "kind": "eos",
+     "n_inputs": 7
+    },
+    {
+     "case": "eos-Au-k16-ecut48",
+     "cost": 7,
+     "ecutwfc": 48,
+     "el": "Au",
+     "k": 16,
+     "kind": "eos",
+     "n_inputs": 7
+    }
+   ],
+   "n": 41,
+   "n_inputs": 203,
+   "total_cost": 2401.8
+  },
+  "conv-report": {
+   "B": {
+    "Al": 74.5,
+    "Au": 133.4,
+    "Pd": 163.2,
+    "Pt": 238.8
+   },
+   "a0": {
+    "Al": 4.0585,
+    "Au": 4.1786,
+    "Pd": 3.9806,
+    "Pt": 3.9971
+   },
+   "auto": {
+    "degauss": 0.02,
+    "ecutrho": 512,
+    "ecutwfc": 32,
+    "k_bulk": 16,
+    "kslab": 24,
+    "vacuum": 12.0
+   },
+   "estimate": {
+    "core_hours": 221.7,
+    "jobs": 29,
+    "wall_hours_32_cores": 6.9
+   },
+   "proposal": "Production settings proposed by the convergence study with your overrides:\n- cutoff 32/512 Ry (the paper's); at 48/768 Ry a0 moves by at most 0.0008 A and B by 0.4 %\n- bulk k-mesh 16^3: a0 = Al 4.059, Pd 3.981, Pt 3.997, Au 4.179 A (paper 4.06, 3.98, 3.99, 4.16)\n- slab k-mesh 24 x 24 ((110): 17 x 24): THE LARGEST MESH COMPUTED, convergence not shown: at k=20 Al111 is +0.0068 eV/atom off (the criterion: 0.005)\n- vacuum 16 A (the paper's: 16 A)\n- production: 12 faces x 4-13 layers unrelaxed + 13-layer relaxations + Pd(100) relaxed at 5-15 layers: 29 jobs, about 221.7 core-hours, 6.9 h on 32 cores\n- overridden: vacuum 12.0 -> 16.0",
+   "settings": {
+    "degauss": 0.02,
+    "ecutrho": 512,
+    "ecutwfc": 32,
+    "k_bulk": 16,
+    "kslab": 24,
+    "vacuum": 16.0
+   }
+  },
+  "conv[0]": {
+   "case": "slab-Al111-k24",
+   "runs": [
+    {
+     "E_Ry": -20.64909457,
+     "Ef_eV": 1.4569,
+     "Vvac_eV": 5.568653,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1222.2931,
+     "wall": "49.05s"
+    },
+    {
+     "E_Ry": -24.79050634,
+     "Ef_eV": 2.0224,
+     "Vvac_eV": 6.075284,
+     "bfgs_steps": 0,
+     "iterations": 25,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1335.1985,
+     "wall": "1m19.11s"
+    },
+    {
+     "E_Ry": -28.93041396,
+     "Ef_eV": 2.4833,
+     "Vvac_eV": 6.513565,
+     "bfgs_steps": 0,
+     "iterations": 24,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1448.1039,
+     "wall": "1m8.06s"
+    }
+   ]
+  },
+  "conv[10]": {
+   "case": "slab-Pd100-k16-vac12",
+   "runs": [
+    {
+     "E_Ry": -380.24578833,
+     "Ef_eV": 4.0181,
+     "Vvac_eV": 9.12488,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1066.8253,
+     "wall": "52.58s"
+    },
+    {
+     "E_Ry": -456.31633661,
+     "Ef_eV": 4.847,
+     "Vvac_eV": 9.960761,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1173.1871,
+     "wall": "1m6.39s"
+    },
+    {
+     "E_Ry": -532.38744051,
+     "Ef_eV": 5.5403,
+     "Vvac_eV": 10.651587,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1279.5489,
+     "wall": "1m45.36s"
+    }
+   ]
+  },
+  "conv[11]": {
+   "case": "slab-Pd100-k16-vac20",
+   "runs": [
+    {
+     "E_Ry": -380.24578661,
+     "Ef_eV": 1.4077,
+     "Vvac_eV": 6.513881,
+     "bfgs_steps": 0,
+     "iterations": 23,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1494.4105,
+     "wall": "1m44.68s"
+    },
+    {
+     "E_Ry": -456.31633382,
+     "Ef_eV": 2.1864,
+     "Vvac_eV": 7.300388,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1600.7724,
+     "wall": "1m39.62s"
+    },
+    {
+     "E_Ry": -532.38743958,
+     "Ef_eV": 2.8726,
+     "Vvac_eV": 7.983785,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1707.1342,
+     "wall": "2m44.72s"
+    }
+   ]
+  },
+  "conv[12]": {
+   "case": "slab-Pt110-k16",
+   "runs": [
+    {
+     "E_Ry": -432.93419583,
+     "Ef_eV": 1.8008,
+     "Vvac_eV": 7.086054,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1644.1411,
+     "wall": "1m55.16s"
+    },
+    {
+     "E_Ry": -519.55843677,
+     "Ef_eV": 2.6266,
+     "Vvac_eV": 8.043681,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1751.3066,
+     "wall": "2m10.25s"
+    },
+    {
+     "E_Ry": -606.18808161,
+     "Ef_eV": 3.4945,
+     "Vvac_eV": 8.804066,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1858.4722,
+     "wall": "2m45.68s"
+    }
+   ]
+  },
+  "conv[13]": {
+   "case": "slab-Pt110-k16-vac12",
+   "runs": [
+    {
+     "E_Ry": -432.9341969,
+     "Ef_eV": 3.4072,
+     "Vvac_eV": 8.692868,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1340.2714,
+     "wall": "1m23.04s"
+    },
+    {
+     "E_Ry": -519.55843332,
+     "Ef_eV": 4.3151,
+     "Vvac_eV": 9.732645,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1447.4369,
+     "wall": "1m49.16s"
+    },
+    {
+     "E_Ry": -606.18809044,
+     "Ef_eV": 5.2152,
+     "Vvac_eV": 10.525287,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1554.6025,
+     "wall": "2m13.69s"
+    }
+   ]
+  },
+  "conv[14]": {
+   "case": "slab-Pt110-k16-vac20",
+   "runs": [
+    {
+     "E_Ry": -432.93418846,
+     "Ef_eV": 0.6957,
+     "Vvac_eV": 5.980605,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1948.0108,
+     "wall": "2m19.91s"
+    },
+    {
+     "E_Ry": -519.55843067,
+     "Ef_eV": 1.4375,
+     "Vvac_eV": 6.854255,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 2055.1763,
+     "wall": "2m33.38s"
+    },
+    {
+     "E_Ry": -606.18807714,
+     "Ef_eV": 2.2574,
+     "Vvac_eV": 7.566763,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 2162.3419,
+     "wall": "2m16.45s"
+    }
+   ]
+  },
+  "conv[15]": {
+   "case": "slab-Al111-k12",
+   "runs": [
+    {
+     "E_Ry": -20.65105547,
+     "Ef_eV": 1.4635,
+     "Vvac_eV": 5.573143,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1222.2931,
+     "wall": "29.60s"
+    },
+    {
+     "E_Ry": -24.79204207,
+     "Ef_eV": 1.9707,
+     "Vvac_eV": 6.059378,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1335.1985,
+     "wall": "34.28s"
+    },
+    {
+     "E_Ry": -28.93148234,
+     "Ef_eV": 2.4572,
+     "Vvac_eV": 6.49889,
+     "bfgs_steps": 0,
+     "iterations": 33,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1448.1039,
+     "wall": "59.27s"
+    }
+   ]
+  },
+  "conv[16]": {
+   "case": "slab-Pd100-k12",
+   "runs": [
+    {
+     "E_Ry": -380.24561962,
+     "Ef_eV": 2.4916,
+     "Vvac_eV": 7.598628,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1280.6179,
+     "wall": "55.51s"
+    },
+    {
+     "E_Ry": -456.31607153,
+     "Ef_eV": 3.3064,
+     "Vvac_eV": 8.420769,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1386.9797,
+     "wall": "59.57s"
+    },
+    {
+     "E_Ry": -532.38713395,
+     "Ef_eV": 4.0137,
+     "Vvac_eV": 9.120436,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1493.3416,
+     "wall": "1m25.41s"
+    }
+   ]
+  },
+  "conv[17]": {
+   "case": "slab-Pt110-k12",
+   "runs": [
+    {
+     "E_Ry": -432.93487156,
+     "Ef_eV": 1.8018,
+     "Vvac_eV": 7.084248,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1644.1411,
+     "wall": "1m30.04s"
+    },
+    {
+     "E_Ry": -519.55936176,
+     "Ef_eV": 2.626,
+     "Vvac_eV": 8.044369,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1751.3066,
+     "wall": "1m25.95s"
+    },
+    {
+     "E_Ry": -606.1889287,
+     "Ef_eV": 3.4918,
+     "Vvac_eV": 8.805153,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1858.4722,
+     "wall": "1m28.20s"
+    }
+   ]
+  },
+  "conv[18]": {
+   "case": "slab-Al111-k8",
+   "runs": [
+    {
+     "E_Ry": -20.64653541,
+     "Ef_eV": 1.4724,
+     "Vvac_eV": 5.574812,
+     "bfgs_steps": 0,
+     "iterations": 26,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1222.2931,
+     "wall": "38.54s"
+    },
+    {
+     "E_Ry": -24.79198883,
+     "Ef_eV": 1.9092,
+     "Vvac_eV": 6.079245,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1335.1985,
+     "wall": "27.42s"
+    },
+    {
+     "E_Ry": -28.93050932,
+     "Ef_eV": 2.4679,
+     "Vvac_eV": 6.464136,
+     "bfgs_steps": 0,
+     "iterations": 27,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1448.1039,
+     "wall": "35.08s"
+    }
+   ]
+  },
+  "conv[19]": {
+   "case": "slab-Pd100-k8",
+   "runs": [
+    {
+     "E_Ry": -380.24439374,
+     "Ef_eV": 2.4895,
+     "Vvac_eV": 7.614883,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1280.6179,
+     "wall": "53.51s"
+    },
+    {
+     "E_Ry": -456.31387453,
+     "Ef_eV": 3.3199,
+     "Vvac_eV": 8.432814,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1386.9797,
+     "wall": "44.29s"
+    },
+    {
+     "E_Ry": -532.38457501,
+     "Ef_eV": 4.0322,
+     "Vvac_eV": 9.121879,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1493.3416,
+     "wall": "55.99s"
+    }
+   ]
+  },
+  "conv[1]": {
+   "case": "slab-Pd100-k24",
+   "runs": [
+    {
+     "E_Ry": -380.24567466,
+     "Ef_eV": 2.4951,
+     "Vvac_eV": 7.600699,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1280.6179,
+     "wall": "2m22.10s"
+    },
+    {
+     "E_Ry": -456.31614194,
+     "Ef_eV": 3.3102,
+     "Vvac_eV": 8.424517,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1386.9797,
+     "wall": "3m12.24s"
+    },
+    {
+     "E_Ry": -532.38722204,
+     "Ef_eV": 4.015,
+     "Vvac_eV": 9.125258,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1493.3416,
+     "wall": "4m15.14s"
+    }
+   ]
+  },
+  "conv[20]": {
+   "case": "slab-Pt110-k8",
+   "runs": [
+    {
+     "E_Ry": -432.93224391,
+     "Ef_eV": 1.7996,
+     "Vvac_eV": 7.081232,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1644.1411,
+     "wall": "49.28s"
+    },
+    {
+     "E_Ry": -519.5565086,
+     "Ef_eV": 2.6263,
+     "Vvac_eV": 8.04009,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1751.3066,
+     "wall": "57.80s"
+    },
+    {
+     "E_Ry": -606.18618083,
+     "Ef_eV": 3.4864,
+     "Vvac_eV": 8.802971,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1858.4722,
+     "wall": "57.91s"
+    }
+   ]
+  },
+  "conv[21]": {
+   "case": "eos-Al-k12",
+   "runs": [
+    {
+     "E_Ry": -4.13842818,
+     "Ef_eV": 8.7027,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.0457,
+     "wall": "1.14s"
+    },
+    {
+     "E_Ry": -4.1399126,
+     "Ef_eV": 8.3704,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.2657,
+     "wall": "1.11s"
+    },
+    {
+     "E_Ry": -4.14076541,
+     "Ef_eV": 8.0469,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.552,
+     "wall": "1.24s"
+    },
+    {
+     "E_Ry": -4.14104399,
+     "Ef_eV": 7.733,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.9054,
+     "wall": "1.22s"
+    },
+    {
+     "E_Ry": -4.14080077,
+     "Ef_eV": 7.429,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.3265,
+     "wall": "1.02s"
+    },
+    {
+     "E_Ry": -4.14008411,
+     "Ef_eV": 7.135,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 119.8161,
+     "wall": "1.05s"
+    },
+    {
+     "E_Ry": -4.13893943,
+     "Ef_eV": 6.8505,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 123.3748,
+     "wall": "1.73s"
+    }
+   ]
+  },
+  "conv[22]": {
+   "case": "eos-Al-k16",
+   "runs": [
+    {
+     "E_Ry": -4.13842333,
+     "Ef_eV": 8.8453,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.0457,
+     "wall": "1.19s"
+    },
+    {
+     "E_Ry": -4.13987834,
+     "Ef_eV": 8.5124,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.2657,
+     "wall": "1.35s"
+    },
+    {
+     "E_Ry": -4.14069903,
+     "Ef_eV": 8.189,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.552,
+     "wall": "1.30s"
+    },
+    {
+     "E_Ry": -4.14094679,
+     "Ef_eV": 7.8745,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.9054,
+     "wall": "1.47s"
+    },
+    {
+     "E_Ry": -4.14067879,
+     "Ef_eV": 7.5684,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.3265,
+     "wall": "1.58s"
+    },
+    {
+     "E_Ry": -4.1399479,
+     "Ef_eV": 7.2704,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 119.8161,
+     "wall": "1.53s"
+    },
+    {
+     "E_Ry": -4.13880311,
+     "Ef_eV": 6.9804,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 123.3748,
+     "wall": "1.94s"
+    }
+   ]
+  },
+  "conv[23]": {
+   "case": "eos-Al-k20",
+   "runs": [
+    {
+     "E_Ry": -4.13808267,
+     "Ef_eV": 8.8467,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.0457,
+     "wall": "2.03s"
+    },
+    {
+     "E_Ry": -4.13952558,
+     "Ef_eV": 8.5165,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.2657,
+     "wall": "1.75s"
+    },
+    {
+     "E_Ry": -4.14033831,
+     "Ef_eV": 8.1946,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.552,
+     "wall": "1.96s"
+    },
+    {
+     "E_Ry": -4.14058327,
+     "Ef_eV": 7.8807,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.9054,
+     "wall": "2.19s"
+    },
+    {
+     "E_Ry": -4.140318,
+     "Ef_eV": 7.5747,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.3265,
+     "wall": "1.86s"
+    },
+    {
+     "E_Ry": -4.13959522,
+     "Ef_eV": 7.2766,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 119.8161,
+     "wall": "2.11s"
+    },
+    {
+     "E_Ry": -4.13846325,
+     "Ef_eV": 6.9866,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 123.3748,
+     "wall": "3.34s"
+    }
+   ]
+  },
+  "conv[24]": {
+   "case": "eos-Al-k24",
+   "runs": [
+    {
+     "E_Ry": -4.13801997,
+     "Ef_eV": 8.8287,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.0457,
+     "wall": "2.60s"
+    },
+    {
+     "E_Ry": -4.1394552,
+     "Ef_eV": 8.4967,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.2657,
+     "wall": "2.43s"
+    },
+    {
+     "E_Ry": -4.14026134,
+     "Ef_eV": 8.1739,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.552,
+     "wall": "2.56s"
+    },
+    {
+     "E_Ry": -4.14050024,
+     "Ef_eV": 7.8602,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.9054,
+     "wall": "3.22s"
+    },
+    {
+     "E_Ry": -4.14022879,
+     "Ef_eV": 7.5556,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.3265,
+     "wall": "2.60s"
+    },
+    {
+     "E_Ry": -4.13949946,
+     "Ef_eV": 7.2597,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 119.8161,
+     "wall": "2.84s"
+    },
+    {
+     "E_Ry": -4.13836087,
+     "Ef_eV": 6.9724,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 123.3748,
+     "wall": "4.63s"
+    }
+   ]
+  },
+  "conv[25]": {
+   "case": "eos-Al-k16-ecut48",
+   "runs": [
+    {
+     "E_Ry": -4.13843286,
+     "Ef_eV": 8.8453,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.0457,
+     "wall": "2.45s"
+    },
+    {
+     "E_Ry": -4.13988759,
+     "Ef_eV": 8.5123,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.2657,
+     "wall": "2.79s"
+    },
+    {
+     "E_Ry": -4.14070788,
+     "Ef_eV": 8.1889,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.552,
+     "wall": "2.81s"
+    },
+    {
+     "E_Ry": -4.14095517,
+     "Ef_eV": 7.8744,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.9054,
+     "wall": "2.90s"
+    },
+    {
+     "E_Ry": -4.14068666,
+     "Ef_eV": 7.5683,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.3265,
+     "wall": "2.34s"
+    },
+    {
+     "E_Ry": -4.13995534,
+     "Ef_eV": 7.2704,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 119.8161,
+     "wall": "2.84s"
+    },
+    {
+     "E_Ry": -4.13881012,
+     "Ef_eV": 6.9804,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 123.3748,
+     "wall": "2.45s"
+    }
+   ]
+  },
+  "conv[26]": {
+   "case": "eos-Pd-k12",
+   "runs": [
+    {
+     "E_Ry": -76.06536568,
+     "Ef_eV": 15.0568,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.0736,
+     "wall": "1.93s"
+    },
+    {
+     "E_Ry": -76.06851714,
+     "Ef_eV": 14.3938,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.1069,
+     "wall": "2.11s"
+    },
+    {
+     "E_Ry": -76.07028013,
+     "Ef_eV": 13.7589,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.2028,
+     "wall": "2.13s"
+    },
+    {
+     "E_Ry": -76.07082344,
+     "Ef_eV": 13.1509,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.3618,
+     "wall": "1.66s"
+    },
+    {
+     "E_Ry": -76.07030271,
+     "Ef_eV": 12.5686,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.5847,
+     "wall": "2.03s"
+    },
+    {
+     "E_Ry": -76.06885709,
+     "Ef_eV": 12.0107,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.872,
+     "wall": "2.47s"
+    },
+    {
+     "E_Ry": -76.06660983,
+     "Ef_eV": 11.4761,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.2245,
+     "wall": "2.12s"
+    }
+   ]
+  },
+  "conv[27]": {
+   "case": "eos-Pd-k16",
+   "runs": [
+    {
+     "E_Ry": -76.0652922,
+     "Ef_eV": 15.1148,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.0736,
+     "wall": "2.58s"
+    },
+    {
+     "E_Ry": -76.06849578,
+     "Ef_eV": 14.446,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.1069,
+     "wall": "2.47s"
+    },
+    {
+     "E_Ry": -76.0702988,
+     "Ef_eV": 13.8059,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.2028,
+     "wall": "2.88s"
+    },
+    {
+     "E_Ry": -76.07087311,
+     "Ef_eV": 13.1931,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.3618,
+     "wall": "2.54s"
+    },
+    {
+     "E_Ry": -76.0703745,
+     "Ef_eV": 12.6063,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.5847,
+     "wall": "2.78s"
+    },
+    {
+     "E_Ry": -76.06894597,
+     "Ef_eV": 12.0441,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.872,
+     "wall": "3.14s"
+    },
+    {
+     "E_Ry": -76.06670828,
+     "Ef_eV": 11.5054,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.2245,
+     "wall": "2.57s"
+    }
+   ]
+  },
+  "conv[28]": {
+   "case": "eos-Pd-k20",
+   "runs": [
+    {
+     "E_Ry": -76.06514977,
+     "Ef_eV": 15.0888,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.0736,
+     "wall": "2.98s"
+    },
+    {
+     "E_Ry": -76.06834365,
+     "Ef_eV": 14.4234,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.1069,
+     "wall": "3.96s"
+    },
+    {
+     "E_Ry": -76.07013785,
+     "Ef_eV": 13.7867,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.2028,
+     "wall": "3.75s"
+    },
+    {
+     "E_Ry": -76.07071017,
+     "Ef_eV": 13.1772,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.3618,
+     "wall": "3.96s"
+    },
+    {
+     "E_Ry": -76.07021559,
+     "Ef_eV": 12.5937,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.5847,
+     "wall": "3.21s"
+    },
+    {
+     "E_Ry": -76.06879188,
+     "Ef_eV": 12.0346,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.872,
+     "wall": "3.06s"
+    },
+    {
+     "E_Ry": -76.06656492,
+     "Ef_eV": 11.4988,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.2245,
+     "wall": "3.43s"
+    }
+   ]
+  },
+  "conv[29]": {
+   "case": "eos-Pd-k24",
+   "runs": [
+    {
+     "E_Ry": -76.06527824,
+     "Ef_eV": 15.0961,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.0736,
+     "wall": "4.83s"
+    },
+    {
+     "E_Ry": -76.06846252,
+     "Ef_eV": 14.429,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.1069,
+     "wall": "5.06s"
+    },
+    {
+     "E_Ry": -76.07024787,
+     "Ef_eV": 13.7906,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.2028,
+     "wall": "5.16s"
+    },
+    {
+     "E_Ry": -76.07080874,
+     "Ef_eV": 13.1795,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.3618,
+     "wall": "5.02s"
+    },
+    {
+     "E_Ry": -76.07030278,
+     "Ef_eV": 12.5944,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.5847,
+     "wall": "4.42s"
+    },
+    {
+     "E_Ry": -76.06886761,
+     "Ef_eV": 12.0341,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.872,
+     "wall": "2.53s"
+    },
+    {
+     "E_Ry": -76.0666278,
+     "Ef_eV": 11.4973,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.2245,
+     "wall": "4.59s"
+    }
+   ]
+  },
+  "conv[2]": {
+   "case": "slab-Pt110-k24",
+   "runs": [
+    {
+     "E_Ry": -432.93435792,
+     "Ef_eV": 1.8009,
+     "Vvac_eV": 7.085753,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1644.1411,
+     "wall": "3m11.27s"
+    },
+    {
+     "E_Ry": -519.55854523,
+     "Ef_eV": 2.6266,
+     "Vvac_eV": 8.043937,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1751.3066,
+     "wall": "4m4.13s"
+    },
+    {
+     "E_Ry": -606.18821659,
+     "Ef_eV": 3.4941,
+     "Vvac_eV": 8.803896,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1858.4722,
+     "wall": "5m12.86s"
+    }
+   ]
+  },
+  "conv[30]": {
+   "case": "eos-Pd-k16-ecut48",
+   "runs": [
+    {
+     "E_Ry": -76.06579117,
+     "Ef_eV": 15.1131,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.0736,
+     "wall": "5.06s"
+    },
+    {
+     "E_Ry": -76.06898789,
+     "Ef_eV": 14.4444,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.1069,
+     "wall": "5.01s"
+    },
+    {
+     "E_Ry": -76.07078022,
+     "Ef_eV": 13.8044,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.2028,
+     "wall": "5.37s"
+    },
+    {
+     "E_Ry": -76.07134324,
+     "Ef_eV": 13.1916,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 106.3618,
+     "wall": "4.92s"
+    },
+    {
+     "E_Ry": -76.070834,
+     "Ef_eV": 12.6047,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 109.5847,
+     "wall": "4.88s"
+    },
+    {
+     "E_Ry": -76.06939213,
+     "Ef_eV": 12.0425,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 112.872,
+     "wall": "4.69s"
+    },
+    {
+     "E_Ry": -76.06714326,
+     "Ef_eV": 11.5038,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 116.2245,
+     "wall": "4.01s"
+    }
+   ]
+  },
+  "conv[31]": {
+   "case": "eos-Pt-k12",
+   "runs": [
+    {
+     "E_Ry": -86.61826146,
+     "Ef_eV": 18.9556,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.8071,
+     "wall": "2.20s"
+    },
+    {
+     "E_Ry": -86.62334541,
+     "Ef_eV": 18.146,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.8634,
+     "wall": "2.08s"
+    },
+    {
+     "E_Ry": -86.62632994,
+     "Ef_eV": 17.3706,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.9826,
+     "wall": "1.78s"
+    },
+    {
+     "E_Ry": -86.62746741,
+     "Ef_eV": 16.6286,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 107.1656,
+     "wall": "1.80s"
+    },
+    {
+     "E_Ry": -86.62698254,
+     "Ef_eV": 15.918,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.4128,
+     "wall": "2.18s"
+    },
+    {
+     "E_Ry": -86.62509107,
+     "Ef_eV": 15.2363,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 113.725,
+     "wall": "1.53s"
+    },
+    {
+     "E_Ry": -86.62198425,
+     "Ef_eV": 14.5815,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.1027,
+     "wall": "2.05s"
+    }
+   ]
+  },
+  "conv[32]": {
+   "case": "eos-Pt-k16",
+   "runs": [
+    {
+     "E_Ry": -86.61791707,
+     "Ef_eV": 18.9188,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.8071,
+     "wall": "2.53s"
+    },
+    {
+     "E_Ry": -86.62298893,
+     "Ef_eV": 18.1119,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.8634,
+     "wall": "2.65s"
+    },
+    {
+     "E_Ry": -86.62596921,
+     "Ef_eV": 17.3389,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.9826,
+     "wall": "2.39s"
+    },
+    {
+     "E_Ry": -86.62709911,
+     "Ef_eV": 16.5984,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 107.1656,
+     "wall": "2.13s"
+    },
+    {
+     "E_Ry": -86.62660583,
+     "Ef_eV": 15.8885,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.4128,
+     "wall": "2.42s"
+    },
+    {
+     "E_Ry": -86.62469824,
+     "Ef_eV": 15.2074,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 113.725,
+     "wall": "2.89s"
+    },
+    {
+     "E_Ry": -86.62157553,
+     "Ef_eV": 14.5534,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 10,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.1027,
+     "wall": "2.80s"
+    }
+   ]
+  },
+  "conv[33]": {
+   "case": "eos-Pt-k20",
+   "runs": [
+    {
+     "E_Ry": -86.61799072,
+     "Ef_eV": 18.9367,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.8071,
+     "wall": "3.19s"
+    },
+    {
+     "E_Ry": -86.62307086,
+     "Ef_eV": 18.1295,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.8634,
+     "wall": "3.27s"
+    },
+    {
+     "E_Ry": -86.62605863,
+     "Ef_eV": 17.356,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.9826,
+     "wall": "2.67s"
+    },
+    {
+     "E_Ry": -86.62719639,
+     "Ef_eV": 16.6146,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 107.1656,
+     "wall": "3.37s"
+    },
+    {
+     "E_Ry": -86.62671223,
+     "Ef_eV": 15.9036,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.4128,
+     "wall": "3.76s"
+    },
+    {
+     "E_Ry": -86.62481077,
+     "Ef_eV": 15.2214,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 113.725,
+     "wall": "3.42s"
+    },
+    {
+     "E_Ry": -86.62169356,
+     "Ef_eV": 14.5667,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.1027,
+     "wall": "4.09s"
+    }
+   ]
+  },
+  "conv[34]": {
+   "case": "eos-Pt-k24",
+   "runs": [
+    {
+     "E_Ry": -86.61799242,
+     "Ef_eV": 18.9301,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.8071,
+     "wall": "4.50s"
+    },
+    {
+     "E_Ry": -86.62307329,
+     "Ef_eV": 18.1229,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.8634,
+     "wall": "3.99s"
+    },
+    {
+     "E_Ry": -86.62605903,
+     "Ef_eV": 17.3492,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.9826,
+     "wall": "2.40s"
+    },
+    {
+     "E_Ry": -86.62719436,
+     "Ef_eV": 16.6076,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 107.1656,
+     "wall": "3.93s"
+    },
+    {
+     "E_Ry": -86.62670441,
+     "Ef_eV": 15.8966,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.4128,
+     "wall": "4.24s"
+    },
+    {
+     "E_Ry": -86.62479749,
+     "Ef_eV": 15.2146,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 113.725,
+     "wall": "5.18s"
+    },
+    {
+     "E_Ry": -86.62167491,
+     "Ef_eV": 14.5605,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.1027,
+     "wall": "4.41s"
+    }
+   ]
+  },
+  "conv[35]": {
+   "case": "eos-Pt-k16-ecut48",
+   "runs": [
+    {
+     "E_Ry": -86.61866033,
+     "Ef_eV": 18.9179,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 97.8071,
+     "wall": "4.41s"
+    },
+    {
+     "E_Ry": -86.62374108,
+     "Ef_eV": 18.111,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 100.8634,
+     "wall": "3.81s"
+    },
+    {
+     "E_Ry": -86.62672707,
+     "Ef_eV": 17.3381,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 103.9826,
+     "wall": "4.53s"
+    },
+    {
+     "E_Ry": -86.62785481,
+     "Ef_eV": 16.5976,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 107.1656,
+     "wall": "3.75s"
+    },
+    {
+     "E_Ry": -86.6273736,
+     "Ef_eV": 15.8878,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 10,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.4128,
+     "wall": "5.17s"
+    },
+    {
+     "E_Ry": -86.62547303,
+     "Ef_eV": 15.2067,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 10,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 113.725,
+     "wall": "3.96s"
+    },
+    {
+     "E_Ry": -86.62234526,
+     "Ef_eV": 14.5528,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 10,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.1027,
+     "wall": "3.53s"
+    }
+   ]
+  },
+  "conv[36]": {
+   "case": "eos-Au-k12",
+   "runs": [
+    {
+     "E_Ry": -87.77146803,
+     "Ef_eV": 16.8106,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.849,
+     "wall": "1.77s"
+    },
+    {
+     "E_Ry": -87.77519642,
+     "Ef_eV": 16.0764,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 114.3128,
+     "wall": "1.84s"
+    },
+    {
+     "E_Ry": -87.77750094,
+     "Ef_eV": 15.3752,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.848,
+     "wall": "2.13s"
+    },
+    {
+     "E_Ry": -87.77856732,
+     "Ef_eV": 14.7037,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 121.4553,
+     "wall": "2.03s"
+    },
+    {
+     "E_Ry": -87.77856455,
+     "Ef_eV": 14.06,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 125.1356,
+     "wall": "2.23s"
+    },
+    {
+     "E_Ry": -87.77763166,
+     "Ef_eV": 13.4435,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 128.8894,
+     "wall": "2.39s"
+    },
+    {
+     "E_Ry": -87.77590378,
+     "Ef_eV": 12.8551,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 132.7175,
+     "wall": "1.85s"
+    }
+   ]
+  },
+  "conv[37]": {
+   "case": "eos-Au-k16",
+   "runs": [
+    {
+     "E_Ry": -87.77216604,
+     "Ef_eV": 16.8232,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.849,
+     "wall": "2.56s"
+    },
+    {
+     "E_Ry": -87.77587267,
+     "Ef_eV": 16.0784,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 114.3128,
+     "wall": "1.89s"
+    },
+    {
+     "E_Ry": -87.77813855,
+     "Ef_eV": 15.3699,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.848,
+     "wall": "1.54s"
+    },
+    {
+     "E_Ry": -87.77915601,
+     "Ef_eV": 14.6964,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 121.4553,
+     "wall": "3.96s"
+    },
+    {
+     "E_Ry": -87.7791075,
+     "Ef_eV": 14.0556,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 125.1356,
+     "wall": "3.71s"
+    },
+    {
+     "E_Ry": -87.77813733,
+     "Ef_eV": 13.4449,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 128.8894,
+     "wall": "2.12s"
+    },
+    {
+     "E_Ry": -87.77637651,
+     "Ef_eV": 12.8624,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 132.7175,
+     "wall": "2.16s"
+    }
+   ]
+  },
+  "conv[38]": {
+   "case": "eos-Au-k20",
+   "runs": [
+    {
+     "E_Ry": -87.77221251,
+     "Ef_eV": 16.8366,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.849,
+     "wall": "3.62s"
+    },
+    {
+     "E_Ry": -87.77593585,
+     "Ef_eV": 16.1003,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 114.3128,
+     "wall": "2.52s"
+    },
+    {
+     "E_Ry": -87.7782204,
+     "Ef_eV": 15.3958,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.848,
+     "wall": "2.47s"
+    },
+    {
+     "E_Ry": -87.77925367,
+     "Ef_eV": 14.7226,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 121.4553,
+     "wall": "2.88s"
+    },
+    {
+     "E_Ry": -87.77921032,
+     "Ef_eV": 14.0808,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 125.1356,
+     "wall": "2.24s"
+    },
+    {
+     "E_Ry": -87.77823961,
+     "Ef_eV": 13.4697,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 128.8894,
+     "wall": "2.50s"
+    },
+    {
+     "E_Ry": -87.77647346,
+     "Ef_eV": 12.8875,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 132.7175,
+     "wall": "2.95s"
+    }
+   ]
+  },
+  "conv[39]": {
+   "case": "eos-Au-k24",
+   "runs": [
+    {
+     "E_Ry": -87.77225048,
+     "Ef_eV": 16.8526,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.849,
+     "wall": "4.96s"
+    },
+    {
+     "E_Ry": -87.77596457,
+     "Ef_eV": 16.1195,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 114.3128,
+     "wall": "4.58s"
+    },
+    {
+     "E_Ry": -87.77824482,
+     "Ef_eV": 15.4186,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.848,
+     "wall": "2.61s"
+    },
+    {
+     "E_Ry": -87.77927737,
+     "Ef_eV": 14.7478,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 8,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 121.4553,
+     "wall": "4.29s"
+    },
+    {
+     "E_Ry": -87.77923456,
+     "Ef_eV": 14.106,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 125.1356,
+     "wall": "3.20s"
+    },
+    {
+     "E_Ry": -87.77826226,
+     "Ef_eV": 13.493,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 128.8894,
+     "wall": "3.16s"
+    },
+    {
+     "E_Ry": -87.77649147,
+     "Ef_eV": 12.9085,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 132.7175,
+     "wall": "3.13s"
+    }
+   ]
+  },
+  "conv[3]": {
+   "case": "slab-Al111-k20",
+   "runs": [
+    {
+     "E_Ry": -20.64909526,
+     "Ef_eV": 1.4601,
+     "Vvac_eV": 5.568918,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1222.2931,
+     "wall": "46.47s"
+    },
+    {
+     "E_Ry": -24.79074573,
+     "Ef_eV": 2.0238,
+     "Vvac_eV": 6.07691,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1335.1985,
+     "wall": "40.39s"
+    },
+    {
+     "E_Ry": -28.93081673,
+     "Ef_eV": 2.4849,
+     "Vvac_eV": 6.514732,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1448.1039,
+     "wall": "43.49s"
+    }
+   ]
+  },
+  "conv[40]": {
+   "case": "eos-Au-k16-ecut48",
+   "runs": [
+    {
+     "E_Ry": -87.77266396,
+     "Ef_eV": 16.8213,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "00.bulk",
+     "nat": 1,
+     "vol_bohr3": 110.849,
+     "wall": "2.45s"
+    },
+    {
+     "E_Ry": -87.77634341,
+     "Ef_eV": 16.0765,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "01.bulk",
+     "nat": 1,
+     "vol_bohr3": 114.3128,
+     "wall": "2.36s"
+    },
+    {
+     "E_Ry": -87.77859077,
+     "Ef_eV": 15.3679,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "02.bulk",
+     "nat": 1,
+     "vol_bohr3": 117.848,
+     "wall": "2.21s"
+    },
+    {
+     "E_Ry": -87.77959504,
+     "Ef_eV": 14.6944,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 9,
+     "name": "03.bulk",
+     "nat": 1,
+     "vol_bohr3": 121.4553,
+     "wall": "2.16s"
+    },
+    {
+     "E_Ry": -87.77952292,
+     "Ef_eV": 14.0536,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "04.bulk",
+     "nat": 1,
+     "vol_bohr3": 125.1356,
+     "wall": "2.00s"
+    },
+    {
+     "E_Ry": -87.77852502,
+     "Ef_eV": 13.4429,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "05.bulk",
+     "nat": 1,
+     "vol_bohr3": 128.8894,
+     "wall": "1.77s"
+    },
+    {
+     "E_Ry": -87.77675097,
+     "Ef_eV": 12.8604,
+     "Vvac_eV": null,
+     "bfgs_steps": 0,
+     "iterations": 7,
+     "name": "06.bulk",
+     "nat": 1,
+     "vol_bohr3": 132.7175,
+     "wall": "1.82s"
+    }
+   ]
+  },
+  "conv[4]": {
+   "case": "slab-Pd100-k20",
+   "runs": [
+    {
+     "E_Ry": -380.24564565,
+     "Ef_eV": 2.4956,
+     "Vvac_eV": 7.600931,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1280.6179,
+     "wall": "2m0.75s"
+    },
+    {
+     "E_Ry": -456.3160543,
+     "Ef_eV": 3.3107,
+     "Vvac_eV": 8.425158,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1386.9797,
+     "wall": "2m24.33s"
+    },
+    {
+     "E_Ry": -532.38706799,
+     "Ef_eV": 4.0161,
+     "Vvac_eV": 9.125702,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1493.3416,
+     "wall": "3m11.66s"
+    }
+   ]
+  },
+  "conv[5]": {
+   "case": "slab-Pt110-k20",
+   "runs": [
+    {
+     "E_Ry": -432.93441699,
+     "Ef_eV": 1.8009,
+     "Vvac_eV": 7.085399,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1644.1411,
+     "wall": "2m30.96s"
+    },
+    {
+     "E_Ry": -519.55857964,
+     "Ef_eV": 2.6253,
+     "Vvac_eV": 8.043752,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1751.3066,
+     "wall": "3m8.64s"
+    },
+    {
+     "E_Ry": -606.188304,
+     "Ef_eV": 3.4938,
+     "Vvac_eV": 8.803988,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1858.4722,
+     "wall": "4m27.81s"
+    }
+   ]
+  },
+  "conv[6]": {
+   "case": "slab-Al111-k16",
+   "runs": [
+    {
+     "E_Ry": -20.64945628,
+     "Ef_eV": 1.459,
+     "Vvac_eV": 5.568829,
+     "bfgs_steps": 0,
+     "iterations": 24,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1222.2931,
+     "wall": "44.58s"
+    },
+    {
+     "E_Ry": -24.79083442,
+     "Ef_eV": 2.0167,
+     "Vvac_eV": 6.069604,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1335.1985,
+     "wall": "39.39s"
+    },
+    {
+     "E_Ry": -28.93174901,
+     "Ef_eV": 2.4905,
+     "Vvac_eV": 6.521597,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1448.1039,
+     "wall": "34.35s"
+    }
+   ]
+  },
+  "conv[7]": {
+   "case": "slab-Al111-k16-vac12",
+   "runs": [
+    {
+     "E_Ry": -20.6494601,
+     "Ef_eV": 2.5006,
+     "Vvac_eV": 6.611975,
+     "bfgs_steps": 0,
+     "iterations": 25,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1029.6252,
+     "wall": "30.69s"
+    },
+    {
+     "E_Ry": -24.79083185,
+     "Ef_eV": 3.0405,
+     "Vvac_eV": 7.092057,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1142.5306,
+     "wall": "40.03s"
+    },
+    {
+     "E_Ry": -28.93174931,
+     "Ef_eV": 3.4914,
+     "Vvac_eV": 7.522215,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1255.436,
+     "wall": "17.67s"
+    }
+   ]
+  },
+  "conv[8]": {
+   "case": "slab-Al111-k16-vac20",
+   "runs": [
+    {
+     "E_Ry": -20.64945616,
+     "Ef_eV": 0.7007,
+     "Vvac_eV": 4.810319,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1414.9609,
+     "wall": "41.12s"
+    },
+    {
+     "E_Ry": -24.79083453,
+     "Ef_eV": 1.2514,
+     "Vvac_eV": 5.304135,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1527.8663,
+     "wall": "47.91s"
+    },
+    {
+     "E_Ry": -28.93174909,
+     "Ef_eV": 1.7246,
+     "Vvac_eV": 5.755588,
+     "bfgs_steps": 0,
+     "iterations": 29,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1640.7717,
+     "wall": "1m4.32s"
+    }
+   ]
+  },
+  "conv[9]": {
+   "case": "slab-Pd100-k16",
+   "runs": [
+    {
+     "E_Ry": -380.24578841,
+     "Ef_eV": 2.4949,
+     "Vvac_eV": 7.601379,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1280.6179,
+     "wall": "1m32.56s"
+    },
+    {
+     "E_Ry": -456.31633282,
+     "Ef_eV": 3.3115,
+     "Vvac_eV": 8.425671,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1386.9797,
+     "wall": "1m46.44s"
+    },
+    {
+     "E_Ry": -532.38743744,
+     "Ef_eV": 4.0153,
+     "Vvac_eV": 9.126716,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1493.3416,
+     "wall": "2m16.95s"
+    }
+   ]
+  },
+  "settings": {
+   "by": "agent:claude",
+   "decision": "approve",
+   "text": "approved by the user in chat (vacuum 16 A, k 24x24, bulk k 16)"
+  },
+  "slab-in": {
+   "items": [
+    {
+     "N": [
+      15
+     ],
+     "a0": 3.9806,
+     "case": "relax-Pd100-15",
+     "cost": 4050.0,
+     "el": "Pd",
+     "face": "100",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 4.0585,
+     "case": "relax-Al111-13",
+     "cost": 3042.0,
+     "el": "Al",
+     "face": "111",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 4.0585,
+     "case": "relax-Al100-13",
+     "cost": 3042.0,
+     "el": "Al",
+     "face": "100",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 3.9806,
+     "case": "relax-Pd111-13",
+     "cost": 3042.0,
+     "el": "Pd",
+     "face": "111",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 3.9806,
+     "case": "relax-Pd100-13",
+     "cost": 3042.0,
+     "el": "Pd",
+     "face": "100",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 3.9971,
+     "case": "relax-Pt111-13",
+     "cost": 3042.0,
+     "el": "Pt",
+     "face": "111",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 3.9971,
+     "case": "relax-Pt100-13",
+     "cost": 3042.0,
+     "el": "Pt",
+     "face": "100",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 4.1786,
+     "case": "relax-Au111-13",
+     "cost": 3042.0,
+     "el": "Au",
+     "face": "111",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 4.1786,
+     "case": "relax-Au100-13",
+     "cost": 3042.0,
+     "el": "Au",
+     "face": "100",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      11
+     ],
+     "a0": 3.9806,
+     "case": "relax-Pd100-11",
+     "cost": 2178.0,
+     "el": "Pd",
+     "face": "100",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 4.0585,
+     "case": "relax-Al110-13",
+     "cost": 2154.8,
+     "el": "Al",
+     "face": "110",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 3.9806,
+     "case": "relax-Pd110-13",
+     "cost": 2154.8,
+     "el": "Pd",
+     "face": "110",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 3.9971,
+     "case": "relax-Pt110-13",
+     "cost": 2154.8,
+     "el": "Pt",
+     "face": "110",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      13
+     ],
+     "a0": 4.1786,
+     "case": "relax-Au110-13",
+     "cost": 2154.8,
+     "el": "Au",
+     "face": "110",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 4.0585,
+     "case": "series-Al111",
+     "cost": 1811.2,
+     "el": "Al",
+     "face": "111",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 4.0585,
+     "case": "series-Al100",
+     "cost": 1811.2,
+     "el": "Al",
+     "face": "100",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 3.9806,
+     "case": "series-Pd111",
+     "cost": 1811.2,
+     "el": "Pd",
+     "face": "111",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 3.9806,
+     "case": "series-Pd100",
+     "cost": 1811.2,
+     "el": "Pd",
+     "face": "100",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 3.9971,
+     "case": "series-Pt111",
+     "cost": 1811.2,
+     "el": "Pt",
+     "face": "111",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 3.9971,
+     "case": "series-Pt100",
+     "cost": 1811.2,
+     "el": "Pt",
+     "face": "100",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 4.1786,
+     "case": "series-Au111",
+     "cost": 1811.2,
+     "el": "Au",
+     "face": "111",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 4.1786,
+     "case": "series-Au100",
+     "cost": 1811.2,
+     "el": "Au",
+     "face": "100",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      9
+     ],
+     "a0": 3.9806,
+     "case": "relax-Pd100-09",
+     "cost": 1458.0,
+     "el": "Pd",
+     "face": "100",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 4.0585,
+     "case": "series-Al110",
+     "cost": 1283.0,
+     "el": "Al",
+     "face": "110",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 3.9806,
+     "case": "series-Pd110",
+     "cost": 1283.0,
+     "el": "Pd",
+     "face": "110",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 3.9971,
+     "case": "series-Pt110",
+     "cost": 1283.0,
+     "el": "Pt",
+     "face": "110",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13
+     ],
+     "a0": 4.1786,
+     "case": "series-Au110",
+     "cost": 1283.0,
+     "el": "Au",
+     "face": "110",
+     "kind": "series",
+     "kslab": 24,
+     "n_inputs": 10,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      7
+     ],
+     "a0": 3.9806,
+     "case": "relax-Pd100-07",
+     "cost": 882.0,
+     "el": "Pd",
+     "face": "100",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    },
+    {
+     "N": [
+      5
+     ],
+     "a0": 3.9806,
+     "case": "relax-Pd100-05",
+     "cost": 450.0,
+     "el": "Pd",
+     "face": "100",
+     "kind": "relax",
+     "kslab": 24,
+     "n_inputs": 1,
+     "vacuum": 16.0
+    }
+   ],
+   "n": 29,
+   "n_inputs": 137,
+   "total_cost": 61594.8
+  },
+  "slab[0]": {
+   "case": "relax-Pd100-15",
+   "runs": [
+    {
+     "E_Ry": -1140.95378376,
+     "Ef_eV": 7.3415,
+     "Vvac_eV": 12.447382,
+     "bfgs_steps": 26,
+     "iterations": 331,
+     "name": "15.slab",
+     "nat": 15,
+     "vol_bohr3": 2345.1677,
+     "wall": "3h56m"
+    }
+   ]
+  },
+  "slab[10]": {
+   "case": "relax-Al110-13",
+   "runs": [
+    {
+     "E_Ry": -53.72239945,
+     "Ef_eV": 2.6827,
+     "Vvac_eV": 6.762235,
+     "bfgs_steps": 28,
+     "iterations": 573,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2610.9351,
+     "wall": "2h33m"
+    }
+   ]
+  },
+  "slab[11]": {
+   "case": "relax-Pd110-13",
+   "runs": [
+    {
+     "E_Ry": -988.76015722,
+     "Ef_eV": 5.1687,
+     "Vvac_eV": 10.036136,
+     "bfgs_steps": 20,
+     "iterations": 290,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2486.6778,
+     "wall": "4h20m"
+    }
+   ]
+  },
+  "slab[12]": {
+   "case": "relax-Pt110-13",
+   "runs": [
+    {
+     "E_Ry": -1125.96265641,
+     "Ef_eV": 6.8321,
+     "Vvac_eV": 12.114789,
+     "bfgs_steps": 19,
+     "iterations": 252,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2512.6725,
+     "wall": "3h58m"
+    }
+   ]
+  },
+  "slab[13]": {
+   "case": "relax-Au110-13",
+   "runs": [
+    {
+     "E_Ry": -1141.03248103,
+     "Ef_eV": 6.0643,
+     "Vvac_eV": 11.049993,
+     "bfgs_steps": 25,
+     "iterations": 256,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2810.2026,
+     "wall": "4h37m"
+    }
+   ]
+  },
+  "slab[14]": {
+   "case": "series-Al111",
+   "runs": [
+    {
+     "E_Ry": -16.50784605,
+     "Ef_eV": 0.856,
+     "Vvac_eV": 4.902403,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1108.443,
+     "wall": "30.71s"
+    },
+    {
+     "E_Ry": -20.64915325,
+     "Ef_eV": 1.4611,
+     "Vvac_eV": 5.572563,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1221.2233,
+     "wall": "59.30s"
+    },
+    {
+     "E_Ry": -24.79056512,
+     "Ef_eV": 2.0271,
+     "Vvac_eV": 6.079785,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1334.0036,
+     "wall": "57.26s"
+    },
+    {
+     "E_Ry": -28.93047486,
+     "Ef_eV": 2.4882,
+     "Vvac_eV": 6.518524,
+     "bfgs_steps": 0,
+     "iterations": 23,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1446.7839,
+     "wall": "57.57s"
+    },
+    {
+     "E_Ry": -33.07159541,
+     "Ef_eV": 2.8432,
+     "Vvac_eV": 6.942534,
+     "bfgs_steps": 0,
+     "iterations": 24,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1559.5643,
+     "wall": "1m41.60s"
+    },
+    {
+     "E_Ry": -37.21279103,
+     "Ef_eV": 3.1972,
+     "Vvac_eV": 7.26746,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 1672.3446,
+     "wall": "1m49.45s"
+    },
+    {
+     "E_Ry": -41.34980409,
+     "Ef_eV": 3.5409,
+     "Vvac_eV": 7.557395,
+     "bfgs_steps": 0,
+     "iterations": 32,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 1785.1249,
+     "wall": "1m58.60s"
+    },
+    {
+     "E_Ry": -45.49034872,
+     "Ef_eV": 3.7797,
+     "Vvac_eV": 7.839268,
+     "bfgs_steps": 0,
+     "iterations": 36,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 1897.9052,
+     "wall": "4m40.82s"
+    },
+    {
+     "E_Ry": -49.62679405,
+     "Ef_eV": 4.0349,
+     "Vvac_eV": 8.082771,
+     "bfgs_steps": 0,
+     "iterations": 33,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2010.6855,
+     "wall": "5m38.27s"
+    },
+    {
+     "E_Ry": -53.76751518,
+     "Ef_eV": 4.2489,
+     "Vvac_eV": 8.269747,
+     "bfgs_steps": 0,
+     "iterations": 32,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2123.4658,
+     "wall": "4m3.21s"
+    }
+   ]
+  },
+  "slab[15]": {
+   "case": "series-Al100",
+   "runs": [
+    {
+     "E_Ry": -16.49169693,
+     "Ef_eV": 0.1988,
+     "Vvac_eV": 4.533052,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1227.5782,
+     "wall": "39.75s"
+    },
+    {
+     "E_Ry": -20.63315836,
+     "Ef_eV": 0.829,
+     "Vvac_eV": 5.167346,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1340.3586,
+     "wall": "40.06s"
+    },
+    {
+     "E_Ry": -24.77477413,
+     "Ef_eV": 1.4324,
+     "Vvac_eV": 5.68845,
+     "bfgs_steps": 0,
+     "iterations": 30,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1453.1389,
+     "wall": "1m3.94s"
+    },
+    {
+     "E_Ry": -28.91459814,
+     "Ef_eV": 1.9088,
+     "Vvac_eV": 6.139561,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1565.9192,
+     "wall": "1m0.86s"
+    },
+    {
+     "E_Ry": -33.054508,
+     "Ef_eV": 2.2944,
+     "Vvac_eV": 6.541597,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1678.6995,
+     "wall": "1m7.11s"
+    },
+    {
+     "E_Ry": -37.19508268,
+     "Ef_eV": 2.6598,
+     "Vvac_eV": 6.901331,
+     "bfgs_steps": 0,
+     "iterations": 26,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 1791.4798,
+     "wall": "2m8.02s"
+    },
+    {
+     "E_Ry": -41.33456299,
+     "Ef_eV": 2.9399,
+     "Vvac_eV": 7.221351,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 1904.2601,
+     "wall": "1m35.51s"
+    },
+    {
+     "E_Ry": -45.47576423,
+     "Ef_eV": 3.2126,
+     "Vvac_eV": 7.513276,
+     "bfgs_steps": 0,
+     "iterations": 36,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 2017.0404,
+     "wall": "3m13.57s"
+    },
+    {
+     "E_Ry": -49.61665107,
+     "Ef_eV": 3.4595,
+     "Vvac_eV": 7.752231,
+     "bfgs_steps": 0,
+     "iterations": 32,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2129.8207,
+     "wall": "3m26.37s"
+    },
+    {
+     "E_Ry": -53.75705868,
+     "Ef_eV": 3.6776,
+     "Vvac_eV": 7.973732,
+     "bfgs_steps": 0,
+     "iterations": 32,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2242.601,
+     "wall": "4m30.52s"
+    }
+   ]
+  },
+  "slab[16]": {
+   "case": "series-Pd111",
+   "runs": [
+    {
+     "E_Ry": -304.20055072,
+     "Ef_eV": 2.1426,
+     "Vvac_eV": 7.407723,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1060.0526,
+     "wall": "1m8.40s"
+    },
+    {
+     "E_Ry": -380.27176301,
+     "Ef_eV": 3.164,
+     "Vvac_eV": 8.404775,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1166.4625,
+     "wall": "2m4.23s"
+    },
+    {
+     "E_Ry": -456.34186379,
+     "Ef_eV": 3.9967,
+     "Vvac_eV": 9.245609,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1272.8725,
+     "wall": "2m27.26s"
+    },
+    {
+     "E_Ry": -532.41294691,
+     "Ef_eV": 4.7011,
+     "Vvac_eV": 9.953798,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1379.2824,
+     "wall": "2m31.53s"
+    },
+    {
+     "E_Ry": -608.48379089,
+     "Ef_eV": 5.3117,
+     "Vvac_eV": 10.557683,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1485.6924,
+     "wall": "5m14.82s"
+    },
+    {
+     "E_Ry": -684.55444982,
+     "Ef_eV": 5.8357,
+     "Vvac_eV": 11.08458,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 1592.1023,
+     "wall": "5m36.65s"
+    },
+    {
+     "E_Ry": -760.62532791,
+     "Ef_eV": 6.2948,
+     "Vvac_eV": 11.54417,
+     "bfgs_steps": 0,
+     "iterations": 25,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 1698.5122,
+     "wall": "5m10.69s"
+    },
+    {
+     "E_Ry": -836.69609896,
+     "Ef_eV": 6.701,
+     "Vvac_eV": 11.948326,
+     "bfgs_steps": 0,
+     "iterations": 30,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 1804.9222,
+     "wall": "11m5.73s"
+    },
+    {
+     "E_Ry": -912.76687834,
+     "Ef_eV": 7.0605,
+     "Vvac_eV": 12.309143,
+     "bfgs_steps": 0,
+     "iterations": 26,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 1911.3321,
+     "wall": "13m11.07s"
+    },
+    {
+     "E_Ry": -988.83770006,
+     "Ef_eV": 7.383,
+     "Vvac_eV": 12.63099,
+     "bfgs_steps": 0,
+     "iterations": 24,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2017.7421,
+     "wall": "7m49.52s"
+    }
+   ]
+  },
+  "slab[17]": {
+   "case": "series-Pd100",
+   "runs": [
+    {
+     "E_Ry": -304.17526207,
+     "Ef_eV": 1.5109,
+     "Vvac_eV": 6.634762,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1174.6582,
+     "wall": "1m5.10s"
+    },
+    {
+     "E_Ry": -380.24561364,
+     "Ef_eV": 2.4921,
+     "Vvac_eV": 7.597673,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1281.0682,
+     "wall": "2m21.79s"
+    },
+    {
+     "E_Ry": -456.3160816,
+     "Ef_eV": 3.3072,
+     "Vvac_eV": 8.421194,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1387.4781,
+     "wall": "1m59.69s"
+    },
+    {
+     "E_Ry": -532.3871613,
+     "Ef_eV": 4.0113,
+     "Vvac_eV": 9.121553,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1493.8881,
+     "wall": "3m45.30s"
+    },
+    {
+     "E_Ry": -608.45779747,
+     "Ef_eV": 4.6221,
+     "Vvac_eV": 9.730039,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1600.298,
+     "wall": "4m36.43s"
+    },
+    {
+     "E_Ry": -684.52871174,
+     "Ef_eV": 5.1538,
+     "Vvac_eV": 10.263852,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 1706.708,
+     "wall": "6m43.64s"
+    },
+    {
+     "E_Ry": -760.59949616,
+     "Ef_eV": 5.6244,
+     "Vvac_eV": 10.734486,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 1813.1179,
+     "wall": "7m37.20s"
+    },
+    {
+     "E_Ry": -836.67025613,
+     "Ef_eV": 6.0431,
+     "Vvac_eV": 11.152066,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 1919.5279,
+     "wall": "7m59.58s"
+    },
+    {
+     "E_Ry": -912.74110726,
+     "Ef_eV": 6.4175,
+     "Vvac_eV": 11.526478,
+     "bfgs_steps": 0,
+     "iterations": 23,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2025.9378,
+     "wall": "9m47.65s"
+    },
+    {
+     "E_Ry": -988.81185196,
+     "Ef_eV": 6.754,
+     "Vvac_eV": 11.863756,
+     "bfgs_steps": 0,
+     "iterations": 23,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2132.3478,
+     "wall": "13m34.94s"
+    }
+   ]
+  },
+  "slab[18]": {
+   "case": "series-Pt111",
+   "runs": [
+    {
+     "E_Ry": -346.41605622,
+     "Ef_eV": 3.1933,
+     "Vvac_eV": 8.900139,
+     "bfgs_steps": 0,
+     "iterations": 14,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1070.1931,
+     "wall": "40.68s"
+    },
+    {
+     "E_Ry": -433.04210921,
+     "Ef_eV": 4.4254,
+     "Vvac_eV": 10.109643,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1177.9318,
+     "wall": "1m43.40s"
+    },
+    {
+     "E_Ry": -519.66924776,
+     "Ef_eV": 5.4168,
+     "Vvac_eV": 11.129793,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1285.6704,
+     "wall": "1m53.86s"
+    },
+    {
+     "E_Ry": -606.29688208,
+     "Ef_eV": 6.2809,
+     "Vvac_eV": 11.980281,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1393.4091,
+     "wall": "2m28.24s"
+    },
+    {
+     "E_Ry": -692.92383725,
+     "Ef_eV": 7.011,
+     "Vvac_eV": 12.713857,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1501.1478,
+     "wall": "4m35.50s"
+    },
+    {
+     "E_Ry": -779.55124263,
+     "Ef_eV": 7.6447,
+     "Vvac_eV": 13.347706,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 1608.8865,
+     "wall": "4m3.50s"
+    },
+    {
+     "E_Ry": -866.17836153,
+     "Ef_eV": 8.1993,
+     "Vvac_eV": 13.902381,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 1716.6252,
+     "wall": "4m28.46s"
+    },
+    {
+     "E_Ry": -952.80558993,
+     "Ef_eV": 8.6878,
+     "Vvac_eV": 14.391562,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 1824.3638,
+     "wall": "6m55.42s"
+    },
+    {
+     "E_Ry": -1039.43277479,
+     "Ef_eV": 9.1227,
+     "Vvac_eV": 14.826349,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 1932.1025,
+     "wall": "7m48.88s"
+    },
+    {
+     "E_Ry": -1126.05998687,
+     "Ef_eV": 9.5108,
+     "Vvac_eV": 15.215527,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2039.8412,
+     "wall": "5m1.31s"
+    }
+   ]
+  },
+  "slab[19]": {
+   "case": "series-Pt100",
+   "runs": [
+    {
+     "E_Ry": -346.3769835,
+     "Ef_eV": 2.3426,
+     "Vvac_eV": 8.015527,
+     "bfgs_steps": 0,
+     "iterations": 15,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1185.7508,
+     "wall": "1m10.45s"
+    },
+    {
+     "E_Ry": -433.00256624,
+     "Ef_eV": 3.5081,
+     "Vvac_eV": 9.197907,
+     "bfgs_steps": 0,
+     "iterations": 14,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1293.4895,
+     "wall": "1m28.96s"
+    },
+    {
+     "E_Ry": -519.62933586,
+     "Ef_eV": 4.5007,
+     "Vvac_eV": 10.198217,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1401.2282,
+     "wall": "2m31.26s"
+    },
+    {
+     "E_Ry": -606.25615019,
+     "Ef_eV": 5.3593,
+     "Vvac_eV": 11.055342,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1508.9669,
+     "wall": "2m32.03s"
+    },
+    {
+     "E_Ry": -692.88374633,
+     "Ef_eV": 6.1026,
+     "Vvac_eV": 11.79426,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1616.7055,
+     "wall": "3m19.13s"
+    },
+    {
+     "E_Ry": -779.51097609,
+     "Ef_eV": 6.7527,
+     "Vvac_eV": 12.440671,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 1724.4442,
+     "wall": "4m33.95s"
+    },
+    {
+     "E_Ry": -866.13820955,
+     "Ef_eV": 7.3217,
+     "Vvac_eV": 13.015134,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 1832.1829,
+     "wall": "5m15.82s"
+    },
+    {
+     "E_Ry": -952.76540342,
+     "Ef_eV": 7.832,
+     "Vvac_eV": 13.523303,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 1939.9216,
+     "wall": "7m18.90s"
+    },
+    {
+     "E_Ry": -1039.39263423,
+     "Ef_eV": 8.2855,
+     "Vvac_eV": 13.979782,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2047.6603,
+     "wall": "8m14.18s"
+    },
+    {
+     "E_Ry": -1126.01987925,
+     "Ef_eV": 8.6965,
+     "Vvac_eV": 14.387744,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2155.3989,
+     "wall": "9m37.16s"
+    }
+   ]
+  },
+  "slab[1]": {
+   "case": "relax-Al111-13",
+   "runs": [
+    {
+     "E_Ry": -53.76778151,
+     "Ef_eV": 4.2585,
+     "Vvac_eV": 8.270318,
+     "bfgs_steps": 31,
+     "iterations": 865,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2123.4658,
+     "wall": "1h45m"
+    }
+   ]
+  },
+  "slab[20]": {
+   "case": "series-Au111",
+   "runs": [
+    {
+     "E_Ry": -351.06893467,
+     "Ef_eV": 2.9057,
+     "Vvac_eV": 8.138092,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1185.6299,
+     "wall": "1m37.23s"
+    },
+    {
+     "E_Ry": -438.84861574,
+     "Ef_eV": 4.034,
+     "Vvac_eV": 9.220409,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1308.7216,
+     "wall": "1m49.56s"
+    },
+    {
+     "E_Ry": -526.62740613,
+     "Ef_eV": 4.9182,
+     "Vvac_eV": 10.109715,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1431.8134,
+     "wall": "2m15.47s"
+    },
+    {
+     "E_Ry": -614.40737907,
+     "Ef_eV": 5.6897,
+     "Vvac_eV": 10.862126,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1554.9052,
+     "wall": "4m0.65s"
+    },
+    {
+     "E_Ry": -702.1862218,
+     "Ef_eV": 6.3233,
+     "Vvac_eV": 11.502688,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1677.9969,
+     "wall": "4m29.67s"
+    },
+    {
+     "E_Ry": -789.96617749,
+     "Ef_eV": 6.8951,
+     "Vvac_eV": 12.057442,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 1801.0887,
+     "wall": "5m41.78s"
+    },
+    {
+     "E_Ry": -877.74511362,
+     "Ef_eV": 7.3684,
+     "Vvac_eV": 12.541098,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 1924.1805,
+     "wall": "7m16.47s"
+    },
+    {
+     "E_Ry": -965.52478553,
+     "Ef_eV": 7.8101,
+     "Vvac_eV": 12.965704,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 2047.2722,
+     "wall": "9m50.18s"
+    },
+    {
+     "E_Ry": -1053.30392919,
+     "Ef_eV": 8.1735,
+     "Vvac_eV": 13.342546,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2170.364,
+     "wall": "10m25.31s"
+    },
+    {
+     "E_Ry": -1141.08343573,
+     "Ef_eV": 8.5239,
+     "Vvac_eV": 13.681235,
+     "bfgs_steps": 0,
+     "iterations": 15,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2293.4558,
+     "wall": "12m38.20s"
+    }
+   ]
+  },
+  "slab[21]": {
+   "case": "series-Au100",
+   "runs": [
+    {
+     "E_Ry": -351.04867026,
+     "Ef_eV": 2.203,
+     "Vvac_eV": 7.299396,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1311.9203,
+     "wall": "2m19.26s"
+    },
+    {
+     "E_Ry": -438.82894095,
+     "Ef_eV": 3.2554,
+     "Vvac_eV": 8.345101,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1435.0121,
+     "wall": "3m1.91s"
+    },
+    {
+     "E_Ry": -526.60829708,
+     "Ef_eV": 4.1198,
+     "Vvac_eV": 9.246498,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1558.1039,
+     "wall": "3m57.91s"
+    },
+    {
+     "E_Ry": -614.38761208,
+     "Ef_eV": 4.8695,
+     "Vvac_eV": 10.009313,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1681.1957,
+     "wall": "4m58.37s"
+    },
+    {
+     "E_Ry": -702.16676075,
+     "Ef_eV": 5.5225,
+     "Vvac_eV": 10.666671,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1804.2874,
+     "wall": "7m13.06s"
+    },
+    {
+     "E_Ry": -789.94606874,
+     "Ef_eV": 6.0964,
+     "Vvac_eV": 11.235863,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 1927.3792,
+     "wall": "8m18.26s"
+    },
+    {
+     "E_Ry": -877.72540564,
+     "Ef_eV": 6.5998,
+     "Vvac_eV": 11.737114,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 2050.471,
+     "wall": "9m59.54s"
+    },
+    {
+     "E_Ry": -965.50476234,
+     "Ef_eV": 7.0503,
+     "Vvac_eV": 12.179541,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 2173.5627,
+     "wall": "11m45.82s"
+    },
+    {
+     "E_Ry": -1053.2842313,
+     "Ef_eV": 7.4459,
+     "Vvac_eV": 12.577109,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2296.6545,
+     "wall": "10m46.38s"
+    },
+    {
+     "E_Ry": -1141.06362076,
+     "Ef_eV": 7.8041,
+     "Vvac_eV": 12.934083,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2419.7463,
+     "wall": "14m58.63s"
+    }
+   ]
+  },
+  "slab[22]": {
+   "case": "relax-Pd100-09",
+   "runs": [
+    {
+     "E_Ry": -684.52906167,
+     "Ef_eV": 5.1599,
+     "Vvac_eV": 10.267083,
+     "bfgs_steps": 16,
+     "iterations": 195,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 1706.708,
+     "wall": "56m0.86s"
+    }
+   ]
+  },
+  "slab[23]": {
+   "case": "series-Al110",
+   "runs": [
+    {
+     "E_Ry": -16.46419564,
+     "Ef_eV": -0.6538,
+     "Vvac_eV": 3.452396,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1595.9124,
+     "wall": "57.40s"
+    },
+    {
+     "E_Ry": -20.6005605,
+     "Ef_eV": 0.0167,
+     "Vvac_eV": 3.978468,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1708.6927,
+     "wall": "1m25.21s"
+    },
+    {
+     "E_Ry": -24.73311252,
+     "Ef_eV": 0.5026,
+     "Vvac_eV": 4.47001,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1821.473,
+     "wall": "1m22.88s"
+    },
+    {
+     "E_Ry": -28.87598293,
+     "Ef_eV": 0.8771,
+     "Vvac_eV": 4.903693,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1934.2533,
+     "wall": "2m1.18s"
+    },
+    {
+     "E_Ry": -33.02044261,
+     "Ef_eV": 1.1927,
+     "Vvac_eV": 5.334014,
+     "bfgs_steps": 0,
+     "iterations": 25,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 2047.0336,
+     "wall": "2m28.09s"
+    },
+    {
+     "E_Ry": -37.16217189,
+     "Ef_eV": 1.529,
+     "Vvac_eV": 5.691513,
+     "bfgs_steps": 0,
+     "iterations": 25,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 2159.8139,
+     "wall": "3m34.69s"
+    },
+    {
+     "E_Ry": -41.29957814,
+     "Ef_eV": 1.9,
+     "Vvac_eV": 5.983267,
+     "bfgs_steps": 0,
+     "iterations": 26,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 2272.5942,
+     "wall": "3m12.80s"
+    },
+    {
+     "E_Ry": -45.43855336,
+     "Ef_eV": 2.2153,
+     "Vvac_eV": 6.239354,
+     "bfgs_steps": 0,
+     "iterations": 36,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 2385.3745,
+     "wall": "7m28.22s"
+    },
+    {
+     "E_Ry": -49.57932585,
+     "Ef_eV": 2.4726,
+     "Vvac_eV": 6.504226,
+     "bfgs_steps": 0,
+     "iterations": 31,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2498.1548,
+     "wall": "7m49.13s"
+    },
+    {
+     "E_Ry": -53.72096419,
+     "Ef_eV": 2.6861,
+     "Vvac_eV": 6.762116,
+     "bfgs_steps": 0,
+     "iterations": 35,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2610.9351,
+     "wall": "9m27.98s"
+    }
+   ]
+  },
+  "slab[24]": {
+   "case": "series-Pd110",
+   "runs": [
+    {
+     "E_Ry": -304.1162517,
+     "Ef_eV": 0.091,
+     "Vvac_eV": 5.03053,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1528.9883,
+     "wall": "2m8.11s"
+    },
+    {
+     "E_Ry": -380.19135604,
+     "Ef_eV": 1.0146,
+     "Vvac_eV": 5.839731,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1635.3982,
+     "wall": "3m27.46s"
+    },
+    {
+     "E_Ry": -456.26009656,
+     "Ef_eV": 1.7818,
+     "Vvac_eV": 6.578376,
+     "bfgs_steps": 0,
+     "iterations": 20,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1741.8082,
+     "wall": "5m32.47s"
+    },
+    {
+     "E_Ry": -532.33081109,
+     "Ef_eV": 2.3727,
+     "Vvac_eV": 7.273953,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1848.2181,
+     "wall": "6m43.12s"
+    },
+    {
+     "E_Ry": -608.40299468,
+     "Ef_eV": 3.0115,
+     "Vvac_eV": 7.821044,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1954.6281,
+     "wall": "9m10.61s"
+    },
+    {
+     "E_Ry": -684.47273226,
+     "Ef_eV": 3.5233,
+     "Vvac_eV": 8.361055,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 2061.038,
+     "wall": "10m8.86s"
+    },
+    {
+     "E_Ry": -760.54391315,
+     "Ef_eV": 3.9776,
+     "Vvac_eV": 8.850538,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 2167.448,
+     "wall": "11m12.17s"
+    },
+    {
+     "E_Ry": -836.61499223,
+     "Ef_eV": 4.4326,
+     "Vvac_eV": 9.254462,
+     "bfgs_steps": 0,
+     "iterations": 21,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 2273.8579,
+     "wall": "14m21.78s"
+    },
+    {
+     "E_Ry": -912.68534304,
+     "Ef_eV": 4.8113,
+     "Vvac_eV": 9.660181,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2380.2679,
+     "wall": "12m59.87s"
+    },
+    {
+     "E_Ry": -988.75628596,
+     "Ef_eV": 5.1661,
+     "Vvac_eV": 10.020168,
+     "bfgs_steps": 0,
+     "iterations": 22,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2486.6778,
+     "wall": "11m14.94s"
+    }
+   ]
+  },
+  "slab[25]": {
+   "case": "series-Pt110",
+   "runs": [
+    {
+     "E_Ry": -346.30411226,
+     "Ef_eV": 0.6359,
+     "Vvac_eV": 6.062513,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1543.0244,
+     "wall": "2m21.76s"
+    },
+    {
+     "E_Ry": -432.9326082,
+     "Ef_eV": 1.7681,
+     "Vvac_eV": 7.053779,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1650.7631,
+     "wall": "2m44.80s"
+    },
+    {
+     "E_Ry": -519.55682419,
+     "Ef_eV": 2.5892,
+     "Vvac_eV": 8.007432,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1758.5018,
+     "wall": "4m4.15s"
+    },
+    {
+     "E_Ry": -606.18653707,
+     "Ef_eV": 3.451,
+     "Vvac_eV": 8.763953,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1866.2405,
+     "wall": "5m46.41s"
+    },
+    {
+     "E_Ry": -692.81301632,
+     "Ef_eV": 4.1434,
+     "Vvac_eV": 9.495084,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 1973.9791,
+     "wall": "6m3.60s"
+    },
+    {
+     "E_Ry": -779.44039347,
+     "Ef_eV": 4.7633,
+     "Vvac_eV": 10.147863,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 2081.7178,
+     "wall": "8m59.62s"
+    },
+    {
+     "E_Ry": -866.06823318,
+     "Ef_eV": 5.3708,
+     "Vvac_eV": 10.694498,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 2189.4565,
+     "wall": "10m2.57s"
+    },
+    {
+     "E_Ry": -952.69483367,
+     "Ef_eV": 5.8698,
+     "Vvac_eV": 11.241548,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 2297.1952,
+     "wall": "11m29.43s"
+    },
+    {
+     "E_Ry": -1039.32257892,
+     "Ef_eV": 6.349,
+     "Vvac_eV": 11.709028,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2404.9339,
+     "wall": "10m12.85s"
+    },
+    {
+     "E_Ry": -1125.94964855,
+     "Ef_eV": 6.7915,
+     "Vvac_eV": 12.135171,
+     "bfgs_steps": 0,
+     "iterations": 19,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2512.6725,
+     "wall": "11m19.40s"
+    }
+   ]
+  },
+  "slab[26]": {
+   "case": "series-Au110",
+   "runs": [
+    {
+     "E_Ry": -351.00930594,
+     "Ef_eV": 0.5492,
+     "Vvac_eV": 5.580157,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "04.slab",
+     "nat": 4,
+     "vol_bohr3": 1702.3767,
+     "wall": "2m56.91s"
+    },
+    {
+     "E_Ry": -438.79211589,
+     "Ef_eV": 1.4765,
+     "Vvac_eV": 6.527645,
+     "bfgs_steps": 0,
+     "iterations": 18,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1825.4685,
+     "wall": "4m38.69s"
+    },
+    {
+     "E_Ry": -526.56989376,
+     "Ef_eV": 2.3048,
+     "Vvac_eV": 7.34601,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "06.slab",
+     "nat": 6,
+     "vol_bohr3": 1948.5602,
+     "wall": "5m27.38s"
+    },
+    {
+     "E_Ry": -614.35128674,
+     "Ef_eV": 3.0458,
+     "Vvac_eV": 8.061814,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 2071.652,
+     "wall": "7m14.79s"
+    },
+    {
+     "E_Ry": -702.12902241,
+     "Ef_eV": 3.6559,
+     "Vvac_eV": 8.717296,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "08.slab",
+     "nat": 8,
+     "vol_bohr3": 2194.7438,
+     "wall": "8m13.18s"
+    },
+    {
+     "E_Ry": -789.90982593,
+     "Ef_eV": 4.2629,
+     "Vvac_eV": 9.271176,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "09.slab",
+     "nat": 9,
+     "vol_bohr3": 2317.8355,
+     "wall": "10m31.83s"
+    },
+    {
+     "E_Ry": -877.68801709,
+     "Ef_eV": 4.7488,
+     "Vvac_eV": 9.804818,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "10.slab",
+     "nat": 10,
+     "vol_bohr3": 2440.9273,
+     "wall": "9m10.94s"
+    },
+    {
+     "E_Ry": -965.46833104,
+     "Ef_eV": 5.2448,
+     "Vvac_eV": 10.249038,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 2564.0191,
+     "wall": "9m5.42s"
+    },
+    {
+     "E_Ry": -1053.24697331,
+     "Ef_eV": 5.6413,
+     "Vvac_eV": 10.692198,
+     "bfgs_steps": 0,
+     "iterations": 17,
+     "name": "12.slab",
+     "nat": 12,
+     "vol_bohr3": 2687.1109,
+     "wall": "9m5.90s"
+    },
+    {
+     "E_Ry": -1141.02682526,
+     "Ef_eV": 6.0524,
+     "Vvac_eV": 11.056793,
+     "bfgs_steps": 0,
+     "iterations": 16,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2810.2026,
+     "wall": "6m4.80s"
+    }
+   ]
+  },
+  "slab[27]": {
+   "case": "relax-Pd100-07",
+   "runs": [
+    {
+     "E_Ry": -532.38751473,
+     "Ef_eV": 4.0186,
+     "Vvac_eV": 9.125382,
+     "bfgs_steps": 13,
+     "iterations": 165,
+     "name": "07.slab",
+     "nat": 7,
+     "vol_bohr3": 1493.8881,
+     "wall": "30m34.67s"
+    }
+   ]
+  },
+  "slab[28]": {
+   "case": "relax-Pd100-05",
+   "runs": [
+    {
+     "E_Ry": -380.24593139,
+     "Ef_eV": 2.5004,
+     "Vvac_eV": 7.602185,
+     "bfgs_steps": 10,
+     "iterations": 136,
+     "name": "05.slab",
+     "nat": 5,
+     "vol_bohr3": 1281.0682,
+     "wall": "12m54.08s"
+    }
+   ]
+  },
+  "slab[2]": {
+   "case": "relax-Al100-13",
+   "runs": [
+    {
+     "E_Ry": -53.75751162,
+     "Ef_eV": 3.692,
+     "Vvac_eV": 7.966341,
+     "bfgs_steps": 29,
+     "iterations": 616,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2242.601,
+     "wall": "1h36m"
+    }
+   ]
+  },
+  "slab[3]": {
+   "case": "relax-Pd111-13",
+   "runs": [
+    {
+     "E_Ry": -988.83775157,
+     "Ef_eV": 7.3844,
+     "Vvac_eV": 12.631334,
+     "bfgs_steps": 22,
+     "iterations": 295,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2017.7421,
+     "wall": "1h52m"
+    }
+   ]
+  },
+  "slab[4]": {
+   "case": "relax-Pd100-13",
+   "runs": [
+    {
+     "E_Ry": -988.81219333,
+     "Ef_eV": 6.7591,
+     "Vvac_eV": 11.866465,
+     "bfgs_steps": 23,
+     "iterations": 301,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2132.3478,
+     "wall": "2h42m"
+    }
+   ]
+  },
+  "slab[5]": {
+   "case": "relax-Pt111-13",
+   "runs": [
+    {
+     "E_Ry": -1126.06020865,
+     "Ef_eV": 9.5098,
+     "Vvac_eV": 15.217363,
+     "bfgs_steps": 20,
+     "iterations": 251,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2039.8412,
+     "wall": "1h36m"
+    }
+   ]
+  },
+  "slab[6]": {
+   "case": "relax-Pt100-13",
+   "runs": [
+    {
+     "E_Ry": -1126.02115914,
+     "Ef_eV": 8.7092,
+     "Vvac_eV": 14.386646,
+     "bfgs_steps": 21,
+     "iterations": 267,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2155.3989,
+     "wall": "2h28m"
+    }
+   ]
+  },
+  "slab[7]": {
+   "case": "relax-Au111-13",
+   "runs": [
+    {
+     "E_Ry": -1141.0835878,
+     "Ef_eV": 8.5165,
+     "Vvac_eV": 13.689107,
+     "bfgs_steps": 23,
+     "iterations": 231,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2293.4558,
+     "wall": "2h41m"
+    }
+   ]
+  },
+  "slab[8]": {
+   "case": "relax-Au100-13",
+   "runs": [
+    {
+     "E_Ry": -1141.06386785,
+     "Ef_eV": 7.8095,
+     "Vvac_eV": 12.925555,
+     "bfgs_steps": 27,
+     "iterations": 299,
+     "name": "13.slab",
+     "nat": 13,
+     "vol_bohr3": 2419.7463,
+     "wall": "4h59m"
+    }
+   ]
+  },
+  "slab[9]": {
+   "case": "relax-Pd100-11",
+   "runs": [
+    {
+     "E_Ry": -836.67060066,
+     "Ef_eV": 6.0486,
+     "Vvac_eV": 11.155005,
+     "bfgs_steps": 20,
+     "iterations": 252,
+     "name": "11.slab",
+     "nat": 11,
+     "vol_bohr3": 1919.5279,
+     "wall": "1h38m"
+    }
+   ]
+  },
+  "sources": {
+   "n_checked": 92,
+   "n_faces": 12,
+   "paper_sha256": "2851edde21d916df851884a3e0ffc3ed2c82ac227a05191531d4f6366b13c800",
+   "sha256_Al.pbe-rrkj.UPF": "9f304c72facea57d3f4aa5702d2d3d65560f1098f0abfbad3d4187f052bf2995",
+   "sha256_Au.pbe-nd-rrkjus.UPF": "34965ef5f4c196b1c2fe06fdf82901972e09e33bfe78c3e9422280cc053524a1",
+   "sha256_Pd.pbe-nd-rrkjus.UPF": "7adfc95abdee5e00d541278c8230de122975063e193c225b85977da6867230f5",
+   "sha256_Pt.pbe-nd-rrkjus.UPF": "a1f5827edbaf261cca208fa0b97187b2253451e9371d1eb7c6c23cd56c52478d"
+  }
+ }
+}

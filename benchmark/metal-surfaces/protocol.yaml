@@ -1,0 +1,199 @@
+# A reproducibility protocol exported from run metal-surfaces-20261006-184156-1093 (`flower export`): the steps behind
+# analysis. Run it with `flower run protocol.yaml --follow`, then `flower compare RUN expected.json`.
+flower: 1
+id: metal-surfaces
+title: Reproduce the surface energies, work functions and layer relaxations of the (111), (100) and (110) surfaces
+  of Al, Pd, Pt and Au with PBE slabs in Quantum ESPRESSO (Singh-Miller and Marzari, PRB 80, 235407 (2009), arXiv:0801.1077),
+  with a convergence study that a person signs off before the production slabs
+description: |
+  Reproduce the surface energies, work functions and layer relaxations of the (111), (100) and (110) surfaces of Al, Pd, Pt and Au with PBE slabs in Quantum ESPRESSO (Singh-Miller and Marzari, PRB 80, 235407 (2009), arXiv:0801.1077), with a convergence study that a person signs off before the production slabs
+inputs:
+  host:
+    type: string
+    required: true
+  ssh_options:
+    type: array
+    required: true
+clusters:
+  remote:
+    transport: ssh
+    host: ${inputs.host}
+    ssh_options: ${inputs.ssh_options}
+    scheduler: none
+    remote_root: ~/flower-runs
+    min_poll: 15s
+    cpus: 32
+environments:
+  analysis: sha256:0e1294d20e1771ce93e613c5141c0d0cf3ec698d1b0a213e59824bfaee111d31
+  ase: sha256:a00ce319c08bcc7f3bba7da548911c655c8247fc418ef3fea7be9871b000047a
+  qe: sha256:a263b400fb5370caf57af21cd3dbb5f6fd66f177dc9b31fca37090bb9e101efa
+nodes:
+- id: sources
+  kind: shell
+  title: The paper (arXiv v2, sha256), its Tables I-IV, and its four pseudopotentials
+  description: Downloads the paper and the pseudopotentials it names (Ref. 83), with sha256; transcribes Tables
+    I-IV (PBE, 13-layer slabs) and checks every number against the PDF text and each pseudopotential against the
+    valence configuration the paper states. n_faces should be 12.
+  environment: ase
+  outputs:
+    paper_sha256: string
+    n_faces: integer
+    n_checked: integer
+  files:
+    tables: tables.json
+    paper: paper.pdf
+  run: python3 ${plan.dir}/sources.py | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: conv-in
+  kind: shell
+  title: 'Convergence study inputs: bulk k-mesh and cutoff, slab k-mesh and vacuum'
+  description: 'pw.x inputs for the convergence study, at the paper''s lattice constants: bulk equations of state
+    at k = 12-24 (and at 48 Ry), and 5-, 6- and 7-layer slabs of Al(111), Pd(100) and Pt(110) at in-plane k = 8-24
+    and 12, 16, 20 A of vacuum. items: one case per row of the study.'
+  environment: ase
+  outputs:
+    items: array
+    n: integer
+    n_inputs: integer
+    total_cost: number
+  inputs:
+    tables: ${sources.files.tables}
+    pseudo: ${sources.dir}/pseudo
+  run: python3 ${plan.dir}/surf.py conv | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: conv
+  kind: shell
+  title: 'Convergence: ${item.case}'
+  description: 'One row of the convergence study with pw.x: total energies, Fermi energies and the vacuum potential
+    (pp.x, average.x) of each input. The conv-report step turns the rows into converged settings.'
+  cluster: remote
+  environment: qe
+  stage_in:
+  - ${plan.dir}/case.sh
+  - ${conv-in.dir}/cases/${item.case}
+  retrieve:
+  - out/*
+  resources:
+    cpus_per_task: 4
+  timeout:
+    total: 4h
+  foreach: ${conv-in.outputs.items}
+  outputs:
+    case: string
+    runs: array
+  run: bash case.sh ${item.case} $FLOWER_CPUS | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: conv-report
+  kind: shell
+  title: Convergence report and the proposed production settings
+  description: 'Turns the convergence rows into settings: a0 and B per metal at each bulk k-mesh, the 7-layer surface
+    energy and work function against the slab k-mesh and the vacuum, and the smallest settings within the criteria.
+    report.md has the tables; proposal is what the settings gate shows. A reviewer''s rejection text (e.g. "kslab=20")
+    overrides the choice.'
+  environment: analysis
+  outputs:
+    settings: object
+    auto: object
+    a0: object
+    B: object
+    estimate: object
+    proposal: string
+  files:
+    report: report.md
+  inputs:
+    conv: ${conv.outputs.items}
+    cases: ${conv-in.outputs.items}
+    tables: ${sources.files.tables}
+    feedback: ${feedback}
+  run: python3 ${plan.dir}/conv.py | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: settings
+  kind: gate
+  title: Sign off the production settings
+  description: A person reads the convergence study and approves the settings for the production slabs (about a
+    day of the workstation), or rejects with overrides such as "kslab=20 vacuum=20", which redoes the report with
+    them and asks again.
+  message: |
+    ${conv-report.outputs.proposal}
+
+    Tables: ${conv-report.files.report}
+    approve: run the production slabs with these settings.
+    reject with overrides, e.g. "kslab=20 vacuum=20" (k_bulk: one of the computed meshes): the report is redone with them and you are asked again.
+  decisions:
+  - approve
+  - reject
+  on_reject:
+    rerun:
+    - conv-report
+    max_attempts: 3
+- id: slab-in
+  kind: shell
+  title: 'Production inputs: 12 faces x 4-13 layers, 13-layer relaxations, Pd(100) relaxed at 5-15 layers'
+  description: 'pw.x inputs for the production slabs at the signed-off settings and this run''s lattice constants:
+    per face a series of unrelaxed slabs (4-13 layers, for the Fiorentini-Methfessel bulk energy and the work function)
+    and a relaxed 13-layer slab; Pd(100) also relaxed at 5-15 layers (the paper''s Fig. 1). items: one case each,
+    most expensive first.'
+  environment: ase
+  needs:
+  - settings
+  outputs:
+    items: array
+    n: integer
+    n_inputs: integer
+    total_cost: number
+  inputs:
+    tables: ${sources.files.tables}
+    pseudo: ${sources.dir}/pseudo
+    settings: ${conv-report.outputs.settings}
+    a0: ${conv-report.outputs.a0}
+  run: python3 ${plan.dir}/surf.py production | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: slab
+  kind: shell
+  title: 'Slabs: ${item.case}'
+  description: 'One production case with pw.x: energies, Fermi energies and vacuum potentials of a series of unrelaxed
+    slabs, or one relaxation (all atoms free, BFGS to 1e-4 Ry/bohr); the outputs and plane-averaged potentials are
+    fetched back to out/.'
+  cluster: remote
+  environment: qe
+  stage_in:
+  - ${plan.dir}/case.sh
+  - ${slab-in.dir}/cases/${item.case}
+  retrieve:
+  - out/*
+  resources:
+    cpus_per_task: 4
+  timeout:
+    total: 16h
+  retry:
+    max_attempts: 3
+    true:
+    - lost
+    - node_fail
+    - remote
+    - transient
+    - timeout
+  on_failure: continue
+  foreach: ${slab-in.outputs.items}
+  outputs:
+    case: string
+    runs: array
+  run: bash case.sh ${item.case} $FLOWER_CPUS | tail -n 1 > "$FLOWER_OUTPUTS"
+- id: analysis
+  kind: shell
+  title: This run against Tables I-IV and the convergence statements
+  description: Surface energies (Fiorentini-Methfessel, bulk energy from the 6-13-layer slope), work functions and
+    layer relaxations of the 13-layer slabs against Tables II-IV, a0 and B against Table I, and the text's convergence
+    statements on Pd. Read n_reproduced of n_claims, by_table, and report.md.
+  environment: analysis
+  trigger: all_done
+  outputs:
+    n_claims: integer
+    n_reproduced: integer
+    by_table: object
+  files:
+    report: report.md
+    figure: surfaces.png
+    data: analysis.json
+  inputs:
+    slab: ${slab.outputs.items}
+    tables: ${sources.files.tables}
+    a0: ${conv-report.outputs.a0}
+    B: ${conv-report.outputs.B}
+    settings: ${conv-report.outputs.settings}
+  run: python3 ${plan.dir}/analysis.py | tail -n 1 > "$FLOWER_OUTPUTS"
