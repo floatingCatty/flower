@@ -158,6 +158,13 @@ def test_start_creates_a_parked_draft_run(cli, home, tmp_path, monkeypatch):
     assert code != 0 and res["error"]["code"] == "exists"
 
 
+def test_a_new_step_is_queued_not_queued_again(cli, home, tmp_path, monkeypatch):
+    monkeypatch.setenv("FLOWER_NO_UI", "1")
+    _, res = cli("start", "Count", "--id", "cnt", "--dir", str(tmp_path / "cnt"))
+    code, res = cli("add", res["data"]["run_id"], "one", "--", "true")
+    assert code == 0 and "queued: one" in res["message"] and "again" not in res["message"], res
+
+
 def test_add_writes_the_step_and_runs_it(cli, home, tmp_path, monkeypatch):
     monkeypatch.setenv("FLOWER_NO_UI", "1")
     _, res = cli("start", "Find the answer", "--id", "ans", "--dir", str(tmp_path / "ans"))

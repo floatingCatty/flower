@@ -627,7 +627,9 @@ def cmd_rerun(args, out: Out) -> int:
         try:
             targets = eng.rerun(args.node, downstream=not args.only, force=not args.cached, by=by, reason=args.reason,
                                 keep_state=getattr(args, "keep_state", False))
-            notes.append(f"queued again: {', '.join(targets)}")
+            again = [t for t in targets if st.nodes.get(t) and st.nodes[t].attempts]
+            new = [t for t in targets if t not in again]   # a step that never ran is queued, not "again"
+            notes.append("; ".join([f"queued again: {', '.join(again)}"] * bool(again) + [f"queued: {', '.join(new)}"] * bool(new)))
         except FlowerError as exc:
             if not (args.cached and exc.code == "node_running" and notes):
                 raise
