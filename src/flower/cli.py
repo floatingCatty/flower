@@ -1217,7 +1217,13 @@ def _machines(args, out: Out) -> int:
             entry["note"] = args.note
         if args.cores:
             entry["agent_may_use"] = {"cores": args.cores}
-        entry["probed"] = mm.probe(args.name, entry)
+        try:
+            entry["probed"] = mm.probe(args.name, entry)
+        except FlowerError as exc:   # kept, so `flower remote login NAME` (a password, a code) can follow
+            data[args.name] = entry
+            p = mm.save(data)
+            exc.message += f" (saved in {p}, not probed yet)"
+            raise
         data[args.name] = entry
         p = mm.save(data)
         return out.done({"name": args.name, "file": str(p), "machine": mm.effective(args.name, entry)},

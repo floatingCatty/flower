@@ -97,3 +97,10 @@ def test_an_unknown_machine_says_how_to_add_one(cli, tmp_path):
     p = write_plan(tmp_path, [{"id": "a", "cluster": "narval", "run": "true"}])
     code, out = cli("plan", "validate", str(p))
     assert code == 2 and "flower remote add" in json.dumps(out)
+
+
+def test_an_unreachable_machine_is_kept_for_login(cli, tmp_path):
+    code, out = cli("remote", "add", "far", "nobody@localhost:1")
+    assert code == 2 and out["error"]["code"] == "unreachable" and "saved" in out["error"]["message"]
+    code, out = cli("remote", "list")
+    assert "far" in out["data"]["machines"] and "not probed yet" in out["message"]

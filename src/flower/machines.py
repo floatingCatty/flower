@@ -180,15 +180,28 @@ def probe(name: str, entry: dict, timeout: float = 90) -> dict:
     spec = cluster_spec(name, {**entry, "probed": {}})
     r = make_transport(spec).run(PROBE, timeout=timeout)
     if r.rc != 0 and not r.out.strip():
-        hint = ("open a shared connection first: flower remote login " + name) if "denied" in (r.err or "").lower() \
-            or "password" in (r.err or "").lower() else "check that `ssh " + shlex.quote(str(entry.get("ssh"))) + \
-            " true` works from this machine"
-        raise FlowerError("unreachable", f"cannot reach {name}: {(r.err or '').strip()[-300:] or 'exit %d' % r.rc}", hint)
+        err = (r.err or "").strip()
+        host, opts = ssh_target(entry)
+        shown = [x for i, x in enumerate(opts) if not x.startswith("ControlPath=")
+                 and not (x == "-o" and i + 1 < len(opts) and opts[i + 1].startswith("ControlPath="))]
+        try_it = " ".join(shlex.quote(x) for x in ["ssh", *shown, host, "true"])
+        if "denied" in err.lower():
+            hint = ("ssh refused the login. Check, in order: the user name (`user@host`"
+                    + ("" if "@" in host else f"; ssh used your local name {os.environ.get('USER', '')}") + "); "
+                    "the key (`-i KEY`, readable only by you: chmod 600 KEY); and if the machine asks for a password "
+                    f"or a code: flower remote login {name}, then flower remote check {name}. "
+                    f"Plain ssh should log in without asking: {try_it}")
+        else:
+            hint = f"check that this works from here: {try_it}"
+        raise FlowerError("unreachable", f"cannot reach {name}: {err[-300:] or 'exit %d' % r.rc}", hint)
     return parse_probe(r.out)
 
 
 def summary(name: str, entry: dict) -> str:
     m = effective(name, entry)
+    if not entry.get("probed"):
+        return (f"{name:<14} {str(m.get('ssh')):<22} not probed yet: flower remote check {name} "
+                f"(a password or a code: flower remote login {name} first)")
     if m.get("scheduler") == "slurm":
         parts = m.get("partitions") or []
         size = (f"slurm, {len(parts)} partitions ({', '.join(p['name'] for p in parts[:4])}"
