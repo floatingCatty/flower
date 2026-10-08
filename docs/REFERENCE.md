@@ -99,7 +99,8 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
   local analysis step should read).
 * **environment** — `environment: NAME` uses the frozen recipe `envs/NAME/` (setup.sh / activate.sh /
   check.sh). A generated step `env-NAME-<cluster>` checks it there (installs it if
-  missing) before the step, which runs with it activated. Without `cluster:` the step runs on this machine
+  missing) before the step, which runs with it activated. On a Slurm machine it runs on the login node (compute
+  nodes often have no internet), into the filesystem the jobs share. Without `cluster:` the step runs on this machine
   with it (the implicit cluster `local`). Recipes are made with `flower env new|freeze|replay` and
   `flower remote exec --env`.
 * **gate** — a person's decision: `message:` (templated), `decisions: [approve, reject]`,
@@ -202,7 +203,8 @@ prefix**, so an environment that results were produced with is never modified.
 
 A step names `environment: NAME` (without `cluster:` it runs on this machine, on the implicit cluster
 `local`). flower adds **one generated step per (environment, cluster)**, e.g. `env-abacus-box`: it runs
-`check.sh` (and `setup.sh` when that fails), and is never served from cache, so a deleted environment is noticed.
+`check.sh` (and `setup.sh` when that fails), on a Slurm machine on its login node (compute nodes often have no
+internet; the jobs see the same filesystem), and is never served from cache, so a deleted environment is noticed.
 Steps that use it depend on it and get its activation in their definition, so **a new recipe version changes
 their cache key**. Validation refuses a recipe that is missing, never frozen, edited since it was frozen, or not
 the version the plan's `environments:` pins (as an exported protocol does), and names the command to run.

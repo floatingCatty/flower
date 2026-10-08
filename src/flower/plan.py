@@ -249,6 +249,13 @@ def _expand_environments(plan: dict) -> None:
             en = normalize_node(envmod.env_node(name, cl, d, h, c.get("install", "auto") != "never",
                                                 env_dir=c.get("env_dir")), plan.get("defaults") or {})
             en["generated"] = f"env:{name}:{h}"
+            if c.get("scheduler", "slurm") == "slurm":
+                # installing is network work: on the login node (compute nodes often have no internet), into the
+                # filesystem the compute nodes share; the steps that use it still run as jobs there
+                login = f"{cl}-login"
+                plan["clusters"].setdefault(login, {**{k: v for k, v in c.items() if k not in ("cpus", "resources")},
+                                                    "scheduler": "none", "login_of": cl})
+                en["cluster"] = login
             added.append(en)
             by_id[eid] = en
         needs = n.get("needs") if isinstance(n.get("needs"), list) else []

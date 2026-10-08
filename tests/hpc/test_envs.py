@@ -333,3 +333,17 @@ def test_concurrent_installs_of_one_environment_wait_for_each_other(tmp_path):
     assert [p.returncode for p in procs] == [0, 0, 0], outs
     hows = sorted("installed" if "x installed" in o[0] else "present" for o in outs)
     assert hows == ["installed", "present", "present"], outs
+
+
+def test_on_a_slurm_machine_the_environment_installs_on_the_login_node(ff, tmp_path, home_dir):
+    """Compute nodes often have no internet (SCNet's did not): installing runs where `remote exec` runs, the login
+    node, into the shared filesystem; the step that uses the environment is still a Slurm job."""
+    src = tmp_path / "proj"
+    _recipe(src)
+    eng = ff.run(_plan(ff, src, clusters={"box": ff.cluster(min_poll="0.2s")}))
+    st = ff.drive(eng, timeout=60)
+    assert st.status == "succeeded", ff.why(eng)
+    assert st.node_spec("env-hello-box")["cluster"] == "box-login"
+    assert st.plan["clusters"]["box-login"]["scheduler"] == "none" and st.plan["clusters"]["box-login"]["login_of"] == "box"
+    assert st.node_spec("use")["cluster"] == "box" and st.nodes["use"].result.outputs["said"] == "hello v1"
+    assert len(ff.jobs()) == 1                     # only the step itself went through Slurm

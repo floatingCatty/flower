@@ -73,7 +73,8 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
   local analysis step should read).
 * **environment** — `environment: NAME` uses the frozen recipe `envs/NAME/` (setup.sh / activate.sh /
   check.sh). A generated step `env-NAME-<cluster>` checks it there (installs it if
-  missing) before the step, which runs with it activated. Without `cluster:` the step runs on this machine
+  missing) before the step, which runs with it activated. On a Slurm machine it runs on the login node (compute
+  nodes often have no internet), into the filesystem the jobs share. Without `cluster:` the step runs on this machine
   with it (the implicit cluster `local`). Recipes are made with `flower env new|freeze|replay` and
   `flower remote exec --env`.
 * **gate** — a person's decision: `message:` (templated), `decisions: [approve, reject]`,

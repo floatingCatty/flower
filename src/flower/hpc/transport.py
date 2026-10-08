@@ -20,6 +20,10 @@ TRANSIENT = ("connection timed out", "connection refused", "connection reset", "
              "invalid user for slurmuser", "kex_exchange_identification")
 
 
+def _text(b) -> str:
+    return b.decode(errors="replace") if isinstance(b, bytes) else (b or "")
+
+
 @dataclass
 class CmdResult:
     rc: int
@@ -71,8 +75,8 @@ class LocalTransport(Transport):
             p = subprocess.run(["bash", "-c", self.env_prefix + script], capture_output=True, text=True,
                                timeout=timeout, env=env)
             return CmdResult(p.returncode, p.stdout, p.stderr)
-        except subprocess.TimeoutExpired as exc:
-            return CmdResult(124, exc.stdout or "", exc.stderr or "", timed_out=True)
+        except subprocess.TimeoutExpired as exc:   # its partial output comes as bytes, even with text=True
+            return CmdResult(124, _text(exc.stdout), _text(exc.stderr), timed_out=True)
 
     def put(self, local: Path, remote: str) -> CmdResult:
         dst = Path(os.path.expanduser(remote))
@@ -133,8 +137,8 @@ class SSHTransport(Transport):
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stdin=subprocess.DEVNULL)
             return CmdResult(p.returncode, p.stdout, p.stderr)
-        except subprocess.TimeoutExpired as exc:
-            return CmdResult(124, exc.stdout or "", exc.stderr or "", timed_out=True)
+        except subprocess.TimeoutExpired as exc:   # its partial output comes as bytes, even with text=True
+            return CmdResult(124, _text(exc.stdout), _text(exc.stderr), timed_out=True)
 
     def _rsync(self, args: list[str], timeout: float = 3600) -> CmdResult:
         ssh = " ".join(shlex.quote(x) for x in ["ssh", *self.opts])
@@ -142,8 +146,8 @@ class SSHTransport(Transport):
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
             return CmdResult(p.returncode, p.stdout, p.stderr)
-        except subprocess.TimeoutExpired as exc:
-            return CmdResult(124, exc.stdout or "", exc.stderr or "", timed_out=True)
+        except subprocess.TimeoutExpired as exc:   # its partial output comes as bytes, even with text=True
+            return CmdResult(124, _text(exc.stdout), _text(exc.stderr), timed_out=True)
         except FileNotFoundError:
             return CmdResult(127, "", "rsync not installed")
 
