@@ -104,6 +104,28 @@ def cluster_spec(name: str, entry: dict) -> dict:
     return c
 
 
+def map_role(raw: dict, role: str, name: str) -> None:
+    """`run --machine ROLE=NAME`: the plan's steps on cluster ROLE run on the person's machine NAME; the plan's own
+    entry for ROLE goes, with the inputs only it used (a protocol's host and ssh options). The run records the
+    mapping, so its plan file is read the same way later (`flower rerun`)."""
+    import json
+    if get(name) is None:
+        raise FlowerError("usage", f"no machine {name!r}", f"machines: {', '.join(load()) or 'none'} "
+                          "(add one: flower remote add NAME user@host)")
+    steps = [n for n in raw.get("nodes") or [] if isinstance(n, dict) and n.get("cluster") == role]
+    if not steps:
+        raise FlowerError("usage", f"no step of the plan runs on {role!r}",
+                          "clusters the steps use: " + ", ".join(sorted({str(n.get("cluster")) for n in raw.get("nodes")
+                                                                         or [] if isinstance(n, dict) and n.get("cluster")})))
+    for n in steps:
+        n["cluster"] = name
+    gone = (raw.get("clusters") or {}).pop(role, None)
+    rest = json.dumps({k: v for k, v in raw.items() if k != "inputs"}, default=str)
+    for k in list(raw.get("inputs") or {}):
+        if f"inputs.{k}" in json.dumps(gone, default=str) and f"inputs.{k}" not in rest:
+            raw["inputs"].pop(k)
+
+
 def get(name: str) -> dict | None:
     entry = load().get(name)
     return cluster_spec(name, entry) if isinstance(entry, dict) else None

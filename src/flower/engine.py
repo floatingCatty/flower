@@ -123,7 +123,8 @@ def coerce_inputs(spec: dict, given: dict, base_dir: Path) -> dict:
 
 def create_run(plan_raw: dict, inputs: dict | None = None, *, root: Path | None = None,
                actor: str | None = None, approve: bool = False, note: str | None = None,
-               reuse_from: list[str] | None = None, rerun_from: list[str] | None = None) -> "Engine":
+               reuse_from: list[str] | None = None, rerun_from: list[str] | None = None,
+               machine_map: dict | None = None) -> "Engine":
     plan = planmod.check(plan_raw)
     root = root or find_root(create=True)
     src_dir = Path((plan.get("_source") or {}).get("dir") or os.getcwd())
@@ -153,7 +154,8 @@ def create_run(plan_raw: dict, inputs: dict | None = None, *, root: Path | None 
             "plan_id": plan["id"], "title": plan.get("title"), "inputs": values, "run_dir": str(paths.dir),
             "project_dir": str(root), "plan_source": (plan.get("_source") or {}).get("file"),
             "plan_dir": str(src_dir), "flower_version": __version__, "host": hostname(), "user": username(),
-            "note": note, "reuse_from": list(reuse_from or []), "rerun_from": list(rerun_from or [])}},
+            "note": note, "reuse_from": list(reuse_from or []), "rerun_from": list(rerun_from or []),
+            "machine_map": dict(machine_map or {})}},
         {"eventType": "plan.proposed", "actor": actor, "planGeneration": 0,
          "payload": {"generation": 0, "digest": pdig, "plan": plan}},
     ])
@@ -355,6 +357,20 @@ class Engine:
         if not src or not Path(src).is_file():
             return res
         raw = planmod.load_plan_file(src)
+        from . import machines
+        # read the file as the run was started: `run --machine ROLE=NAME` (recorded, or seen in a step that runs
+        # on a machine where the file names another cluster)
+        mapping = dict(st.meta.get("machine_map") or {})
+        run_clusters = st.plan.get("clusters") or {}
+        for n in raw.get("nodes") or []:
+            cur_n = next((x for x in st.plan.get("nodes") or [] if x.get("id") == n.get("id")), None) if isinstance(n, dict) else None
+            role = n.get("cluster") if isinstance(n, dict) else None
+            if cur_n and role and role not in mapping and cur_n.get("cluster") != role \
+                    and (run_clusters.get(cur_n.get("cluster")) or {}).get("machine") and role not in run_clusters:
+                mapping[role] = cur_n["cluster"]
+        for role, name in mapping.items():
+            if any(isinstance(n, dict) and n.get("cluster") == role for n in raw.get("nodes") or []):
+                machines.map_role(raw, role, name)
         # inputs: new declarations become add_inputs, with their value as the default
         cur_in = st.plan.get("inputs") or {}
         add_in = {}

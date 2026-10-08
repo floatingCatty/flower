@@ -585,6 +585,33 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** `--text` and `--note` are one record of the answer; both are kept, the text first. Also: a step that
   never ran no longer shows as "queued again" in `flower status` after a rerun upstream of it.
 
+## First study on a real Slurm cluster: SCNet Kunshan, partition Agent0 (2026-10-08)
+
+### 65. A run started with `run --machine ROLE=NAME` could not be rerun
+- **Test:** `tests/core/test_core_machines.py::test_a_run_started_with_machine_can_be_rerun`
+- **Observed:** the haldane-magnons protocol ran with `--machine remote=<the SCNet machine>`; `flower rerun RUN
+  env-tenpy-…` re-read the protocol as written (cluster `remote`, host inputs) and refused: "the plan file declares
+  a new input 'host' without a value".
+- **Fix:** the run records the mapping, and re-reading the plan file applies it (for older runs it is inferred from
+  a step that runs on a machine where the file names another cluster).
+
+### 66. A remote command that timed out crashed `flower remote exec`
+- **Observed:** `TypeError: write() argument must be str, not bytes`: subprocess hands back a timed-out command's
+  partial output as bytes even with `text=True`.
+- **Fix:** decoded in the transport (`_text`).
+
+### Environments on HPC (design, not bugs)
+- **Compute nodes without internet.** The generated environment step ran as a Slurm job and could not download its
+  packages. On a Slurm machine it now runs on the login node, into the filesystem the jobs share
+  (`tests/hpc/test_envs.py::test_on_a_slurm_machine_the_environment_installs_on_the_login_node`).
+- **A login node that kills detached work.** On the login node the install ran detached (as `scheduler: none`
+  steps do) and was killed when pip started compiling, 4 minutes in; the same install attached to an ssh session
+  (`flower env replay`) succeeded. Open: run login-node steps attached (an ssh session held by flower's local
+  supervisor), so they last as long as an interactive command would.
+- **A recipe that did not install on CentOS 7.** TeNPy 1.1.1 publishes Linux wheels for glibc >= 2.28 only; the
+  source package then built numpy from source (GCC >= 9.3 required, 7.3 there) and, with Cython present, C++ that
+  no longer compiles against numpy 2.4. The recipe now falls back to the pure-Python build of the same version.
+
 ## Observations (no xfail: questionable rather than certainly wrong)
 
 - **`on_reject.max_attempts` counts reworks, not attempts.** `engine.py:934` uses

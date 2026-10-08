@@ -22,7 +22,7 @@ clusters:
     cpus: 32
 environments:
   analysis: sha256:0e1294d20e1771ce93e613c5141c0d0cf3ec698d1b0a213e59824bfaee111d31
-  tenpy: sha256:8e6b257fb64fdd370fca6fd2a52cb9b0f2c78bd8e2b9244f8b5a7a611472f0ec
+  tenpy: sha256:6a94983fde48dcc798219d1b0eb21c991745b8edd9b302fe1153b5d611460367
 nodes:
 - id: paper
   description: 'The paper (arXiv v1, sha256) and its numbers: Table I (L = 100 energies of the lowest M = 1..4 states)

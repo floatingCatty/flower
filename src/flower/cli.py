@@ -326,8 +326,10 @@ def cmd_run(args, out: Out) -> int:
     inputs = parse_kv(args.input)
     if args.inputs:
         inputs.update(json.loads(Path(args.inputs).read_text()))
-    for role, name in parse_kv(args.machine).items():
-        _use_machine(raw, role, name)
+    mapping = parse_kv(args.machine)
+    from . import machines
+    for role, name in mapping.items():
+        machines.map_role(raw, role, name)
     reuse = []
     if args.reuse:
         root = find_root(create=True)
@@ -337,7 +339,7 @@ def cmd_run(args, out: Out) -> int:
         inputs = {**{k: v for k, v in Engine(RunPaths(root, reuse[0])).state().inputs.items() if k in declared},
                   **inputs}
     eng = create_run(raw, inputs, actor=args.actor, approve=not args.review, note=args.note, reuse_from=reuse,
-                     rerun_from=args.rerun_from or [])
+                     rerun_from=args.rerun_from or [], machine_map=mapping)
     st = eng.state()
     rid = st.run_id
     if args.review:
@@ -346,27 +348,6 @@ def cmd_run(args, out: Out) -> int:
         return out.done({**summary_data(eng), "overview": plan_overview(st.plan, st.inputs)},
                         plan_overview(st.plan, st.inputs) + f"\n\nrun {rid} is waiting for plan approval.", nxt, code=3)
     return _continue(eng, args, out, f"run {rid} started")
-
-
-def _use_machine(raw: dict, role: str, name: str) -> None:
-    """`run --machine ROLE=NAME`: the plan's steps on cluster ROLE run on the person's machine NAME; the plan's own
-    entry for ROLE goes, with the inputs only it used (a protocol's host and ssh options)."""
-    from . import machines
-    if machines.get(name) is None:
-        raise FlowerError("usage", f"no machine {name!r}", f"machines: {', '.join(machines.load()) or 'none'} "
-                          "(add one: flower remote add NAME user@host)")
-    steps = [n for n in raw.get("nodes") or [] if isinstance(n, dict) and n.get("cluster") == role]
-    if not steps:
-        raise FlowerError("usage", f"no step of the plan runs on {role!r}",
-                          "clusters the steps use: " + ", ".join(sorted({str(n.get("cluster")) for n in raw.get("nodes")
-                                                                         or [] if isinstance(n, dict) and n.get("cluster")})))
-    for n in steps:
-        n["cluster"] = name
-    gone = (raw.get("clusters") or {}).pop(role, None)
-    rest = json.dumps({k: v for k, v in raw.items() if k != "inputs"}, default=str)
-    for k in list(raw.get("inputs") or {}):
-        if f"inputs.{k}" in json.dumps(gone, default=str) and f"inputs.{k}" not in rest:
-            raw["inputs"].pop(k)
 
 
 def _continue(eng: Engine, args, out: Out, text: str) -> int:

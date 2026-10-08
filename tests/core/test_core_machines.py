@@ -190,3 +190,17 @@ def test_a_job_folder_says_what_it_is_and_exec_runs_in_it(cli, home, tmp_path):
     assert out["data"]["out"].strip().endswith(f"{rid}/a/a1")
     code, out = cli("remote", "exec", "--", "true")
     assert code == 2 and "--cluster" in out["error"]["message"] + out["error"].get("suggestion", "")
+
+
+def test_a_run_started_with_machine_can_be_rerun(cli, home, tmp_path):
+    """BUGS #65: `rerun` re-read the protocol as written (cluster `remote`, host inputs) and refused it."""
+    (tmp_path / "machines.yaml").write_text(yaml.safe_dump(
+        {"mine": {"ssh": "local", "work_dir": str(tmp_path / "work"), "probed": {"scheduler": "none"}}}))
+    p = write_plan(tmp_path, [{"id": "a", "cluster": "remote", "run": 'echo "{\\"ok\\": true}"'}],
+                   inputs={"host": {"type": "string", "required": True}},
+                   clusters={"remote": {"transport": "ssh", "host": "${inputs.host}", "scheduler": "none"}})
+    code, out = cli("run", str(p), "--machine", "remote=mine", "--follow", "--timeout", "60")
+    rid = out["data"]["run_id"]
+    code, out = cli("rerun", rid, "a", "--follow", "--timeout", "60")
+    assert code == 0, out
+    assert len(Engine(RunPaths(home, rid)).state().nodes["a"].attempts) == 2

@@ -8,4 +8,10 @@ for c in "$HOME/softwares/miniconda3/bin/conda" "$HOME/miniconda3/bin/conda" "$H
 done
 [ -n "$CONDA" ] || { echo "no conda, mamba or micromamba on this host" >&2; exit 1; }
 "$CONDA" create -y -p "$FLOWER_ENV_PREFIX" --file "$FLOWER_ENV_DIR/conda-explicit.txt"
-"$FLOWER_ENV_PREFIX/bin/pip" install --no-deps --no-cache-dir -r "$FLOWER_ENV_DIR/requirements.txt"
+PIP="$FLOWER_ENV_PREFIX/bin/pip"
+if ! "$PIP" install --no-deps --no-cache-dir --only-binary=:all: -r "$FLOWER_ENV_DIR/requirements.txt"; then
+  # No wheel fits this host: TeNPy publishes Linux wheels for glibc >= 2.28 only, so an older one (CentOS 7: 2.17)
+  # gets the source package. Installed against the numpy above, without Cython, it is TeNPy's pure-Python
+  # fallback: the same 1.1.1 code without one compiled speed-up (its shipped C++ no longer builds with numpy 2.4).
+  "$PIP" install --no-deps --no-cache-dir --no-build-isolation -r "$FLOWER_ENV_DIR/requirements.txt"
+fi
