@@ -100,7 +100,7 @@ upstream.
   alias, `user@host`, or `local`) probes the rest: Slurm or not, cores, memory, GPUs, partitions and accounts,
   scratch. Add `--cores N` or edit `agent_may_use` and `note` in `~/.flower/machines.yaml` to say what an agent may
   use without asking. Agents read `flower remote list --json` and never need to ask for a host. A password or a
-  second factor: `flower remote login NAME` opens one shared connection for the day.
+  second factor: add it with `--login`, and `flower remote login NAME` reopens the shared connection each day.
 - **Plans name machines** (`cluster: narval`), so a plan carries no one's host details; the run records the
   settings it used. Someone re-running a protocol maps its machines to theirs: `--machine remote=mybox`.
 - **A core budget:** on a machine without a scheduler flower shares out `agent_may_use.cores` (else all cores)

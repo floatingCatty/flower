@@ -133,10 +133,10 @@ overrides), outside every repository. You give how to reach a machine; flower pr
 
 | command | what it does |
 |---|---|
-| `flower remote add NAME TARGET [-i KEY] [--cores N] [--note TEXT]` | TARGET: an `~/.ssh/config` alias, `user@host[:port]`, or `local`. Probes the scheduler (Slurm or none), cores, memory, GPUs and load, Slurm partitions (time limits, node sizes, GPUs) and your accounts, a scratch directory (work and environments go there when there is one), the tools there (module, conda, apptainer, …) and free space; writes the entry |
+| `flower remote add NAME TARGET [-i KEY] [--login] [--cores N] [--note TEXT]` | TARGET: an `~/.ssh/config` alias, `user@host[:port]`, or `local`; `--login` when it asks for a password or a code (a shared connection, opened here first). Only a machine flower reached is saved. Probes the scheduler (Slurm or none), cores, memory, GPUs and load, Slurm partitions (time limits, node sizes, GPUs) and your accounts, a scratch directory (work and environments go there when there is one), the tools there (module, conda, apptainer, …) and free space; writes the entry |
 | `flower remote list [NAME]` | the machines, what they have, and what agents may use (`--json` is what agents read) |
 | `flower remote check [NAME]` | reach a machine (or all) and refresh what was probed |
-| `flower remote login NAME [--hours H]` | a password or a second factor: open one shared ssh connection (you type it once); flower reuses it while it is alive |
+| `flower remote login NAME [--hours H]` | a password or a second factor: open the shared ssh connection again (you type it once); flower reuses it while it is alive |
 | `flower remote exec --cluster NAME [--run RUN] -- CMD` | a command there (noted in the run's log with `--run`) |
 
 ```yaml

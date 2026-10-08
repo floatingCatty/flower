@@ -1217,13 +1217,9 @@ def _machines(args, out: Out) -> int:
             entry["note"] = args.note
         if args.cores:
             entry["agent_may_use"] = {"cores": args.cores}
-        try:
-            entry["probed"] = mm.probe(args.name, entry)
-        except FlowerError as exc:   # kept, so `flower remote login NAME` (a password, a code) can follow
-            data[args.name] = entry
-            p = mm.save(data)
-            exc.message += f" (saved in {p}, not probed yet)"
-            raise
+        if args.login:
+            _open_master(args.name, entry, args.hours)
+        entry["probed"] = mm.probe(args.name, entry)   # only a machine flower reached is saved
         data[args.name] = entry
         p = mm.save(data)
         return out.done({"name": args.name, "file": str(p), "machine": mm.effective(args.name, entry)},
@@ -1232,14 +1228,9 @@ def _machines(args, out: Out) -> int:
     if act == "login":
         entry = data.get(args.name)
         if not isinstance(entry, dict) or entry.get("ssh") == "local":
-            raise FlowerError("usage", f"no ssh machine {args.name!r}", "flower remote list")
-        host, opts = mm.ssh_target(entry)
-        Path(mm.control_path()).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
-        import subprocess
-        rc = subprocess.call(["ssh", *opts, "-o", "ControlMaster=yes", "-o", f"ControlPersist={int(args.hours * 3600)}",
-                              "-fN", host])
-        if rc != 0:
-            raise FlowerError("login", f"ssh to {args.name} failed (exit {rc})")
+            raise FlowerError("usage", f"no ssh machine {args.name!r}",
+                              "a new machine that needs a password or a code: flower remote add NAME TARGET --login")
+        host = _open_master(args.name, entry, args.hours)
         return out.done({"name": args.name, "hours": args.hours},
                         f"connected to {args.name}; flower reuses this connection for {args.hours:g} h "
                         f"(close it: ssh -O exit -o ControlPath={mm.control_path()} {host})")
@@ -1262,6 +1253,19 @@ def _machines(args, out: Out) -> int:
     text = "\n".join(mm.summary(n, data[n]) for n in names) or \
         "no machines yet: flower remote add NAME user@host   (or local: flower remote add here local)"
     return out.done({"file": str(mm.path()), "machines": {n: mm.effective(n, data[n]) for n in names}}, text)
+
+
+def _open_master(name: str, entry: dict, hours: float) -> str:
+    """One shared ssh connection, opened here (the person types a password or a code); flower reuses it."""
+    import subprocess
+    from . import machines as mm
+    host, opts = mm.ssh_target(entry)
+    Path(mm.control_path()).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+    rc = subprocess.call(["ssh", *opts, "-o", "ControlMaster=yes", "-o", f"ControlPersist={int(hours * 3600)}",
+                          "-fN", host])
+    if rc != 0:
+        raise FlowerError("login", f"ssh to {name} failed (exit {rc}); nothing was saved")
+    return host
 
 
 def _note_in_run(args, text: str) -> None:
@@ -1529,6 +1533,9 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("-i", "--identity-file", help="ssh key file (default: what ssh would use)")
     e.add_argument("--note", help="for agents and people, e.g. 'shared: ask before using more than 16 cores'")
     e.add_argument("--cores", type=int, help="the cores an agent may use there without asking")
+    e.add_argument("--login", action="store_true",
+                   help="the machine asks for a password or a code: open a shared connection here first")
+    e.add_argument("--hours", type=float, default=12, help="with --login: how long flower may reuse it")
     e = rs.add_parser("list", parents=[common], help="the machines, what they have, and what agents may use")
     e.add_argument("name", nargs="?")
     e = rs.add_parser("check", parents=[common], help="reach a machine (or all) and refresh what was probed")

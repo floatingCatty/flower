@@ -189,19 +189,18 @@ def probe(name: str, entry: dict, timeout: float = 90) -> dict:
             hint = ("ssh refused the login. Check, in order: the user name (`user@host`"
                     + ("" if "@" in host else f"; ssh used your local name {os.environ.get('USER', '')}") + "); "
                     "the key (`-i KEY`, readable only by you: chmod 600 KEY); and if the machine asks for a password "
-                    f"or a code: flower remote login {name}, then flower remote check {name}. "
+                    "or a code, add it with --login (a shared connection, opened here). "
                     f"Plain ssh should log in without asking: {try_it}")
         else:
             hint = f"check that this works from here: {try_it}"
-        raise FlowerError("unreachable", f"cannot reach {name}: {err[-300:] or 'exit %d' % r.rc}", hint)
+        raise FlowerError("unreachable", f"cannot reach {name} (nothing saved): {err[-300:] or 'exit %d' % r.rc}", hint)
     return parse_probe(r.out)
 
 
 def summary(name: str, entry: dict) -> str:
     m = effective(name, entry)
-    if not entry.get("probed"):
-        return (f"{name:<14} {str(m.get('ssh')):<22} not probed yet: flower remote check {name} "
-                f"(a password or a code: flower remote login {name} first)")
+    if not entry.get("probed"):   # written by hand
+        return f"{name:<14} {str(m.get('ssh')):<22} not probed yet: flower remote check {name}"
     if m.get("scheduler") == "slurm":
         parts = m.get("partitions") or []
         size = (f"slurm, {len(parts)} partitions ({', '.join(p['name'] for p in parts[:4])}"

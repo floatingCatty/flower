@@ -113,7 +113,7 @@ it: [docs/USING.md](docs/USING.md).
   finish; a background driver advances the run, and any `flower status` can pick it up after a crash or reboot.
 - **Machines set up once.** `flower remote add narval user@host` probes the scheduler, cores, partitions, accounts
   and scratch; agents read `flower remote list` instead of asking, plans just say `cluster: narval`, and
-  `flower remote login` covers passwords and second factors with one shared connection.
+  `--login` / `flower remote login` cover passwords and second factors with one shared connection.
 - **HPC and remote machines.** Submission is idempotent (a write-ahead intent, a deterministic job name, an in-job
   duplicate guard): a crash at any point re-attaches instead of submitting twice. Failures are typed (`timeout`,
   `oom`, `node_fail`, `preempted`, `lost`, …). Machines without a batch system run steps as detached processes
