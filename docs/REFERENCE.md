@@ -25,7 +25,7 @@ other commands exit 0 when done; any command exits 2 on an error (usage, invalid
 | `flower export RUN STEP…` | the steps behind STEP as a protocol: `protocol.yaml` (with the environment versions pinned), `expected.json`, `PROTOCOL.md` next to the plan |
 | `flower compare A B` | do two runs (or a run and an `expected.json`) agree within `--rtol`/`--atol`? |
 | `flower ui [start\|status\|stop\|user@host:/path]` | the project's web UI (background, stable port); `host:/path` opens another machine's project through ssh |
-| `flower remote add\|list\|check\|login\|exec` | the machines work runs on, set up once per person: see [Machines](#machines) |
+| `flower remote add\|list\|check\|login\|remove\|exec` | the machines work runs on, set up once per person: see [Machines](#machines) |
 | `flower env new\|freeze\|replay\|check\|show NAME` | software recipes, see [Environments](#environments) |
 | `flower plan validate\|show PLAN` | every problem of a plan file with a fix hint / a readable overview |
 
@@ -136,7 +136,8 @@ overrides), outside every repository. You give how to reach a machine; flower pr
 | `flower remote add NAME TARGET [-i KEY] [--login] [--cores N] [--note TEXT]` | TARGET: an `~/.ssh/config` alias, `user@host[:port]`, or `local`; `--login` when it asks for a password or a code (a shared connection, opened here first). Only a machine flower reached is saved. Probes the scheduler (Slurm or none), cores, memory, GPUs and load, Slurm partitions (time limits, node sizes, GPUs) and your accounts, a scratch directory (work and environments go there when there is one), the tools there (module, conda, apptainer, …) and free space; writes the entry |
 | `flower remote list [NAME]` | the machines, what they have, and what agents may use (`--json` is what agents read) |
 | `flower remote check [NAME]` | reach a machine (or all) and refresh what was probed |
-| `flower remote login NAME [--hours H]` | a password or a second factor: open the shared ssh connection again (you type it once); flower reuses it while it is alive |
+| `flower remote login NAME` | a password or a second factor: reopen the shared ssh connection after it dropped (a network break, a reboot); it has no time limit |
+| `flower remote remove NAME` | remove a machine, and close its shared connection |
 | `flower remote exec --cluster NAME [--run RUN] -- CMD` | a command there (noted in the run's log with `--run`) |
 
 ```yaml

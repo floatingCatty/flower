@@ -105,3 +105,11 @@ def test_a_machine_flower_cannot_reach_is_not_saved(cli, tmp_path):
     assert not (tmp_path / "machines.yaml").exists()
     code, out = cli("remote", "add", "far", "local")             # added once it is reachable
     assert code == 0 and out["data"]["machine"]["ssh"] == "local", out
+
+
+def test_remove_a_machine(cli, tmp_path):
+    cli("remote", "add", "here", "local")
+    code, out = cli("remote", "remove", "here")
+    assert code == 0 and yaml.safe_load((tmp_path / "machines.yaml").read_text().split("\n", 2)[2]) in (None, {})
+    code, out = cli("remote", "remove", "here")
+    assert code == 2
