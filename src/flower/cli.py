@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import shlex
 import signal
 import subprocess
 import sys
@@ -23,7 +24,7 @@ from . import plan as planmod
 from .engine import Engine, create_run, driver_alive
 from .rundir import RunPaths, find_root, list_runs, resolve_run
 from .state import TERMINAL_RUN
-from .util import FlowerError, atomic_write_json, default_actor, first_line, hostname, local_clock, now_iso, parse_duration, read_json
+from .util import FlowerError, atomic_write_json, default_actor, first_line, fmt_bytes, hostname, local_clock, now_iso, parse_duration, read_json
 
 EXIT = {"succeeded": 0, "failed": 1, "cancelled": 1, "rejected": 1, "parked": 3, "awaiting_approval": 3,
         "running": 3}
@@ -546,7 +547,16 @@ def _logs(eng: Engine, st, args, out: Out) -> int:
         local = jd if jd.exists() else adir / "job"
         jid = a.job.get("job_id")
         parts = []
-        for name in (log_files((st.plan.get("clusters") or {}).get(spec.get("cluster")) or {}, jid) if jid else []):
+        cl = (st.plan.get("clusters") or {}).get(spec.get("cluster")) or {}
+        if a.status == "running" and jid and not jd.exists() and a.job.get("job_dir"):   # live, from the machine
+            from .hpc.transport import make_transport
+            names = " ".join(shlex.quote(n) for n in log_files(cl, jid))
+            r = make_transport(cl).run(f"cd {shlex.quote(a.job['job_dir'])} && for f in {names}; do "
+                                       "[ -s \"$f\" ] && { echo \"==> $f (live, on the machine) <==\"; tail -c 20000 \"$f\"; }; done; true",
+                                       timeout=60)
+            text = (r.out or "").strip() or f"(no output yet; {(r.err or '').strip()[-200:]})"
+            return out.done({"text": text, "dir": a.job["job_dir"], "live": True}, text)
+        for name in (log_files(cl, jid) if jid else []):
             p = local / name
             if p.exists():
                 parts.append(f"==> {p} <==\n" + p.read_text(errors="replace")[-20000:])
@@ -1237,6 +1247,10 @@ def _machines(args, out: Out) -> int:
         _open_master(args.name, entry)
         return out.done({"name": args.name}, f"connected to {args.name}; flower reuses this connection until it "
                         f"drops (the network, a reboot) or `flower remote remove {args.name}`")
+    if act == "shell":
+        return _shell(args, data)
+    if act == "clean":
+        return _clean(args, out, data)
     if act == "remove":
         entry = data.pop(args.name, None)
         if not isinstance(entry, dict):
@@ -1266,6 +1280,88 @@ def _machines(args, out: Out) -> int:
     text = "\n\n".join(mm.details(n, data[n]) for n in names) or \
         "no machines yet: flower remote add NAME user@host   (or local: flower remote add here local)"
     return out.done({"file": str(mm.path()), "machines": {n: mm.effective(n, data[n]) for n in names}}, text)
+
+
+def _shell(args, data: dict) -> int:
+    """`remote shell NAME`, or `remote shell --run RUN STEP`: an interactive shell there, in the step's folder."""
+    import subprocess
+    from . import machines as mm
+    spec, where = None, None
+    if args.run:
+        args.step = args.step or args.name   # `remote shell --run RUN STEP`
+        eng = get_engine(args)
+        st = eng.state()
+        ns = st.nodes.get(args.step or "")
+        if ns is None or not ns.last or not (ns.last.job or {}).get("job_dir"):
+            raise FlowerError("usage", f"step {args.step!r} of {st.run_id} has no job folder on a machine",
+                              "steps that ran on a machine: " + ", ".join(n for n, s in st.nodes.items()
+                                                                        if s.last and (s.last.job or {}).get("job_dir")))
+        spec = (st.plan.get("clusters") or {}).get(st.node_spec(args.step).get("cluster")) or {}
+        where = ns.last.job["job_dir"]
+        eng.note(f"shell opened in the folder of {args.step} on {spec.get('machine') or st.node_spec(args.step).get('cluster')}",
+                 node=args.step, by=args.actor or default_actor())
+    elif args.name:
+        if args.name not in data:
+            raise FlowerError("usage", f"no machine {args.name!r}", "flower remote list")
+        spec = mm.cluster_spec(args.name, data[args.name])
+    else:
+        raise FlowerError("usage", "say where: flower remote shell NAME, or flower remote shell --run RUN STEP")
+    go = f"cd {shlex.quote(where)} && exec \"${{SHELL:-bash}}\" -l" if where else None
+    if spec.get("transport", "local") != "ssh":
+        return subprocess.call(["bash", "-c", go] if go else ["bash", "-l"])
+    cmd = ["ssh", "-t", *(spec.get("ssh_options") or []), spec["host"]] + ([go] if go else [])
+    return subprocess.call(cmd)
+
+
+def _clean(args, out: Out, data: dict) -> int:
+    """`remote clean NAME [-y]`: the job folders of this project's finished runs on that machine (what was fetched
+    stays in the record; nothing else on the machine is touched)."""
+    from . import machines as mm
+    from .hpc.transport import make_transport
+    if args.name not in data:
+        raise FlowerError("usage", f"no machine {args.name!r}", "flower remote list")
+    spec = mm.cluster_spec(args.name, data[args.name])
+    root = find_root()
+    dirs, runs = [], []
+    for rid in list_runs(root):
+        try:
+            st = Engine(RunPaths(root, rid)).state()
+        except FlowerError:
+            continue
+        if st.status not in TERMINAL_RUN:
+            continue
+        for c in (st.plan.get("clusters") or {}).values():
+            same = c.get("machine") == args.name or (c.get("host") and c.get("host") == spec.get("host")) or \
+                (c.get("transport", "local") == "local" and spec.get("transport") == "local" and c.get("remote_root"))
+            if same:
+                base = str(c.get("remote_root") or "~/flower-runs").rstrip("/")
+                d = ("$HOME" + base[1:] if base.startswith("~") else base) + "/" + rid
+                if d not in dirs:
+                    dirs.append(d)
+                    runs.append(rid)
+    if not dirs:
+        return out.done({"dirs": []}, f"nothing to clean on {args.name}: no finished run of this project used it")
+    tr = make_transport(spec)
+    r = tr.run("for d in " + " ".join(f'"{d}"' for d in dirs) + "; do [ -d \"$d\" ] && du -sk \"$d\"; done; true", timeout=600)
+    sizes = {ln.split("\t", 1)[1].strip(): int(ln.split("\t", 1)[0]) for ln in r.out.splitlines() if "\t" in ln}
+    found = [(rid, d) for rid, d in zip(runs, dirs) if any(k.endswith("/" + rid) for k in sizes)]
+    total = sum(sizes.values())
+    lines = [f"  {rid}  {fmt_bytes(1024 * sizes[next(k for k in sizes if k.endswith('/' + rid))])}" for rid, _ in found]
+    if not found:
+        return out.done({"dirs": []}, f"nothing to clean on {args.name}: those runs' folders are gone already")
+    if not args.yes:
+        return out.done({"would_remove": [d for _, d in found], "kb": total},
+                        f"the job folders of {len(found)} finished run(s) on {args.name}, {fmt_bytes(1024 * total)}:\n"
+                        + "\n".join(lines) + "\nremove them: flower remote clean " + args.name + " -y "
+                        "(what each run fetched stays in its record here)")
+    r = tr.run("rm -rf " + " ".join(f'"{d}"' for _, d in found), timeout=1800)
+    if r.rc != 0:
+        raise FlowerError("remote", f"could not remove them: {(r.err or '').strip()[-300:]}")
+    for rid, d in found:
+        Engine(RunPaths(root, rid)).note(f"job folders on {args.name} removed ({d}); what was fetched stays here",
+                                         by=args.actor or default_actor())
+    return out.done({"removed": [d for _, d in found], "kb": total},
+                    f"removed {fmt_bytes(1024 * total)} on {args.name}:\n" + "\n".join(lines))
 
 
 def _open_master(name: str, entry: dict) -> str:
@@ -1537,7 +1633,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--inputs", help="JSON file with the plan's inputs")
         sp.add_argument("--timeout", type=float, default=7200.0, help="seconds (default 2h)")
 
-    s = add("remote", cmd_remote, "machines work runs on: add (probes it), list, check, login, remove; exec a command there")
+    s = add("remote", cmd_remote, "machines work runs on: add (probes it), list, check, login, remove, shell, exec, clean")
     rs = s.add_subparsers(dest="remote_action", required=True)
     e = rs.add_parser("add", parents=[common], help="add a machine: flower remote add NAME TARGET (an ssh alias, "
                                                     "user@host[:port], or local); flower probes the rest")
@@ -1558,6 +1654,15 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("name")
     e = rs.add_parser("remove", parents=[common], help="remove a machine (and close its shared connection)")
     e.add_argument("name")
+    e = rs.add_parser("shell", parents=[common], help="an interactive shell on a machine (NAME), or in a step's folder "
+                                                      "there (--run RUN STEP)")
+    e.add_argument("name", nargs="?")
+    e.add_argument("step", nargs="?", help="with --run: the step whose folder to open")
+    e.add_argument("--run")
+    e = rs.add_parser("clean", parents=[common], help="the job folders of this project's finished runs on a machine: "
+                                                      "list them with their size; -y removes them")
+    e.add_argument("name")
+    e.add_argument("-y", "--yes", action="store_true")
     e = rs.add_parser("exec", parents=[common], help="flower remote exec --cluster MACHINE [--run RUN] [--env E] -- <command>")
     plan_cluster_args(e)
     e.add_argument("--env", help="explore environment NAME: an exploration prefix, its activate.sh sourced")

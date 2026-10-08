@@ -44,7 +44,7 @@ COMMON_KEYS = {"id", "kind", "title", "description", "needs", "when", "trigger",
                "files", "retry", "timeout", "cache", "foreach", "env", "on_failure",
                "bind", "expanded_from", "generated"}
 KIND_KEYS = {
-    "shell": {"run", "cluster", "stage_in", "retrieve", "resources", "prelude", "environment", "tmpdir"},
+    "shell": {"run", "cluster", "stage_in", "retrieve", "retrieve_limit", "resources", "prelude", "environment", "tmpdir"},
     "gate": {"message", "decisions", "on_reject"},
 }
 
@@ -518,7 +518,7 @@ def plan_digest(plan: dict) -> str:
 
 
 # keys that do not change what a step computes: editing them keeps cached results
-DECL_EXCLUDE = {"title", "description", "retry", "timeout", "resources", "cache", "tmpdir"}
+DECL_EXCLUDE = {"title", "description", "retry", "timeout", "resources", "cache", "tmpdir", "retrieve_limit"}
 
 
 def warnings(plan: dict) -> list[str]:

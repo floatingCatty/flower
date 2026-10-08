@@ -25,7 +25,7 @@ other commands exit 0 when done; any command exits 2 on an error (usage, invalid
 | `flower export RUN STEP…` | the steps behind STEP as a protocol: `protocol.yaml` (with the environment versions pinned), `expected.json`, `PROTOCOL.md` next to the plan |
 | `flower compare A B` | do two runs (or a run and an `expected.json`) agree within `--rtol`/`--atol`? |
 | `flower ui [start\|status\|stop\|user@host:/path]` | the project's web UI (background, stable port); `host:/path` opens another machine's project through ssh |
-| `flower remote add\|list\|check\|login\|remove\|exec` | the machines work runs on, set up once per person: see [Machines](#machines) |
+| `flower remote add\|list\|check\|login\|remove\|exec\|shell\|clean` | the machines work runs on, set up once per person: see [Machines](#machines) |
 | `flower env new\|freeze\|replay\|check\|show NAME` | software recipes, see [Environments](#environments) |
 | `flower plan validate\|show PLAN` | every problem of a plan file with a fix hint / a readable overview |
 
@@ -86,14 +86,17 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
     environment: pyscf       # the frozen software recipe envs/pyscf/ (see below)
     resources: {nodes, ntasks, ntasks_per_node, cpus_per_task, mem, time, partition, account, qos, gpus, extra: [...]}
     stage_in: [{from: local/path, to: name}, {from: "remote:${relax.outputs.job_dir}/CHGCAR", to: CHGCAR, mode: link}]
-    retrieve: [glob, ...]    # fetched back next to the step's outputs
+    retrieve: [glob, ...]    # fetched back next to the step's outputs when the job ends (with `files:`, its logs and
+                             # outputs); the rest stays in its folder there (`remote:` stage_in reuses it)
+    retrieve_limit: 20G      # refuse to fetch more than this (default 5G; nothing is fetched, the files stay there)
 ```
 
 ### Steps
 * **shell** — `run:` is a bash script. With `cluster:` it runs in its own attempt directory on that machine,
-  as a Slurm job or (`scheduler: none`) a detached process; nothing is held while it runs. Outputs then also
-  include `job_id`, `job_dir` (on the cluster) and `local_dir` (where `files:` / `retrieve:` were fetched on
-  this machine: what a local analysis step should read).
+  as a Slurm job or (`scheduler: none`) a detached process; nothing is held while it runs (`flower status` shows
+  the last line it printed; `flower show RUN STEP --logs` its output so far). Outputs then also include `job_id`,
+  `job_dir` (on the cluster) and `local_dir` (where `files:` / `retrieve:` were fetched on this machine: what a
+  local analysis step should read).
 * **environment** — `environment: NAME` uses the frozen recipe `envs/NAME/` (setup.sh / activate.sh /
   check.sh). A generated step `env-NAME-<cluster>` checks it there (installs it if
   missing) before the step, which runs with it activated. Without `cluster:` the step runs on this machine
@@ -125,7 +128,6 @@ whose command, inputs or environment changed runs again with its downstream, and
 record; a description, title, timeout or retry change re-runs nothing. Of an existing cluster only `cpus`,
 `max_jobs` and `min_poll` may change; new clusters and inputs may be added.
 
-
 ## Machines
 
 Where work runs is set up once per person, not per plan: `~/.flower/machines.yaml` (`$FLOWER_MACHINES`
@@ -138,7 +140,9 @@ overrides), outside every repository. You give how to reach a machine; flower pr
 | `flower remote check [NAME]` | reach a machine (or all) and refresh what was probed |
 | `flower remote login NAME` | a password or a second factor: reopen the shared ssh connection after it dropped (a network break, a reboot); it has no time limit |
 | `flower remote remove NAME` | remove a machine, and close its shared connection |
-| `flower remote exec --cluster NAME [--run RUN] -- CMD` | a command there (noted in the run's log with `--run`) |
+| `flower remote exec --cluster NAME [--run RUN] -- CMD` | one command there, from the login directory (noted in the run's log with `--run`): what agents use |
+| `flower remote shell NAME` / `flower remote shell --run RUN STEP` | an interactive shell there, or in that step's job folder (for people; noted in the run's log) |
+| `flower remote clean NAME [-y]` | the job folders of this project's finished runs on that machine, with their size; `-y` removes them (what was fetched stays in the record) |
 
 ```yaml
 narval:
@@ -149,6 +153,12 @@ narval:
   probed: {scheduler: slurm, partitions: [...], accounts: [def-xyz], work_dir: /scratch/me/flower-runs,
            env_dir: /scratch/me/flower-envs, tools: [sbatch, module, apptainer], ...}
 ```
+
+**What comes back from a machine.** A step's job runs in its own folder there (`<work_dir>/RUN/STEP/a1`). While it
+runs, `flower status` shows the last line it printed and `flower show RUN STEP --logs` its output so far. When it
+ends, one transfer brings back its outputs, its logs, its `files:` and `retrieve:` patterns into the step's
+folder here (refused above `retrieve_limit`, default 5G); everything else stays there, for a later step on the
+same machine (`stage_in: [{from: "remote:${step.outputs.job_dir}/X", to: X}]`) until `flower remote clean`.
 
 A step names a machine as `cluster: NAME`; the run records the settings it used (no keys or passwords: those stay
 with ssh). On a machine without a scheduler, flower shares out `agent_may_use.cores` (else all its cores) among

@@ -101,7 +101,7 @@ conditions, retries keyed on failure class, timeouts, and caching of unchanged s
 | follow and read | `status`, `show`, `log`, `ui` |
 | decide | `approve`, `reject`, `cancel` |
 | deliver | `export`, `compare` |
-| machines and software | `remote add\|list\|check\|login\|remove\|exec`, `env new\|freeze\|replay\|check\|show`, `plan validate\|show` |
+| machines and software | `remote add\|list\|check\|login\|remove\|exec\|shell\|clean`, `env new\|freeze\|replay\|check\|show`, `plan validate\|show` |
 
 Every command takes `--json` and prints `{ok, data, error, next}`, and returns at once; `--follow` waits.
 `status` and `--follow` exit 0 succeeded, 1 failed, 3 still running or waiting for a decision; 2 is an error. Details: [docs/REFERENCE.md](docs/REFERENCE.md). How a team adopts

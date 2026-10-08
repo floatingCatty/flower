@@ -33,10 +33,12 @@ from ..hpc import scheduler_for, slurm
 from ..hpc.transport import CmdResult, make_transport
 from ..rundir import fs_name
 from ..util import (FlowerError, atomic_write_json, atomic_write_text, digest, first_line,
-                    parse_duration, read_json, tail_text)
-from .base import scratch_env, RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, check_outputs, collect_files, printed_outputs
+                    fmt_bytes, parse_duration, read_json, tail_text)
+from .base import (scratch_env, RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, check_outputs, collect_files, mem_mb,
+                   printed_outputs)
 
 MAX_REMOTE_ERRORS = 8
+RETRIEVE_LIMIT = "5G"   # what one job may bring back unless its step says `retrieve_limit:`
 POLL_BACKOFF = (30.0, 300.0, 1200.0)
 
 
@@ -330,6 +332,12 @@ class JobExecutor(Executor):
         cache.pop("last_error", None)
         atomic_write_json(cache_path, cache)
         for i, ctx in live:
+            tail = (poll.get("evidence") or {}).get(str(ctx.job["job_id"]), {}).get("tail")
+            if tail:   # what the job printed last: shown by `flower status` while it runs (a file, not the journal)
+                try:
+                    (ctx.attempt_dir / "live.txt").write_text(tail)
+                except OSError:
+                    pass
             try:
                 results[i] = self._advance(ctx, cluster, tr, poll)
             except Exception as exc:  # noqa: BLE001
@@ -425,6 +433,16 @@ class JobExecutor(Executor):
             pats = ["outputs.json", *scheduler_for(cluster).retrieve_patterns(), ".flower/*"] \
                 + list(ctx.node.get("retrieve") or []) \
                 + [str(v) for v in (ctx.node.get("files") or {}).values()]
+            if not ctx.job.get("retrieve_sized"):   # a broad `retrieve:` must not pull gigabytes unannounced
+                limit_mb = mem_mb(ctx.node.get("retrieve_limit") or cluster.get("retrieve_limit") or RETRIEVE_LIMIT)
+                size = tr.size(job_dir, pats)
+                if size is not None and limit_mb and size > limit_mb * 1024 * 1024:
+                    return Outcome.fail("retrieve_limit", f"the files to fetch come to {fmt_bytes(size)}, over the "
+                                        f"limit of {fmt_bytes(limit_mb * 2 ** 20)}: nothing was fetched; they are on "
+                                        f"{cluster.get('_name') or ctx.node.get('cluster')} in {job_dir}",
+                                        retryable=False, details={"job_dir": job_dir, "bytes": size,
+                                        "hint": "narrow `retrieve:`, or raise it for this step: retrieve_limit: 20G"})
+                ctx.job["retrieve_sized"] = True
             r = tr.get(job_dir, local, pats)
             if r.rc != 0:
                 n = int(ctx.job.get("retrieve_errors") or 0) + 1

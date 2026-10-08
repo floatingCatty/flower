@@ -140,6 +140,8 @@ def poll_command(jobs: list[tuple[str, str]], cmds: dict) -> str:
                      "[ -s .flower/owner/id ] && printf 'owner=%s\\n' \"$(cat .flower/owner/id)\"; "
                      "[ -f .flower/started ] && echo started; [ -f .flower/cancelled ] && echo cancelled; "
                      "[ -f .flower/timed_out ] && echo timed_out; [ -f outputs.json ] && echo outputs; "
+                     "L=$(tail -n 5 job.out 2>/dev/null | tr -d '\\r' | grep -v '^[[:space:]]*$' | tail -n 1 | cut -c1-200); "
+                     "[ -n \"$L\" ] && printf 'tail=%s\\n' \"$L\"; "
                      f"if kill -0 {p} 2>/dev/null && {{ [ ! -d /proc/{p} ] || [ /proc/{p}/cwd -ef . ]; }}; "
                      "then echo alive; fi; true; } || echo missing_dir")
     parts.append("echo @@END")

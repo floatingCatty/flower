@@ -173,7 +173,9 @@ def poll_command(jobs: list[tuple[str, str]], cmds: dict) -> str:
                      "printf 'ec=%s\\n' \"$(cat .flower/ec 2>/dev/null)\"; "
                      "[ -s .flower/owner/id ] && printf 'owner=%s\\n' \"$(cat .flower/owner/id)\"; "
                      "[ -f .flower/started ] && echo started; [ -f .flower/cancelled ] && echo cancelled; "
-                     "[ -f outputs.json ] && echo outputs; true; } || echo missing_dir")
+                     "[ -f outputs.json ] && echo outputs; "
+                     f"L=$(tail -n 5 slurm-{q(jid)}.out 2>/dev/null | tr -d '\\r' | grep -v '^[[:space:]]*$' | tail -n 1 "
+                     "| cut -c1-200); [ -n \"$L\" ] && printf 'tail=%s\\n' \"$L\"; true; } || echo missing_dir")
     parts.append("echo @@END")
     return "\n".join(parts)
 
@@ -223,6 +225,8 @@ def parse_poll(out: str) -> dict:
                 ev["ec"] = int(v) if re.fullmatch(r"-?\d+", v) else None
             elif s.startswith("owner="):
                 ev["owner"] = s[6:].strip()
+            elif s.startswith("tail="):   # the last line the job printed (shown while it runs)
+                ev["tail"] = s[5:].strip()
             else:
                 ev[s] = True
     return res

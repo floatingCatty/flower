@@ -207,3 +207,24 @@ def test_real_ssh_localhost(ff, tmp_path):
     assert st.status == "succeeded", ff.why(eng)
     assert Path(st.nodes["a"].result.outputs["job_dir"]).is_relative_to(root)
     assert (eng.paths.attempt_dir("a", 1) / "job" / "result.txt").read_text().strip() == "result"
+
+
+def test_ssh_retrieve_over_the_limit_fetches_nothing(ff, fakessh):
+    """A broad `retrieve:` must not pull gigabytes unannounced: over `retrieve_limit` nothing comes back."""
+    eng = ff.run(ff.plan([ff.job("a", "head -c 3000000 /dev/zero > big.bin\n" + OUT, retrieve=["big.bin"],
+                                 retrieve_limit="1M")], clusters=_ssh_cluster(ff, scheduler="none", min_poll="0.2s")))
+    st = ff.drive(eng, timeout=40)
+    err = st.nodes["a"].last.error
+    assert st.nodes["a"].status == "failed" and err["error_class"] == "retrieve_limit", err
+    assert "2.86 MB" in err["message"] and "1 MB" in err["message"]
+    assert not (eng.paths.attempt_dir("a", 1) / "job" / "big.bin").exists()
+
+
+def test_ssh_a_running_job_shows_what_it_printed_last(ff, fakessh):
+    eng = ff.run(ff.plan([ff.job("a", "echo 'step 1 of 2'; sleep 3; echo 'step 2 of 2'\n" + OUT)],
+                         clusters=_ssh_cluster(ff, scheduler="none", min_poll="0.2s")))
+    live = eng.paths.attempt_dir("a", 1) / "live.txt"
+    ff.drive(eng, timeout=20, until=lambda st: live.exists() and "step 1" in live.read_text())
+    from flower.render import status_view
+    assert "step 1 of 2" in status_view(eng.state(), eng.paths)
+    assert ff.drive(eng, timeout=30).status == "succeeded"

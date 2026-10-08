@@ -60,14 +60,17 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
     environment: pyscf       # the frozen software recipe envs/pyscf/ (see below)
     resources: {nodes, ntasks, ntasks_per_node, cpus_per_task, mem, time, partition, account, qos, gpus, extra: [...]}
     stage_in: [{from: local/path, to: name}, {from: "remote:${relax.outputs.job_dir}/CHGCAR", to: CHGCAR, mode: link}]
-    retrieve: [glob, ...]    # fetched back next to the step's outputs
+    retrieve: [glob, ...]    # fetched back next to the step's outputs when the job ends (with `files:`, its logs and
+                             # outputs); the rest stays in its folder there (`remote:` stage_in reuses it)
+    retrieve_limit: 20G      # refuse to fetch more than this (default 5G; nothing is fetched, the files stay there)
 ```
 
 ## Steps
 * **shell** — `run:` is a bash script. With `cluster:` it runs in its own attempt directory on that machine,
-  as a Slurm job or (`scheduler: none`) a detached process; nothing is held while it runs. Outputs then also
-  include `job_id`, `job_dir` (on the cluster) and `local_dir` (where `files:` / `retrieve:` were fetched on
-  this machine: what a local analysis step should read).
+  as a Slurm job or (`scheduler: none`) a detached process; nothing is held while it runs (`flower status` shows
+  the last line it printed; `flower show RUN STEP --logs` its output so far). Outputs then also include `job_id`,
+  `job_dir` (on the cluster) and `local_dir` (where `files:` / `retrieve:` were fetched on this machine: what a
+  local analysis step should read).
 * **environment** — `environment: NAME` uses the frozen recipe `envs/NAME/` (setup.sh / activate.sh /
   check.sh). A generated step `env-NAME-<cluster>` checks it there (installs it if
   missing) before the step, which runs with it activated. Without `cluster:` the step runs on this machine

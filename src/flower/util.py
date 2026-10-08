@@ -174,6 +174,15 @@ def read_json(path: str | os.PathLike, default: Any = None) -> Any:
         return default
 
 
+def fmt_bytes(n: float) -> str:
+    """3000000 -> '2.86 MB'."""
+    for unit in ("B", "KB", "MB", "GB"):
+        if n < 1024 or unit == "GB":
+            return f"{int(n)} B" if unit == "B" else f"{n:.3g} {unit}"
+        n /= 1024
+    return f"{n:.3g} GB"
+
+
 def tail_text(path: str | os.PathLike, max_bytes: int = 4000) -> str:
     try:
         with open(path, "rb") as fh:

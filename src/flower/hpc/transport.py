@@ -57,6 +57,10 @@ class Transport:
         symlinks, in one transfer."""
         raise NotImplementedError
 
+    def size(self, remote: str, patterns: list[str] | None = None) -> int | None:
+        """Bytes that ``get(remote, …, patterns)`` would fetch (None: could not tell)."""
+        return None
+
 
 class LocalTransport(Transport):
     is_local = True
@@ -153,12 +157,23 @@ class SSHTransport(Transport):
         return self._rsync(["--copy-links", f"--rsync-path={mk}", str(local).rstrip("/") + "/",
                             f"{self.host}:{remote.rstrip('/')}/"])
 
+    @staticmethod
+    def _filters(patterns: list[str] | None) -> list[str]:
+        return (["--include=*/"] + [f"--include={p}" for p in patterns] + ["--exclude=*", "--prune-empty-dirs"]) \
+            if patterns else []
+
     def get(self, remote: str, local: Path, patterns: list[str] | None = None) -> CmdResult:
         Path(local).mkdir(parents=True, exist_ok=True)
-        args = []
-        if patterns:
-            args += ["--include=*/"] + [f"--include={p}" for p in patterns] + ["--exclude=*", "--prune-empty-dirs"]
-        return self._rsync(args + [f"{self.host}:{remote.rstrip('/')}/", str(local) + "/"])
+        return self._rsync(self._filters(patterns) + [f"{self.host}:{remote.rstrip('/')}/", str(local) + "/"])
+
+    def size(self, remote: str, patterns: list[str] | None = None) -> int | None:
+        import re
+        import tempfile
+        with tempfile.TemporaryDirectory() as empty:   # a dry run into an empty directory: everything counts
+            r = self._rsync(["-n", "--stats"] + self._filters(patterns) + [f"{self.host}:{remote.rstrip('/')}/",
+                                                                           empty + "/"], timeout=300)
+        m = re.search(r"Total transferred file size: ([\d,.]+)", r.out or "")
+        return int(m.group(1).replace(",", "").replace(".", "")) if r.rc == 0 and m else None
 
 
 def make_transport(cluster: dict) -> Transport:

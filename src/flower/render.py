@@ -179,9 +179,11 @@ def node_activity(st: RunState, paths: RunPaths, ns: NodeState, spec: dict) -> s
                 e = j.get("last_remote_error")
                 return ("submitting…" if sched.NAME == "slurm" else "starting…") + \
                     (f" (retrying after error: {first_line(e.get('error'), 60)})" if e else "")
+            live = tail_text(paths.attempt_dir(ns.id, a.n) / "live.txt", 300).strip()
+            live = f" · {live}" if live else ""
             if sched.NAME == "none":
-                return f"{j.get('state') or 'RUNNING'} · pid {j['job_id']} on {spec.get('cluster')}"
-            return f"{j.get('state') or 'QUEUED'} · slurm job {j['job_id']}" + (f" ({j.get('sched')})" if j.get("sched") else "")
+                return f"{j.get('state') or 'RUNNING'} · pid {j['job_id']} on {spec.get('cluster')}{live}"
+            return f"{j.get('state') or 'QUEUED'} · slurm job {j['job_id']}" + (f" ({j.get('sched')})" if j.get("sched") else "") + live
         out = tail_text(paths.attempt_dir(ns.id, a.n) / "proc" / "stdout.log", 400).strip().splitlines()
         return first_line(out[-1], 100) if out else "running…"
     if ns.stale and a:                  # a step that never ran is just pending, not "again"

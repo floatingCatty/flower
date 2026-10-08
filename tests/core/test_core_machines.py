@@ -129,3 +129,41 @@ def test_partitions_read_like_a_person_would():
     assert machines._gres("RTX4090-PCIE-24GB-LS:8(S:0-7),RTX4090-PCIE-24GB-LS:8(S:0-3)") == "8 × RTX4090-PCIE-24GB-LS"
     assert machines._gres("dcu:Hygon:4(S:0-3)") == "4 × Hygon dcu"
     assert machines._gres(None) == ""
+
+
+def test_the_poll_carries_the_last_line_a_job_printed():
+    from flower.hpc import slurm
+    poll = slurm.parse_poll("@@SQUEUE\n@@EV 42\nec=\nstarted\ntail=step 3 of 8\n@@END\n")
+    assert poll["evidence"]["42"] == {"ec": None, "started": True, "tail": "step 3 of 8"}
+
+
+def test_retrieve_limit_is_a_setting_not_a_new_step():
+    from flower import plan as planmod
+    a = planmod.normalize_node({"id": "s", "run": "true", "retrieve": ["*.out"]}, {})
+    b = planmod.normalize_node({"id": "s", "run": "true", "retrieve": ["*.out"], "retrieve_limit": "20G"}, {})
+    assert planmod.decl_hash(a) == planmod.decl_hash(b)
+
+
+def test_clean_lists_then_removes_the_job_folders_of_finished_runs(cli, home, tmp_path):
+    work = tmp_path / "work"
+    (tmp_path / "machines.yaml").write_text(yaml.safe_dump(
+        {"here": {"ssh": "local", "work_dir": str(work), "probed": {"scheduler": "none"}}}))
+    p = write_plan(tmp_path, [{"id": "a", "cluster": "here", "run": 'echo x > f.txt; echo "{}"'}])
+    code, out = cli("run", str(p), "--follow", "--timeout", "60")
+    rid = out["data"]["run_id"]
+    assert code == 0 and (work / rid).is_dir()
+    code, out = cli("remote", "clean", "here")
+    assert code == 0 and out["data"]["would_remove"] and (work / rid).is_dir()       # a list first
+    code, out = cli("remote", "clean", "here", "-y")
+    assert code == 0 and not (work / rid).exists()
+    assert any("removed" in (e.get("payload") or {}).get("text", "") for e in Engine(RunPaths(home, rid)).journal.read())
+
+
+def test_shell_opens_in_a_steps_folder(cli, home, tmp_path, monkeypatch):
+    (tmp_path / "machines.yaml").write_text(yaml.safe_dump(
+        {"far": {"ssh": "me@far.org:2222", "probed": {"scheduler": "none"}}}))
+    calls = []
+    import subprocess
+    monkeypatch.setattr(subprocess, "call", lambda cmd, *a, **k: calls.append(cmd) or 0)
+    code, _ = cli("remote", "shell", "far", as_json=False)
+    assert code == 0 and calls[-1][:2] == ["ssh", "-t"] and "-p" in calls[-1] and calls[-1][-1] == "me@far.org"
