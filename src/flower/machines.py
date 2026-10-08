@@ -150,6 +150,16 @@ def parse_probe(out: str) -> dict:
                                          "gres": None if p[4] in ("(null)", "") else p[4], "nodes": _int(p[5])})
         else:
             kv[k] = v
+    merged: dict = {}
+    for p in kv["partitions"]:   # sinfo prints a partition once per node configuration: one entry, the largest
+        q = merged.setdefault(p["name"], dict(p, nodes=0))
+        q["default"] = q["default"] or p["default"]
+        q["nodes"] = (q["nodes"] or 0) + (p["nodes"] or 0)
+        for k in ("cores_per_node", "mem_mb_per_node"):
+            q[k] = max(x for x in (q[k], p[k], 0) if x is not None) or None
+        if p["gres"] and p["gres"] != q["gres"]:
+            q["gres"] = ",".join(x for x in (q["gres"], p["gres"]) if x)
+    kv["partitions"] = list(merged.values())
     slurm = "sbatch" in kv["tools"] and bool(kv["partitions"])
     scratch = kv.get("scratch")
     base = scratch or "~"
@@ -168,6 +178,26 @@ def parse_probe(out: str) -> dict:
     return probed
 
 
+def host_key_name(host: str, opts: list[str]) -> str:
+    """How known_hosts names the host: `[host]:port` on a port other than 22."""
+    bare = host.split("@", 1)[-1]
+    port = opts[opts.index("-p") + 1] if "-p" in opts else None
+    return f"[{bare}]:{port}" if port and port != "22" else bare
+
+
+def host_key(entry: dict) -> str | None:
+    """The fingerprint ssh saved for the machine (shown when `remote add` accepted it), or None."""
+    import subprocess
+    host, opts = ssh_target(entry)
+    try:
+        r = subprocess.run(["ssh-keygen", "-l", "-F", host_key_name(host, opts)], capture_output=True, text=True,
+                           timeout=10)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+    keys = [ln.split(None, 1)[1] for ln in r.stdout.splitlines() if ln and not ln.startswith("#") and " " in ln]
+    return keys[0] if keys else None
+
+
 def _int(v):
     try:
         return int(str(v).strip())
@@ -175,9 +205,13 @@ def _int(v):
         return None
 
 
-def probe(name: str, entry: dict, timeout: float = 90) -> dict:
+def probe(name: str, entry: dict, timeout: float = 90, first: bool = False) -> dict:
+    """``first`` (`remote add`): a host never seen before has its key accepted, as ssh does when you answer yes;
+    a key that changed is still refused."""
     from .hpc.transport import make_transport
     spec = cluster_spec(name, {**entry, "probed": {}})
+    if first and spec.get("transport") == "ssh":
+        spec["ssh_options"] = ["-o", "StrictHostKeyChecking=accept-new", *spec["ssh_options"]]
     r = make_transport(spec).run(PROBE, timeout=timeout)
     if r.rc != 0 and not r.out.strip():
         err = (r.err or "").strip()
@@ -185,7 +219,11 @@ def probe(name: str, entry: dict, timeout: float = 90) -> dict:
         shown = [x for i, x in enumerate(opts) if not x.startswith("ControlPath=")
                  and not (x == "-o" and i + 1 < len(opts) and opts[i + 1].startswith("ControlPath="))]
         try_it = " ".join(shlex.quote(x) for x in ["ssh", *shown, host, "true"])
-        if "denied" in err.lower():
+        if "host key verification failed" in err.lower() or "remote host identification has changed" in err.lower():
+            hint = ("the machine's host key is not the one ssh saved for it before (a reinstalled machine, or "
+                    f"someone in between): check with the centre, then remove the old key: ssh-keygen -R "
+                    f"{shlex.quote(host_key_name(host, opts))}")
+        elif "denied" in err.lower():
             hint = ("ssh refused the login. Check, in order: the user name (`user@host`"
                     + ("" if "@" in host else f"; ssh used your local name {os.environ.get('USER', '')}") + "); "
                     "the key (`-i KEY`, readable only by you: chmod 600 KEY); and if the machine asks for a password "

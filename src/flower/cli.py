@@ -1219,12 +1219,16 @@ def _machines(args, out: Out) -> int:
             entry["agent_may_use"] = {"cores": args.cores}
         if args.login:
             _open_master(args.name, entry)
-        entry["probed"] = mm.probe(args.name, entry)   # only a machine flower reached is saved
+        known = entry["ssh"] == "local" or mm.host_key(entry) is not None
+        entry["probed"] = mm.probe(args.name, entry, first=True)   # only a machine flower reached is saved
         data[args.name] = entry
         p = mm.save(data)
-        return out.done({"name": args.name, "file": str(p), "machine": mm.effective(args.name, entry)},
-                        f"added to {p}:\n  {mm.summary(args.name, entry)}\nedit the file to change anything flower "
-                        "found; set agent_may_use and a note for agents", [f"flower remote exec --cluster {args.name} -- uptime"])
+        fp = None if known else mm.host_key(entry)
+        return out.done({"name": args.name, "file": str(p), "machine": mm.effective(args.name, entry), "host_key": fp},
+                        f"added to {p}:\n  {mm.summary(args.name, entry)}\n"
+                        + (f"first connection: accepted its host key {fp} (compare with what the centre publishes)\n"
+                           if fp else "")
+                        + "edit the file to change anything flower found; set agent_may_use and a note for agents", [f"flower remote exec --cluster {args.name} -- uptime"])
     if act == "login":
         entry = data.get(args.name)
         if not isinstance(entry, dict) or entry.get("ssh") == "local":

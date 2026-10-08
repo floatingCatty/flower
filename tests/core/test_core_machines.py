@@ -22,6 +22,7 @@ tool=apptainer
 free_home_gb=40
 partition=cpu*|7-00:00:00|64|249000|(null)|900
 partition=gpu|2-00:00:00|48|498000|gpu:a100:4|60
+partition=cpu*|7-00:00:00|48|187000|(null)|100
 account=def-xyz
 """
 
@@ -30,7 +31,8 @@ def test_a_slurm_login_node_is_probed_as_a_cluster():
     p = machines.parse_probe(SLURM)
     assert p["scheduler"] == "slurm" and p["accounts"] == ["def-xyz"]
     assert p["partitions"][0] == {"name": "cpu", "default": True, "max_time": "7-00:00:00", "cores_per_node": 64,
-                                  "mem_mb_per_node": 249000, "gres": None, "nodes": 900}
+                                  "mem_mb_per_node": 249000, "gres": None, "nodes": 1000}   # two node types, one entry
+    assert [q["name"] for q in p["partitions"]] == ["cpu", "gpu"]
     assert p["partitions"][1]["gres"] == "gpu:a100:4"
     assert p["work_dir"] == "/scratch/me/flower-runs" and p["env_dir"] == "/scratch/me/flower-envs"
     assert "cores" not in p                      # the login node's size says nothing about the jobs
@@ -113,3 +115,8 @@ def test_remove_a_machine(cli, tmp_path):
     assert code == 0 and yaml.safe_load((tmp_path / "machines.yaml").read_text().split("\n", 2)[2]) in (None, {})
     code, out = cli("remote", "remove", "here")
     assert code == 2
+
+
+def test_known_hosts_names_a_port_like_ssh():
+    assert machines.host_key_name("me@hpc.org", ["-p", "65023"]) == "[hpc.org]:65023"
+    assert machines.host_key_name("hpc", []) == "hpc"
