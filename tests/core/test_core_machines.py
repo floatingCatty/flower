@@ -104,3 +104,5 @@ def test_an_unreachable_machine_is_kept_for_login(cli, tmp_path):
     assert code == 2 and out["error"]["code"] == "unreachable" and "saved" in out["error"]["message"]
     code, out = cli("remote", "list")
     assert "far" in out["data"]["machines"] and "not probed yet" in out["message"]
+    code, out = cli("remote", "add", "far", "local")             # a wrong target is fixed by adding it again
+    assert code == 0 and out["data"]["machine"]["ssh"] == "local", out

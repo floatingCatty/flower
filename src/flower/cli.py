@@ -1207,7 +1207,7 @@ def _machines(args, out: Out) -> int:
     data = mm.load()
     act = args.remote_action
     if act == "add":
-        if args.name in data:
+        if isinstance(data.get(args.name), dict) and data[args.name].get("probed"):   # one never reached: replaced
             raise FlowerError("exists", f"machine {args.name!r} is already in {mm.path()}",
                               f"refresh it: flower remote check {args.name} (or edit the file)")
         entry: dict = {"ssh": args.target}
