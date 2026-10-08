@@ -38,6 +38,8 @@ from .base import (scratch_env, RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, c
                    printed_outputs)
 
 MAX_REMOTE_ERRORS = 8
+SUBMIT_LIMIT = ("maxsubmitjob", "submitjoblimit", "jobsubmitlimit")   # sbatch: the user's queue is full
+SUBMIT_LIMIT_WAIT = 60.0                                                 # then 2x, then every 5x
 RETRIEVE_LIMIT = "5G"   # what one job may bring back unless its step says `retrieve_limit:`
 POLL_BACKOFF = (30.0, 300.0, 1200.0)
 
@@ -256,6 +258,14 @@ class JobExecutor(Executor):
                 return Outcome.fail(exc.op, f"command not found ({exc.op}): {first_line(msg, 300)}", retryable=False,
                                     details={"stderr": msg, "hint": "install rsync/ssh here, or the scheduler's "
                                                                     "commands on the cluster"})
+            if exc.op == "submit" and any(t in msg.lower().replace(" ", "") for t in SUBMIT_LIMIT):
+                # the cluster caps the jobs one user may have queued: not a failure, a "not yet". Wait for jobs to
+                # finish (a fixed pause, no error count: this can last as long as the campaign)
+                k = int(ctx.job.get("limit_waits") or 0) + 1   # 60 s, 120 s, then every 300 s
+                ctx.emit("job.waiting", {"limit_waits": k,
+                                         "waiting_until": time.time() + SUBMIT_LIMIT_WAIT * min(5, k),
+                                         "waiting_for": f"the cluster's limit on queued jobs ({first_line(msg, 120)})"})
+                return None
             if not res.transient and exc.op == "submit":
                 ctx.emit("job.remote_error", {"op": "submit", "error": msg, "transient": False})
                 what = "sbatch rejected the job" if scheduler_for(cluster).NAME == "slurm" else "could not start the process"
@@ -366,6 +376,8 @@ class JobExecutor(Executor):
             return Outcome(status="cancelled", error_class="cancelled", message="cancelled before the job started")
         err = ctx.job.get("last_remote_error") or {}
         if err.get("retry_at") and time.time() < float(err["retry_at"]):
+            return None
+        if ctx.job.get("waiting_until") and time.time() < float(ctx.job["waiting_until"]):
             return None
         n = int(ctx.job.get("remote_errors") or 0)
         if n >= MAX_REMOTE_ERRORS:

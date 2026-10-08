@@ -526,3 +526,19 @@ def test_cancel_in_crash_window_does_not_leak_job(ff, monkeypatch):
     jid = ff.jobs()[0]["id"]
     end = ff.wait_job_state(jid, ("CANCELLED", "COMPLETED", "FAILED"), timeout=10)
     assert end["state"] == "CANCELLED", "Slurm job of a cancelled attempt ran to completion"
+
+
+def test_a_full_queue_is_waited_out_not_failed(ff, monkeypatch):
+    """SCNet Kunshan refused jobs past the user's QOS limit (QOSMaxSubmitJobPerUserLimit); flower failed them.
+    A full queue is a "not yet": the jobs wait and are submitted as earlier ones finish."""
+    import flower.executors.job as jobmod
+    monkeypatch.setenv("FAKESLURM_MAX_SUBMIT", "2")
+    monkeypatch.setattr(jobmod, "SUBMIT_LIMIT_WAIT", 0.3)
+    eng = ff.run(ff.plan([ff.job("a", 'sleep 1; echo "{\\"i\\": ${item}}" > "$FLOWER_OUTPUTS"', foreach=[1, 2, 3, 4, 5],
+                                 outputs={"i": "integer"})]))
+    st = ff.drive(eng, timeout=90)
+    assert st.status == "succeeded", ff.why(eng)
+    waits = [e for e in eng.journal.read() if e["eventType"] == "job.waiting"]
+    assert waits and all(not (n.last.job or {}).get("remote_errors") for n in st.nodes.values() if n.last)
+    from flower.render import describe_event
+    assert any("limit on queued jobs" in (describe_event(e) or "") for e in waits)

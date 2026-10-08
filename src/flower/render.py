@@ -175,6 +175,8 @@ def node_activity(st: RunState, paths: RunPaths, ns: NodeState, spec: dict) -> s
             from .hpc import scheduler_for
             j = a.job or {}
             sched = scheduler_for((st.plan.get("clusters") or {}).get(spec.get("cluster")) or {})
+            if not j.get("job_id") and j.get("waiting_for"):
+                return f"waiting for {j['waiting_for']}"
             if not j.get("job_id"):
                 e = j.get("last_remote_error")
                 return ("submitting…" if sched.NAME == "slurm" else "starting…") + \
@@ -436,6 +438,8 @@ def describe_event(ev: dict) -> str | None:
         return f"{a}: job exited (exit code {p.get('ec')}" + (f", slurm {p.get('final')})" if p.get("final") else ")")
     if t == "job.remote_error":
         return f"{a}: cluster error during {p.get('op')}: {first_line(p.get('error'), 90)}"
+    if t == "job.waiting":   # said once; the run waits quietly after that
+        return f"{a}: waiting for {p.get('waiting_for')}" if p.get("limit_waits") == 1 else None
     if t == "job.lost":
         return f"{a}: job LOST — {p.get('why')}"
     if t == "job.retrieved" or t == "job.cancel_requested":

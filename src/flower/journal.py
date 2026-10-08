@@ -36,7 +36,7 @@ EVENT_TYPES = {
     "node.cancelled", "node.stale", "node.retry_scheduled",
     # hpc job specifics
     "job.submit_intent", "job.staged", "job.submitted", "job.observed", "job.exited", "job.retrieved",
-    "job.remote_error", "job.lost", "job.cancel_requested", "job.orphan_detected",
+    "job.remote_error", "job.lost", "job.cancel_requested", "job.orphan_detected", "job.waiting",
     # gates
     "gate.requested", "gate.answered",
 }

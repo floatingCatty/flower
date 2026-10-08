@@ -600,6 +600,13 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
   partial output as bytes even with `text=True`.
 - **Fix:** decoded in the transport (`_text`).
 
+### 67. Jobs past the cluster's queue limit failed
+- **Test:** `tests/hpc/test_job_robustness.py::test_a_full_queue_is_waited_out_not_failed`
+- **Observed:** of the haldane-magnons length sweep (24 jobs), 11 were refused by sbatch ("QOS max submit job
+  limit": the user may have about 10 jobs queued) and failed as rejected submissions.
+- **Fix:** a refusal for the queue limit is a pause (`job.waiting`, said once in the log, shown in `status`): the job
+  is submitted again after 1, 2, then every 5 minutes, without counting as an error.
+
 ### Environments on HPC (design, not bugs)
 - **Compute nodes without internet.** The generated environment step ran as a Slurm job and could not download its
   packages. On a Slurm machine it now runs on the login node, into the filesystem the jobs share

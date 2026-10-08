@@ -9,7 +9,8 @@ Behaviour modelled on real Slurm where it matters to a workflow engine:
 * ``squeue -h -u USER -t all -o '%i|%T|%r'`` lists jobs; finished jobs disappear after
   ``FAKESLURM_MINJOBAGE`` seconds (default 5) like MinJobAge.
 * ``sacct -X -n -P -j IDS -o JobIDRaw,State,ExitCode,Elapsed`` (and ``--name``); new jobs are invisible to
-  sacct for ``FAKESLURM_SACCT_LAG`` seconds (default 0) like slurmdbd lag.
+  sacct for ``FAKESLURM_SACCT_LAG`` seconds (default 0) like slurmdbd lag. ``FAKESLURM_MAX_SUBMIT`` caps the
+  pending + running jobs (sbatch refuses more, like a QOS MaxSubmitJobsPerUser).
 * ``--time`` limits are enforced (TIMEOUT), ``scancel`` kills the process group (CANCELLED by uid).
 * Fault injection: ``state/faults.json`` = [{"match": "<regex on job name>", "state": "NODE_FAIL",
   "after_s": 1, "times": 1}] makes matching jobs die with that state (times = how many jobs).
@@ -138,6 +139,14 @@ def sbatch(argv: list[str]) -> int:
         if m:
             k = m.group(1)[2:]
             opts.setdefault(k, (m.group(2) or "").strip())
+    cap = int(os.environ.get("FAKESLURM_MAX_SUBMIT", "0") or 0)   # like a QOS MaxSubmitJobsPerUser
+    if cap:
+        active = [j for j in (_load(f.stem) for f in _jobs().glob("*.json")) if j and j["state"] in ("PENDING", "RUNNING")]
+        if len(active) >= cap:
+            print("sbatch: error: QOSMaxSubmitJobPerUserLimit", file=sys.stderr)
+            print("sbatch: error: Batch job submission failed: Job violates accounting/QOS policy (job submit limit, "
+                  "user's size and/or time limits)", file=sys.stderr)
+            return 1
     jid = _next_id()
     job = {"id": jid, "name": opts.get("job-name") or spath.name, "comment": opts.get("comment", ""),
            "user": os.environ.get("USER", "user"), "dir": cwd, "script": str(spath), "state": "PENDING",
