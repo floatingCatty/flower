@@ -102,9 +102,18 @@ def settings(d: Path) -> dict:
     return data if isinstance(data, dict) else {}
 
 
-def prefix(name: str, h: str) -> str:
+DEFAULT_ENV_DIR = "$HOME/.flower/envs"
+
+
+def env_root(env_dir: str | None) -> str:
+    """Where a machine keeps its environments (its `env_dir`; shell syntax, expanded there)."""
+    d = str(env_dir or DEFAULT_ENV_DIR).rstrip("/")
+    return "$HOME" + d[1:] if d.startswith("~") else d
+
+
+def prefix(name: str, h: str, env_dir: str | None = None) -> str:
     """Install location on the target (shell syntax: $HOME is expanded there)."""
-    return f"$HOME/.flower/envs/{name}-{short(h)}"
+    return f"{env_root(env_dir)}/{name}-{short(h)}"
 
 
 def node_id(name: str, cluster: str) -> str:
@@ -112,12 +121,12 @@ def node_id(name: str, cluster: str) -> str:
 
 
 def setup_script(name: str, h: str, *, recipe_dir: str, allow_install: bool, fresh: bool = False,
-                 env_prefix: str | None = None, check_timeout: float | None = None) -> str:
+                 env_prefix: str | None = None, check_timeout: float | None = None, env_dir: str | None = None) -> str:
     """The shell that makes an environment ready on a target: check; if that fails, setup then check.
 
     ``recipe_dir`` is where the recipe's files are on the target (relative to the cwd or absolute).
     Writes check.log / setup.log in the cwd and the outputs JSON to $FLOWER_OUTPUTS when set."""
-    pfx = env_prefix or prefix(name, h)
+    pfx = env_prefix or prefix(name, h, env_dir)
     lines = [
         f'export FLOWER_ENV_PREFIX="{pfx}"',
         'export FLOWER_ENV_DIR="$FLOWER_ENV_PREFIX.recipe"',
@@ -169,9 +178,9 @@ def setup_script(name: str, h: str, *, recipe_dir: str, allow_install: bool, fre
     return "\n".join(lines) + "\n"
 
 
-def activation(name: str, h: str) -> list[str]:
+def activation(name: str, h: str, env_dir: str | None = None) -> list[str]:
     """Prelude lines a consumer step runs before its payload."""
-    pfx = prefix(name, h)
+    pfx = prefix(name, h, env_dir)
     return [f'export FLOWER_ENV_PREFIX="{pfx}" FLOWER_ENV_DIR="{pfx}.recipe"',
             'set +u; source "$FLOWER_ENV_DIR/activate.sh"']
 
@@ -186,7 +195,7 @@ def _env_description(name: str, cluster: str, h: str, what: str | None, allow_in
             f"check printed.")
 
 
-def env_node(name: str, cluster: str, d: Path, h: str, allow_install: bool) -> dict:
+def env_node(name: str, cluster: str, d: Path, h: str, allow_install: bool, env_dir: str | None = None) -> dict:
     """The generated step that makes ``name`` ready on ``cluster`` (shown in the plan the user approves)."""
     st = settings(d)
     return {
@@ -194,7 +203,7 @@ def env_node(name: str, cluster: str, d: Path, h: str, allow_install: bool) -> d
         "title": f"environment {name} on {cluster}" + ("" if allow_install else " (check only)"),
         "description": _env_description(name, cluster, h, st.get("description"), allow_install),
         "stage_in": [{"from": str(d), "to": "recipe"}],
-        "run": setup_script(name, h, recipe_dir="recipe", allow_install=allow_install,
+        "run": setup_script(name, h, recipe_dir="recipe", allow_install=allow_install, env_dir=env_dir,
                             check_timeout=parse_duration(st.get("check_timeout")) if st.get("check_timeout") else None),
         "outputs": {"env": "string", "recipe": "string", "prefix": "string", "how": "string"},
         "files": {"check": "check.log"},

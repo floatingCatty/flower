@@ -200,6 +200,10 @@ def cmd_init(args, out: Out) -> int:
     missing = [x for x in ("ssh", "rsync", "sbatch") if not shutil.which(x)]
     if missing:
         msg.append(f"not on PATH here: {', '.join(missing)} (needed only for clusters reached over ssh / Slurm)")
+    from . import machines as mm
+    if not mm.load():
+        msg.append("machines: none yet. Add the ones work may run on, once: flower remote add NAME user@host "
+                   "(flower probes the rest; this machine: flower remote add here local)")
     return out.done({"root": str(root), "files": files, "missing_tools": missing}, "\n".join(msg),
                     ['flower start "<what the work is for>"', "flower add RUN ID --description \"<what it establishes>\" -- <command>"])
 
@@ -233,8 +237,13 @@ def cmd_start(args, out: Out) -> int:
         ui = "\nwatch it in the project's UI:\n" + "\n".join(uimod.access_text(info))
     except Exception as exc:  # noqa: BLE001  (the run does not depend on the UI)
         ui = "" if isinstance(exc, FlowerError) and exc.code == "no_ui" else f"\n(UI not started: {exc}; `flower ui`)"
-    return out.done({"run_id": rid, "plan": str(p)},
-                    f"run {rid} started for: {args.goal}\nplan file: {p} (empty draft){ui}",
+    from . import machines as mm
+    ms = mm.load()
+    where = ("\nmachines (flower remote list):\n  " + "\n  ".join(mm.summary(n, e) for n, e in ms.items()
+                                                                 if isinstance(e, dict))) if ms else \
+        "\nno machines set up yet: flower remote add NAME user@host (this machine: flower remote add here local)"
+    return out.done({"run_id": rid, "plan": str(p), "machines": list(ms)},
+                    f"run {rid} started for: {args.goal}\nplan file: {p} (empty draft){where}{ui}",
                     [f"flower add {rid} <id> -- <command>", f"flower status {rid}"])
 
 
@@ -316,6 +325,8 @@ def cmd_run(args, out: Out) -> int:
     inputs = parse_kv(args.input)
     if args.inputs:
         inputs.update(json.loads(Path(args.inputs).read_text()))
+    for role, name in parse_kv(args.machine).items():
+        _use_machine(raw, role, name)
     reuse = []
     if args.reuse:
         root = find_root(create=True)
@@ -334,6 +345,27 @@ def cmd_run(args, out: Out) -> int:
         return out.done({**summary_data(eng), "overview": plan_overview(st.plan, st.inputs)},
                         plan_overview(st.plan, st.inputs) + f"\n\nrun {rid} is waiting for plan approval.", nxt, code=3)
     return _continue(eng, args, out, f"run {rid} started")
+
+
+def _use_machine(raw: dict, role: str, name: str) -> None:
+    """`run --machine ROLE=NAME`: the plan's steps on cluster ROLE run on the person's machine NAME; the plan's own
+    entry for ROLE goes, with the inputs only it used (a protocol's host and ssh options)."""
+    from . import machines
+    if machines.get(name) is None:
+        raise FlowerError("usage", f"no machine {name!r}", f"machines: {', '.join(machines.load()) or 'none'} "
+                          "(add one: flower remote add NAME user@host)")
+    steps = [n for n in raw.get("nodes") or [] if isinstance(n, dict) and n.get("cluster") == role]
+    if not steps:
+        raise FlowerError("usage", f"no step of the plan runs on {role!r}",
+                          "clusters the steps use: " + ", ".join(sorted({str(n.get("cluster")) for n in raw.get("nodes")
+                                                                         or [] if isinstance(n, dict) and n.get("cluster")})))
+    for n in steps:
+        n["cluster"] = name
+    gone = (raw.get("clusters") or {}).pop(role, None)
+    rest = json.dumps({k: v for k, v in raw.items() if k != "inputs"}, default=str)
+    for k in list(raw.get("inputs") or {}):
+        if f"inputs.{k}" in json.dumps(gone, default=str) and f"inputs.{k}" not in rest:
+            raw["inputs"].pop(k)
 
 
 def _continue(eng: Engine, args, out: Out, text: str) -> int:
@@ -1056,13 +1088,23 @@ def _plan_cluster(args) -> tuple[dict, Path]:
     ``args.run`` uses them (its clusters were rendered with its inputs when they were defined)."""
     from . import template as tpl
     from .engine import coerce_inputs
-    if bool(getattr(args, "run", None)) == bool(args.plan):
-        raise FlowerError("usage", "give --run RUN (a run's clusters) or --plan PLAN (a plan file's)",
-                          "inside a draft, --run RUN needs no -i / --inputs: the run has them")
+    from . import machines
+    if getattr(args, "run", None) and args.plan:
+        raise FlowerError("usage", "give --run RUN (a run's clusters) or --plan PLAN (a plan file's), not both")
+    if not getattr(args, "run", None) and not args.plan:   # a machine of the person's machines file
+        spec = machines.get(args.cluster) or ({"transport": "local", "scheduler": "none"}
+                                              if args.cluster == planmod.LOCAL_CLUSTER else None)
+        if spec is None:
+            raise FlowerError("usage", f"no machine {args.cluster!r} (a cluster of a run or a plan: give --run RUN or "
+                              "--plan PLAN)", f"machines: {', '.join(machines.load()) or 'none'} "
+                              "(add one: flower remote add NAME user@host)")
+        return {**spec, "_name": args.cluster}, Path.cwd()
     if args.run:
         eng = get_engine(args)
         st = eng.state()
         clusters = {planmod.LOCAL_CLUSTER: {"transport": "local", "scheduler": "none"}, **(st.plan.get("clusters") or {})}
+        if args.cluster not in clusters and machines.get(args.cluster):
+            clusters[args.cluster] = machines.get(args.cluster)
         if args.cluster not in clusters:
             raise FlowerError("usage", f"run {st.run_id} has no cluster {args.cluster!r}",
                               f"clusters: {', '.join(clusters) or 'none'} (a new one: add it to the plan file, "
@@ -1104,7 +1146,9 @@ def _prelude(c: dict) -> str:
 
 
 def cmd_remote(args, out: Out) -> int:
-    """Run one command on a cluster, logged (for agents exploring an environment)."""
+    """Machines: add (probe one), list, check (probe again), login (a shared ssh connection); exec (one command)."""
+    if args.remote_action != "exec":
+        return _machines(args, out)
     from . import envs as envmod
     from .hpc.transport import make_transport
     cmd = list(args.command or [])
@@ -1124,14 +1168,14 @@ def cmd_remote(args, out: Out) -> int:
         if state != "frozen":
             raise FlowerError("env_not_frozen", f"--installed needs a frozen recipe; {args.env} is {state}",
                               f"flower env freeze {args.env}")
-        pfx = envmod.prefix(args.env, fz["hash"])
+        pfx = envmod.prefix(args.env, fz["hash"], c.get("env_dir"))
         pre += (f'export FLOWER_ENV_PREFIX="{pfx}"; export FLOWER_ENV_DIR="$FLOWER_ENV_PREFIX.recipe"\n'
                 'if [ ! -d "$FLOWER_ENV_PREFIX" ]; then echo "not installed on this cluster: $FLOWER_ENV_PREFIX '
                 '(a step using it, or flower env replay, installs it)" >&2; exit 3; fi\n'
                 'set +u; source "$FLOWER_ENV_DIR/activate.sh"\n')
     elif args.env:  # explore with what a real setup gets: a prefix to install into, and the activation so far
         d = envmod.find(args.env, src) or (src / envmod.ENVS_DIR / args.env)
-        pre += (f'export FLOWER_ENV_PREFIX="$HOME/.flower/envs/{args.env}-explore"\n'
+        pre += (f'export FLOWER_ENV_PREFIX="{envmod.env_root(c.get("env_dir"))}/{args.env}-explore"\n'
                 'export FLOWER_ENV_DIR="$FLOWER_ENV_PREFIX.recipe"; mkdir -p "$FLOWER_ENV_DIR"\n')
         # the recipe as written so far, so exploration can run its own check.sh / setup.sh there
         import base64
@@ -1156,6 +1200,62 @@ def cmd_remote(args, out: Out) -> int:
     sys.stdout.write(r.out or "")
     sys.stderr.write(r.err or "")
     return r.rc if r.rc < 256 else 1
+
+
+def _machines(args, out: Out) -> int:
+    from . import machines as mm
+    data = mm.load()
+    act = args.remote_action
+    if act == "add":
+        if args.name in data:
+            raise FlowerError("exists", f"machine {args.name!r} is already in {mm.path()}",
+                              f"refresh it: flower remote check {args.name} (or edit the file)")
+        entry: dict = {"ssh": args.target}
+        if args.identity_file:
+            entry["identity_file"] = args.identity_file
+        if args.note:
+            entry["note"] = args.note
+        if args.cores:
+            entry["agent_may_use"] = {"cores": args.cores}
+        entry["probed"] = mm.probe(args.name, entry)
+        data[args.name] = entry
+        p = mm.save(data)
+        return out.done({"name": args.name, "file": str(p), "machine": mm.effective(args.name, entry)},
+                        f"added to {p}:\n  {mm.summary(args.name, entry)}\nedit the file to change anything flower "
+                        "found; set agent_may_use and a note for agents", [f"flower remote exec --cluster {args.name} -- uptime"])
+    if act == "login":
+        entry = data.get(args.name)
+        if not isinstance(entry, dict) or entry.get("ssh") == "local":
+            raise FlowerError("usage", f"no ssh machine {args.name!r}", "flower remote list")
+        host, opts = mm.ssh_target(entry)
+        Path(mm.control_path()).parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        import subprocess
+        rc = subprocess.call(["ssh", *opts, "-o", "ControlMaster=yes", "-o", f"ControlPersist={int(args.hours * 3600)}",
+                              "-fN", host])
+        if rc != 0:
+            raise FlowerError("login", f"ssh to {args.name} failed (exit {rc})")
+        return out.done({"name": args.name, "hours": args.hours},
+                        f"connected to {args.name}; flower reuses this connection for {args.hours:g} h "
+                        f"(close it: ssh -O exit -o ControlPath={mm.control_path()} {host})")
+    names = [args.name] if getattr(args, "name", None) else list(data)
+    missing = [n for n in names if not isinstance(data.get(n), dict)]
+    if missing:
+        raise FlowerError("usage", f"no machine {missing[0]!r} in {mm.path()}", "flower remote add NAME TARGET")
+    if act == "check":
+        rows, bad = [], []
+        for n in names:
+            try:
+                data[n]["probed"] = mm.probe(n, data[n])
+                rows.append(mm.summary(n, data[n]))
+            except FlowerError as exc:
+                bad.append(n)
+                rows.append(f"{n:<14} UNREACHABLE: {exc.message} ({exc.suggestion})")
+        mm.save(data)
+        return out.done({"machines": {n: mm.effective(n, data[n]) for n in names}, "unreachable": bad},
+                        "\n".join(rows) or "no machines yet: flower remote add NAME user@host", code=1 if bad else 0)
+    text = "\n".join(mm.summary(n, data[n]) for n in names) or \
+        "no machines yet: flower remote add NAME user@host   (or local: flower remote add here local)"
+    return out.done({"file": str(mm.path()), "machines": {n: mm.effective(n, data[n]) for n in names}}, text)
 
 
 def _note_in_run(args, text: str) -> None:
@@ -1216,12 +1316,13 @@ def cmd_env(args, out: Out) -> int:
     h = fz["hash"]
     tr = make_transport(c)
     home = _remote_home(tr)
-    staging = f"{home}/.flower/envs/.staging/{args.name}-{envmod.short(h)}"
+    root = envmod.env_root(c.get("env_dir")).replace("$HOME", home)
+    staging = f"{root}/.staging/{args.name}-{envmod.short(h)}"
     r = tr.put_tree(d, staging)
     if r.rc != 0:
         raise FlowerError("remote", f"could not upload the recipe: {(r.err or '').strip()[-300:]}")
     fresh = act == "replay" and args.fresh
-    pfx = f"{home}/.flower/envs/{args.name}-{envmod.short(h)}" + (f"-replay-{time.strftime('%Y%m%d-%H%M%S')}-{os.urandom(2).hex()}" if fresh else "")
+    pfx = f"{root}/{args.name}-{envmod.short(h)}" + (f"-replay-{time.strftime('%Y%m%d-%H%M%S')}-{os.urandom(2).hex()}" if fresh else "")
     ct = envmod.settings(d).get("check_timeout")
     script = envmod.setup_script(args.name, h, recipe_dir=staging, allow_install=(act == "replay"), fresh=fresh,
                                  env_prefix=pfx, check_timeout=parse_duration(ct) if ct else None)
@@ -1277,6 +1378,8 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("-i", "--input", action="append", help="NAME=VALUE (repeatable)")
     s.add_argument("--inputs", help="JSON file with inputs")
     s.add_argument("--review", action="store_true", help="wait for the plan's approval first (`flower approve RUN`)")
+    s.add_argument("--machine", action="append", metavar="ROLE=NAME",
+                   help="run the steps on cluster ROLE (e.g. a protocol's `remote`) on your machine NAME (repeatable)")
     s.add_argument("--note", help="recorded with the run")
     s.add_argument("--follow", action="store_true", help="watch it until it finishes or needs a decision")
     s.add_argument("--timeout", type=float, help="with --follow: seconds")
@@ -1406,14 +1509,29 @@ def build_parser() -> argparse.ArgumentParser:
     def plan_cluster_args(sp):
         sp.add_argument("--plan", help="the plan whose `clusters:` defines the cluster (or --run)")
         sp.add_argument("--run", help="the run whose cluster to use, with the run's inputs (instead of --plan)")
-        sp.add_argument("--cluster", required=True)
+        sp.add_argument("--cluster", required=True, help="a machine (flower remote list), or a cluster of the run/plan")
         sp.add_argument("-i", "--input", action="append", help="NAME=VALUE for the plan's inputs (repeatable)")
         sp.add_argument("--inputs", help="JSON file with the plan's inputs")
         sp.add_argument("--timeout", type=float, default=7200.0, help="seconds (default 2h)")
 
-    s = add("remote", cmd_remote, "run a command on a cluster, logged (e.g. to explore an environment)")
+    s = add("remote", cmd_remote, "machines work runs on: add (probes it), list, check, login; exec a command there")
     rs = s.add_subparsers(dest="remote_action", required=True)
-    e = rs.add_parser("exec", parents=[common], help="flower remote exec --run RUN|--plan P --cluster C [--env E] -- <command>")
+    e = rs.add_parser("add", parents=[common], help="add a machine: flower remote add NAME TARGET (an ssh alias, "
+                                                    "user@host[:port], or local); flower probes the rest")
+    e.add_argument("name")
+    e.add_argument("target")
+    e.add_argument("-i", "--identity-file", help="ssh key file (default: what ssh would use)")
+    e.add_argument("--note", help="for agents and people, e.g. 'shared: ask before using more than 16 cores'")
+    e.add_argument("--cores", type=int, help="the cores an agent may use there without asking")
+    e = rs.add_parser("list", parents=[common], help="the machines, what they have, and what agents may use")
+    e.add_argument("name", nargs="?")
+    e = rs.add_parser("check", parents=[common], help="reach a machine (or all) and refresh what was probed")
+    e.add_argument("name", nargs="?")
+    e = rs.add_parser("login", parents=[common], help="open a shared ssh connection (type your password or second "
+                                                      "factor once); flower reuses it for --hours")
+    e.add_argument("name")
+    e.add_argument("--hours", type=float, default=12)
+    e = rs.add_parser("exec", parents=[common], help="flower remote exec --cluster MACHINE [--run RUN] [--env E] -- <command>")
     plan_cluster_args(e)
     e.add_argument("--env", help="explore environment NAME: an exploration prefix, its activate.sh sourced")
     e.add_argument("--installed", action="store_true",

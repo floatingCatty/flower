@@ -96,12 +96,15 @@ upstream.
 
 ## 6. Machines and software
 
-- **Clusters** are named in the plan: `transport: ssh` with `scheduler: slurm` or `none` (a workstation without a
-  batch system). Host names and ssh options are run *inputs*, given with `-i NAME=VALUE` or
-  `--inputs file.json`. They are stored with the run, never in the plan file, so a plan can be shared without
-  anyone's machine details.
-- **`cpus: N`** on a cluster is a core budget shared by all runs of the project on that host. Change it in a
-  running plan by editing the plan file, then `flower rerun RUN`.
+- **Machines** are set up once per person, outside every repository: `flower remote add narval narval` (an ssh
+  alias, `user@host`, or `local`) probes the rest: Slurm or not, cores, memory, GPUs, partitions and accounts,
+  scratch. Add `--cores N` or edit `agent_may_use` and `note` in `~/.flower/machines.yaml` to say what an agent may
+  use without asking. Agents read `flower remote list --json` and never need to ask for a host. A password or a
+  second factor: `flower remote login NAME` opens one shared connection for the day.
+- **Plans name machines** (`cluster: narval`), so a plan carries no one's host details; the run records the
+  settings it used. Someone re-running a protocol maps its machines to theirs: `--machine remote=mybox`.
+- **A core budget:** on a machine without a scheduler flower shares out `agent_may_use.cores` (else all cores)
+  among the project's runs.
 - **Software** comes from frozen recipes in `envs/<name>/`: setup, activate and check scripts, pinned and
   hashed. Explore with `flower remote exec --run RUN --cluster C --env NAME -- <cmd>`, then run
   `flower env freeze NAME` and `flower env replay NAME --run RUN --cluster C --fresh`. Steps use a recipe with

@@ -16,7 +16,7 @@ other commands exit 0 when done; any command exits 2 on an error (usage, invalid
 | `flower start "GOAL"` | a run now, with an empty draft plan that grows step by step |
 | `flower add RUN ID [options] -- CMD` | write a step into the run's plan file and run it: `--description`, `--needs`, `--out NAME:TYPE`, `--file NAME=PATH`, `--in NAME=VALUE`, `--cluster`, `--env`, `--stage-in`, `--foreach`; any other key with `--set KEY=VALUE` (YAML value, dotted key); `--gate MESSAGE` for a person's decision instead of a command |
 | `flower rerun RUN [STEP] [--only] [--keep-state]` | apply the plan file's edits; with STEP, run it again with what depends on it (`--only`: STEP alone) |
-| `flower run PLAN [-i K=V] [--inputs F] [--review] [--reuse RUN [--rerun-from STEP]]` | a run of a plan file; `--review` waits for `flower approve RUN` first; `--reuse` takes an earlier run's still-valid results and its inputs |
+| `flower run PLAN [-i K=V] [--inputs F] [--machine ROLE=NAME] [--review] [--reuse RUN [--rerun-from STEP]]` | a run of a plan file; `--machine` runs a protocol's cluster ROLE on your machine NAME; `--review` waits for `flower approve RUN` first; `--reuse` takes an earlier run's still-valid results and its inputs |
 | `flower status [RUN] [--follow [--timeout S]]` | without RUN: the project's runs; with it: where the run is and what needs you (one scheduling pass, a background driver if needed) |
 | `flower show RUN [STEP [KEY] \| GATE] [--logs [--attempt N]]` | a run, a step (attempts, outputs, errors; `--logs`: its raw output), one output value or file path, or a gate |
 | `flower log RUN [--node STEP] [-f] [--note TEXT]` | every event, actor and decision, in order; `--note` adds one |
@@ -25,7 +25,7 @@ other commands exit 0 when done; any command exits 2 on an error (usage, invalid
 | `flower export RUN STEP…` | the steps behind STEP as a protocol: `protocol.yaml` (with the environment versions pinned), `expected.json`, `PROTOCOL.md` next to the plan |
 | `flower compare A B` | do two runs (or a run and an `expected.json`) agree within `--rtol`/`--atol`? |
 | `flower ui [start\|status\|stop\|user@host:/path]` | the project's web UI (background, stable port); `host:/path` opens another machine's project through ssh |
-| `flower remote exec --run RUN --cluster C [--env E] -- CMD` | a command on a cluster, noted in the run's log |
+| `flower remote add\|list\|check\|login\|exec` | the machines work runs on, set up once per person: see [Machines](#machines) |
 | `flower env new\|freeze\|replay\|check\|show NAME` | software recipes, see [Environments](#environments) |
 | `flower plan validate\|show PLAN` | every problem of a plan file with a fix hint / a readable overview |
 
@@ -47,7 +47,9 @@ defaults:
                                            # output, local steps only)
   retry:   {max_attempts: 2, backoff: 30s} # retries infrastructure failures (lost, node_fail, ...)
   concurrency: 4                           # max local processes at once
-clusters:                    # machines a step can run on (`cluster: name`); host details are run inputs
+clusters:                    # optional: a step's `cluster:` names a machine of `flower remote list` (the person's
+                             # machines file; the run records its settings). Declared here instead, a plan carries
+                             # its own; host details are then run inputs:
   hpc:  {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", max_jobs: 20,
          min_poll: 60s, modules: [vasp/6.4], prelude: ["source ~/env.sh"], resources: {partition: cpu, account: abc}}
                              # work goes to remote_root (default ~/flower-runs) on that machine
@@ -78,8 +80,9 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
     foreach: "${scan.outputs.items}"        # fan-out: one item per element; ${item}, ${index}
     env: {OMP_NUM_THREADS: "4"}             # environment variables
     tmpdir: job              # TMPDIR inside the attempt's directory (or a path): scratch files off /tmp
-    # on a cluster:
-    cluster: hpc             # a Slurm job there, or a process on the host with `scheduler: none`
+    # on a machine:
+    cluster: narval          # a machine (`flower remote list`) or a `clusters:` entry: a Slurm job there, or a
+                             # process on the host with `scheduler: none`
     environment: pyscf       # the frozen software recipe envs/pyscf/ (see below)
     resources: {nodes, ntasks, ntasks_per_node, cpus_per_task, mem, time, partition, account, qos, gpus, extra: [...]}
     stage_in: [{from: local/path, to: name}, {from: "remote:${relax.outputs.job_dir}/CHGCAR", to: CHGCAR, mode: link}]
@@ -122,6 +125,35 @@ whose command, inputs or environment changed runs again with its downstream, and
 record; a description, title, timeout or retry change re-runs nothing. Of an existing cluster only `cpus`,
 `max_jobs` and `min_poll` may change; new clusters and inputs may be added.
 
+
+## Machines
+
+Where work runs is set up once per person, not per plan: `~/.flower/machines.yaml` (`$FLOWER_MACHINES`
+overrides), outside every repository. You give how to reach a machine; flower probes the rest.
+
+| command | what it does |
+|---|---|
+| `flower remote add NAME TARGET [-i KEY] [--cores N] [--note TEXT]` | TARGET: an `~/.ssh/config` alias, `user@host[:port]`, or `local`. Probes the scheduler (Slurm or none), cores, memory, GPUs and load, Slurm partitions (time limits, node sizes, GPUs) and your accounts, a scratch directory (work and environments go there when there is one), the tools there (module, conda, apptainer, …) and free space; writes the entry |
+| `flower remote list [NAME]` | the machines, what they have, and what agents may use (`--json` is what agents read) |
+| `flower remote check [NAME]` | reach a machine (or all) and refresh what was probed |
+| `flower remote login NAME [--hours H]` | a password or a second factor: open one shared ssh connection (you type it once); flower reuses it while it is alive |
+| `flower remote exec --cluster NAME [--run RUN] -- CMD` | a command there (noted in the run's log with `--run`) |
+
+```yaml
+narval:
+  ssh: narval                     # what you give
+  note: ask before using more than 256 cores        # optional, for agents and people
+  agent_may_use: {cores: 256, hours: 24}            # optional: what an agent may take without asking
+  account: def-xyz                # optional: anything written beside `probed:` wins over it
+  probed: {scheduler: slurm, partitions: [...], accounts: [def-xyz], work_dir: /scratch/me/flower-runs,
+           env_dir: /scratch/me/flower-envs, tools: [sbatch, module, apptainer], ...}
+```
+
+A step names a machine as `cluster: NAME`; the run records the settings it used (no keys or passwords: those stay
+with ssh). On a machine without a scheduler, flower shares out `agent_may_use.cores` (else all its cores) among
+the project's runs. An exported protocol keeps its own cluster names: `flower run protocol.yaml --machine
+remote=narval` runs the steps of `remote` on your `narval` (the protocol's host inputs are then not needed).
+
 ## Environments
 
 flower does not decide how software gets installed: an agent explores the target (through the logged
@@ -139,7 +171,8 @@ flower does not decide how software gets installed: an agent explores the target
 | `env.yaml` | the agent (optional) | `description`, `setup_timeout` |
 | `FROZEN.json` | flower | the hash of every file, who froze it and when; git keeps the earlier versions |
 
-On a target, version `<hash>` installs into `$HOME/.flower/envs/<name>-<hash12>`. **A changed recipe gets a new
+On a target, version `<hash>` installs into `<env_dir>/<name>-<hash12>`: the machine's `env_dir` (on scratch
+when probing found one; default `~/.flower/envs`). **A changed recipe gets a new
 prefix**, so an environment that results were produced with is never modified.
 
 ### The commands
@@ -147,7 +180,7 @@ prefix**, so an environment that results were produced with is never modified.
 | command | what it does |
 |---|---|
 | `flower env new NAME` | `envs/NAME/` with commented template scripts |
-| `flower remote exec --run RUN --cluster C --env NAME -- CMD` | a command on the cluster as run RUN has it, in an exploration prefix, with `activate.sh` sourced once it exists; noted in the run's log |
+| `flower remote exec --cluster C --env NAME [--run RUN] -- CMD` | a command on the machine (or run RUN's cluster), in an exploration prefix, with `activate.sh` sourced once it exists; noted in the run's log |
 | `flower env freeze NAME` | hash every file into `FROZEN.json` |
 | `flower env replay NAME --run RUN --cluster C [--fresh]` | run `check.sh`, else `setup.sh` then `check.sh`; `--fresh` into a new empty prefix: proof that the recipe works from scratch |
 | `flower env check NAME --run RUN --cluster C` | `check.sh` only |

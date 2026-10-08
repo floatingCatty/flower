@@ -81,6 +81,7 @@ class FF:
         monkeypatch.delenv("ENV", raising=False)
         monkeypatch.setenv("FLOWER_HOME", str(self.home))
         monkeypatch.setenv("FLOWER_ACTOR", "test:hpc")
+        monkeypatch.setenv("FLOWER_MACHINES", str(self.home / "machines.yaml"))
         monkeypatch.setenv("FAKESLURM_PEND_S", "0.1")
         monkeypatch.setenv("FAKESLURM_MINJOBAGE", "5")
         monkeypatch.setenv("FAKESLURM_SACCT_LAG", "0")

@@ -21,7 +21,9 @@ defaults:
                                            # output, local steps only)
   retry:   {max_attempts: 2, backoff: 30s} # retries infrastructure failures (lost, node_fail, ...)
   concurrency: 4                           # max local processes at once
-clusters:                    # machines a step can run on (`cluster: name`); host details are run inputs
+clusters:                    # optional: a step's `cluster:` names a machine of `flower remote list` (the person's
+                             # machines file; the run records its settings). Declared here instead, a plan carries
+                             # its own; host details are then run inputs:
   hpc:  {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", max_jobs: 20,
          min_poll: 60s, modules: [vasp/6.4], prelude: ["source ~/env.sh"], resources: {partition: cpu, account: abc}}
                              # work goes to remote_root (default ~/flower-runs) on that machine
@@ -52,8 +54,9 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
     foreach: "${scan.outputs.items}"        # fan-out: one item per element; ${item}, ${index}
     env: {OMP_NUM_THREADS: "4"}             # environment variables
     tmpdir: job              # TMPDIR inside the attempt's directory (or a path): scratch files off /tmp
-    # on a cluster:
-    cluster: hpc             # a Slurm job there, or a process on the host with `scheduler: none`
+    # on a machine:
+    cluster: narval          # a machine (`flower remote list`) or a `clusters:` entry: a Slurm job there, or a
+                             # process on the host with `scheduler: none`
     environment: pyscf       # the frozen software recipe envs/pyscf/ (see below)
     resources: {nodes, ntasks, ntasks_per_node, cpus_per_task, mem, time, partition, account, qos, gpus, extra: [...]}
     stage_in: [{from: local/path, to: name}, {from: "remote:${relax.outputs.job_dir}/CHGCAR", to: CHGCAR, mode: link}]
@@ -130,9 +133,14 @@ inputs, the first quick test, a parameter probe.
   recorded; a changed finished step runs again, its earlier result stays in the record.
 - **A person's decision in the plan:** `flower add RUN ID --gate "<what to decide, with the evidence>" --needs X`
   (`--set on_reject={rerun: [X]}` sends work back with the person's note as `${feedback}`).
-- **A new machine later:** add an `inputs:` entry (value with `-i NAME=VALUE`) and a `clusters:` entry to
-  plan.yaml; the next add/rerun picks them up.
-- **Explore a remote host** with `flower remote exec --run RUN --cluster C -- <cmd>` (logged), not raw ssh.
+- **Where to run:** `flower remote list --json` lists the machines the user set up (once, with `flower remote
+  add NAME user@host`: flower probed the rest): cores, memory, GPUs or Slurm partitions, limits and accounts, work
+  and environment directories, `agent_may_use` and the user's `note`. Choose from it; do not ask the user for
+  hosts, accounts or partitions. A step runs there with `--cluster NAME` (Slurm: `--set resources.partition=…
+  --set resources.time=… --set resources.cpus_per_task=…` within the listed limits). Stay within `agent_may_use`
+  and the note; ask before going beyond them. No suitable machine: ask the user to `flower remote add` one. A
+  machine that refuses the connection (a password or second factor): ask the user to run `flower remote login NAME`.
+- **Explore a machine** with `flower remote exec --cluster NAME [--run RUN] -- <cmd>` (logged in the run), not raw ssh.
 - Reading papers, files and results directly is fine. *Running* computations beside the run is not: they are
   unrecorded and invisible to the user. That includes the quick check whose answer you rely on: make it a
   one-line `flower add` step. If a hook reminds you, move the work into a step.

@@ -214,7 +214,7 @@ def test_cluster_node_validation():
     assert _issues([{"id": "s", "kind": "shell", "cluster": "c", "run": "true"}]) == []
     assert any("unknown scheduler" in m for _, m in _issues([{"id": "s", "kind": "shell", "run": "true"}],
                                                             {"c": {"scheduler": "pbs"}}))
-    assert any(p.endswith(".cluster") and "unknown cluster" in m
+    assert any(p.endswith(".cluster") and "unknown machine" in m
                for p, m in _issues([{"id": "s", "kind": "shell", "cluster": "nope", "run": "true"}]))
     assert any(p.endswith(".stage_in") for p, _ in _issues([{"id": "s", "kind": "shell", "run": "true",
                                                               "stage_in": ["x"]}]))

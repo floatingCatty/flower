@@ -53,6 +53,7 @@ def home(tmp_path, monkeypatch):
     h.mkdir()
     monkeypatch.setenv("FLOWER_HOME", str(h))
     monkeypatch.setenv("FLOWER_ACTOR", "human:tester")
+    monkeypatch.setenv("FLOWER_MACHINES", str(tmp_path / "machines.yaml"))   # never the person's own
     monkeypatch.delenv("FLOWER_INSIDE_RUN", raising=False)
     monkeypatch.delenv("BASH_ENV", raising=False)  # a sourced ~/.bashrc makes every shell node ~0.5s slower
     monkeypatch.chdir(tmp_path)

@@ -181,6 +181,7 @@ def normalize(raw: dict) -> dict:
     if isinstance(nodes, list):
         plan["nodes"] = [normalize_node(n, plan["defaults"]) if isinstance(n, dict) else n for n in nodes]
         _implicit_local_cluster(plan)
+        _machine_clusters(plan)
         _expand_environments(plan)
     return plan
 
@@ -199,6 +200,18 @@ def _implicit_local_cluster(plan: dict) -> None:
     # defined whenever a step uses it, also when the step arrives already resolved (an amendment of a running plan)
     if any(isinstance(n, dict) and n.get("cluster") == LOCAL_CLUSTER for n in plan["nodes"]):
         plan["clusters"].setdefault(LOCAL_CLUSTER, {"transport": "local", "scheduler": "none"})
+
+
+def _machine_clusters(plan: dict) -> None:
+    """A step may name, as its cluster, a machine of the person's machines file (`flower remote add`): the plan
+    then gets that machine's settings, which the run records (a plan's own `clusters:` entry wins)."""
+    from . import machines
+    for n in plan["nodes"]:
+        c = n.get("cluster") if isinstance(n, dict) else None
+        if isinstance(c, str) and c not in plan["clusters"]:
+            spec = machines.get(c)
+            if spec is not None:
+                plan["clusters"][c] = spec
 
 
 ENV_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.-]*$")
@@ -233,8 +246,8 @@ def _expand_environments(plan: dict) -> None:
             if pin and pin != h:
                 continue  # validation reports it
             c = (plan.get("clusters") or {}).get(cl) or {}
-            en = normalize_node(envmod.env_node(name, cl, d, h, c.get("install", "auto") != "never"),
-                                plan.get("defaults") or {})
+            en = normalize_node(envmod.env_node(name, cl, d, h, c.get("install", "auto") != "never",
+                                                env_dir=c.get("env_dir")), plan.get("defaults") or {})
             en["generated"] = f"env:{name}:{h}"
             added.append(en)
             by_id[eid] = en
@@ -244,7 +257,7 @@ def _expand_environments(plan: dict) -> None:
         pre = n.get("prelude")
         pre = list(pre) if isinstance(pre, list) else ([pre] if pre else [])
         pre = [x for x in pre if not str(x).startswith(('export FLOWER_ENV_PREFIX=', 'set +u; source "$FLOWER_ENV_DIR'))]
-        n["prelude"] = envmod.activation(name, h) + pre
+        n["prelude"] = envmod.activation(name, h, ((plan.get("clusters") or {}).get(cl) or {}).get("env_dir")) + pre
     if added:
         plan["nodes"] = added + nodes
 
@@ -426,8 +439,9 @@ def validate(plan: dict) -> list[Issue]:
             issues.extend(_environment_issues(plan, n, p))
         if kind == "shell":
             if n.get("cluster") is not None and n["cluster"] not in (plan.get("clusters") or {}):
-                issues.append(Issue("cluster", f"{p}.cluster", f"unknown cluster {n['cluster']!r}",
-                                    f"declare it under top-level `clusters:` (known: {', '.join(plan.get('clusters') or {}) or 'none'})"))
+                issues.append(Issue("cluster", f"{p}.cluster", f"unknown machine {n['cluster']!r}",
+                                    "add it once with `flower remote add NAME user@host` (or declare it under "
+                                    f"`clusters:`); known: {', '.join(plan.get('clusters') or {}) or 'none'}"))
             if n.get("cluster") is None:
                 stray = [k for k in ("stage_in", "retrieve", "resources", "prelude") if n.get(k)]
                 if stray:

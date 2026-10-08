@@ -62,11 +62,7 @@ flower compare RUN j1j2-chain/expected.json         # 24 step(s) agree within rt
 flower: 1
 id: si-bands
 title: Silicon band structure
-inputs:
-  host: {type: string, required: true}              # machine details are run inputs, never in the plan
-clusters:
-  hpc: {transport: ssh, host: "${inputs.host}", remote_root: ~/flower-runs}
-nodes:
+nodes:                                              # hpc: a machine of `flower remote list`, set up once
   - id: relax
     description: Relaxes the cell; energy and converged are the result.
     cluster: hpc
@@ -105,7 +101,7 @@ conditions, retries keyed on failure class, timeouts, and caching of unchanged s
 | follow and read | `status`, `show`, `log`, `ui` |
 | decide | `approve`, `reject`, `cancel` |
 | deliver | `export`, `compare` |
-| machines and software | `remote exec`, `env new\|freeze\|replay\|check\|show`, `plan validate\|show` |
+| machines and software | `remote add\|list\|check\|login\|exec`, `env new\|freeze\|replay\|check\|show`, `plan validate\|show` |
 
 Every command takes `--json` and prints `{ok, data, error, next}`, and returns at once; `--follow` waits.
 `status` and `--follow` exit 0 succeeded, 1 failed, 3 still running or waiting for a decision; 2 is an error. Details: [docs/REFERENCE.md](docs/REFERENCE.md). How a team adopts
@@ -115,6 +111,9 @@ it: [docs/USING.md](docs/USING.md).
 
 - **Nothing holds a process open.** Local steps run under detached supervisors and Slurm jobs park until they
   finish; a background driver advances the run, and any `flower status` can pick it up after a crash or reboot.
+- **Machines set up once.** `flower remote add narval user@host` probes the scheduler, cores, partitions, accounts
+  and scratch; agents read `flower remote list` instead of asking, plans just say `cluster: narval`, and
+  `flower remote login` covers passwords and second factors with one shared connection.
 - **HPC and remote machines.** Submission is idempotent (a write-ahead intent, a deterministic job name, an in-job
   duplicate guard): a crash at any point re-attaches instead of submitting twice. Failures are typed (`timeout`,
   `oom`, `node_fail`, `preempted`, `lost`, …). Machines without a batch system run steps as detached processes

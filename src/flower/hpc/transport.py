@@ -102,22 +102,27 @@ class SSHTransport(Transport):
     def __init__(self, cluster: dict):
         super().__init__(cluster)
         self.host = cluster["host"]
-        self.opts = ["-o", "BatchMode=yes", "-o", f"ConnectTimeout={int(cluster.get('connect_timeout', 30))}",
-                     "-o", "ServerAliveInterval=20", "-o", "ServerAliveCountMax=4",
-                     "-o", "ControlMaster=no"] + list(cluster.get("ssh_options") or [])
+        self.base = ["-o", "BatchMode=yes", "-o", f"ConnectTimeout={int(cluster.get('connect_timeout', 30))}",
+                     "-o", "ServerAliveInterval=20", "-o", "ServerAliveCountMax=4", "-o", "ControlMaster=no"]
+        self.user_opts = list(cluster.get("ssh_options") or [])
         self._master_checked = None
 
-    def _ssh_base(self) -> list[str]:
+    @property
+    def opts(self) -> list[str]:
+        """ssh options. A shared connection the person opened (`flower remote login`, or their own ControlMaster)
+        is reused only while `ssh -O check` answers: a half-dead one would hang every command. ssh takes the first
+        value of an option, so ControlPath=none goes before the person's own options."""
         if self._master_checked is None:
             try:
-                ok = subprocess.run(["ssh", "-O", "check", self.host], capture_output=True, timeout=5).returncode == 0
+                ok = subprocess.run(["ssh", *self.base, *self.user_opts, "-O", "check", self.host],
+                                    capture_output=True, timeout=5).returncode == 0
             except (subprocess.TimeoutExpired, OSError):
                 ok = False
             self._master_checked = ok
-        opts = list(self.opts)
-        if not self._master_checked:
-            opts += ["-o", "ControlPath=none"]
-        return ["ssh", *opts, self.host]
+        return self.base + ([] if self._master_checked else ["-o", "ControlPath=none"]) + self.user_opts
+
+    def _ssh_base(self) -> list[str]:
+        return ["ssh", *self.opts, self.host]
 
     def run(self, script: str, timeout: float = 120.0) -> CmdResult:
         cmd = self._ssh_base() + ["bash -lc " + shlex.quote(self.env_prefix + script)]
@@ -128,7 +133,7 @@ class SSHTransport(Transport):
             return CmdResult(124, exc.stdout or "", exc.stderr or "", timed_out=True)
 
     def _rsync(self, args: list[str], timeout: float = 3600) -> CmdResult:
-        ssh = " ".join(shlex.quote(x) for x in ["ssh", *self.opts, "-o", "ControlPath=none"])
+        ssh = " ".join(shlex.quote(x) for x in ["ssh", *self.opts])
         cmd = ["rsync", "-a", "--partial", "--timeout=60", "-e", ssh, *args]
         try:
             p = subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
