@@ -167,3 +167,26 @@ def test_shell_opens_in_a_steps_folder(cli, home, tmp_path, monkeypatch):
     monkeypatch.setattr(subprocess, "call", lambda cmd, *a, **k: calls.append(cmd) or 0)
     code, _ = cli("remote", "shell", "far", as_json=False)
     assert code == 0 and calls[-1][:2] == ["ssh", "-t"] and "-p" in calls[-1] and calls[-1][-1] == "me@far.org"
+
+
+def test_list_shows_each_machine_now_and_offline_skips_it(cli, tmp_path):
+    cli("remote", "add", "here", "local")
+    code, out = cli("remote", "list")
+    now = out["data"]["machines"]["here"]["now"]
+    assert code == 0 and now["load"] and now["disks"] and now["disks"][0]["roles"][0] == "home"
+    code, out = cli("remote", "list", "--offline")
+    assert "now" not in out["data"]["machines"]["here"]
+
+
+def test_a_job_folder_says_what_it_is_and_exec_runs_in_it(cli, home, tmp_path):
+    (tmp_path / "machines.yaml").write_text(yaml.safe_dump(
+        {"here": {"ssh": "local", "work_dir": str(tmp_path / "work"), "probed": {"scheduler": "none"}}}))
+    p = write_plan(tmp_path, [{"id": "a", "cluster": "here", "run": 'echo "{}"'}])
+    code, out = cli("run", str(p), "--follow", "--timeout", "60")
+    rid = out["data"]["run_id"]
+    code, out = cli("remote", "exec", "--run", rid, "--step", "a", "--", "cat FLOWER.txt; pwd")
+    assert code == 0, out
+    assert f"step a (attempt 1) of the flower run {rid}" in out["data"]["out"]
+    assert out["data"]["out"].strip().endswith(f"{rid}/a/a1")
+    code, out = cli("remote", "exec", "--", "true")
+    assert code == 2 and "--cluster" in out["error"]["message"] + out["error"].get("suggestion", "")

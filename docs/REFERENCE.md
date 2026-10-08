@@ -136,11 +136,11 @@ overrides), outside every repository. You give how to reach a machine; flower pr
 | command | what it does |
 |---|---|
 | `flower remote add NAME TARGET [-i KEY] [--login] [--cores N] [--note TEXT]` | TARGET: an `~/.ssh/config` alias, `user@host[:port]`, or `local`; `--login` when it asks for a password or a code (a shared connection, opened here first). Only a machine flower reached is saved. Probes the scheduler (Slurm or none), cores, memory, GPUs and load, Slurm partitions (time limits, node sizes, GPUs) and your accounts, a scratch directory (work and environments go there when there is one), the tools there (module, conda, apptainer, …) and free space; writes the entry |
-| `flower remote list [NAME]` | the machines, what they have, and what agents may use (`--json` is what agents read) |
+| `flower remote list [NAME] [--offline]` | the machines, what they have, what agents may use, and each one now (asked in parallel): load and free memory, free disk where home, work and environments are, your queued and running jobs (flower's marked), each partition's idle cores. `--json` is what agents read |
 | `flower remote check [NAME]` | reach a machine (or all) and refresh what was probed |
 | `flower remote login NAME` | a password or a second factor: reopen the shared ssh connection after it dropped (a network break, a reboot); it has no time limit |
 | `flower remote remove NAME` | remove a machine, and close its shared connection |
-| `flower remote exec --cluster NAME [--run RUN] -- CMD` | one command there, from the login directory (noted in the run's log with `--run`): what agents use |
+| `flower remote exec --cluster NAME [--run RUN [--step STEP]] -- CMD` | one command there, from the login directory or, with `--step`, in that step's job folder (noted in the run's log with `--run`): what agents use |
 | `flower remote shell NAME` / `flower remote shell --run RUN STEP` | an interactive shell there, or in that step's job folder (for people; noted in the run's log) |
 | `flower remote clean NAME [-y]` | the job folders of this project's finished runs on that machine, with their size; `-y` removes them (what was fetched stays in the record) |
 
@@ -159,6 +159,7 @@ runs, `flower status` shows the last line it printed and `flower show RUN STEP -
 ends, one transfer brings back its outputs, its logs, its `files:` and `retrieve:` patterns into the step's
 folder here (refused above `retrieve_limit`, default 5G); everything else stays there, for a later step on the
 same machine (`stage_in: [{from: "remote:${step.outputs.job_dir}/X", to: X}]`) until `flower remote clean`.
+Each job folder holds a `FLOWER.txt` naming its run and step and where their record is, for whoever finds it.
 
 A step names a machine as `cluster: NAME`; the run records the settings it used (no keys or passwords: those stay
 with ssh). On a machine without a scheduler, flower shares out `agent_may_use.cores` (else all its cores) among

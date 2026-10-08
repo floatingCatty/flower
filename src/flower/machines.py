@@ -178,6 +178,66 @@ def parse_probe(out: str) -> dict:
     return probed
 
 
+LIVE = r'''
+echo "load=$(cut -d' ' -f1-3 /proc/loadavg 2>/dev/null)"
+echo "mem_avail_kb=$(awk '/MemAvailable/ {print $2}' /proc/meminfo 2>/dev/null)"
+for rd in __DIRS__; do
+  r=${rd%%|*}; d=${rd#*|}
+  while [ -n "$d" ] && [ ! -d "$d" ]; do d=$(dirname "$d"); done
+  df -Pk "$d" 2>/dev/null | awk -v r="$r" 'NR==2 {print "disk=" r "|" $4 "|" $2 "|" $6}'
+done
+if command -v squeue >/dev/null 2>&1; then
+  squeue -h -u "$(id -un)" -o 'job=%i|%P|%j|%T|%M|%l|%C|%r' 2>/dev/null
+  sinfo -h -o 'cpus=%P|%C' 2>/dev/null
+fi
+'''
+
+
+def live(name: str, entry: dict, timeout: float = 20) -> dict:
+    """What the machine looks like now: load and free memory, free space where work and environments go; on Slurm
+    your jobs (flower's are named flower-…) and each partition's idle cores. {"error": ...} when unreachable."""
+    from .hpc.transport import make_transport
+    m = effective(name, entry)
+    dirs = []
+    for role, d in (("home", "$HOME"), ("work", m.get("work_dir")), ("environments", m.get("env_dir"))):
+        if d:
+            d = str(d)
+            dirs.append(f"{role}|" + ("$HOME" + d[1:] if d.startswith("~") else d))
+    script = LIVE.replace("__DIRS__", " ".join(f'"{d}"' for d in dirs))
+    r = make_transport(cluster_spec(name, entry)).run(script, timeout=timeout)
+    if r.rc != 0 and not r.out.strip():
+        return {"error": (r.err or "").strip()[-200:] or f"exit {r.rc}"}
+    out: dict = {"jobs": [], "partitions": {}, "disks": []}
+    for line in r.out.splitlines():
+        k, _, v = line.partition("=")
+        if k == "load":
+            out["load"] = v.strip()
+        elif k == "mem_avail_kb" and v.strip().isdigit():
+            out["mem_free_gb"] = round(int(v) / 1048576)
+        elif k == "disk":   # one entry per filesystem, with the roles on it (home, work, environments)
+            p = v.split("|")
+            if len(p) == 4 and p[1].isdigit():
+                d = next((x for x in out["disks"] if x["mount"] == p[3]), None)
+                if d is None:
+                    out["disks"].append({"mount": p[3], "roles": [p[0]], "free_gb": round(int(p[1]) / 1048576),
+                                         "size_gb": round(int(p[2]) / 1048576)})
+                elif p[0] not in d["roles"]:
+                    d["roles"].append(p[0])
+        elif k == "job":
+            p = v.split("|")
+            if len(p) >= 8:
+                out["jobs"].append({"id": p[0], "partition": p[1], "name": p[2], "state": p[3], "time": p[4],
+                                    "limit": p[5], "cpus": _int(p[6]), "reason": p[7],
+                                    "flower": p[2].startswith("flower-")})
+        elif k == "cpus":
+            p = v.split("|")
+            c = p[1].split("/") if len(p) == 2 else []
+            if len(c) == 4:
+                out["partitions"][p[0].rstrip("*")] = {"allocated": _int(c[0]), "idle": _int(c[1]),
+                                                       "total": _int(c[3])}
+    return out
+
+
 def host_key_name(host: str, opts: list[str]) -> str:
     """How known_hosts names the host: `[host]:port` on a port other than 22."""
     bare = host.split("@", 1)[-1]
@@ -235,8 +295,8 @@ def probe(name: str, entry: dict, timeout: float = 90, first: bool = False) -> d
     return parse_probe(r.out)
 
 
-def details(name: str, entry: dict) -> str:
-    """`flower remote list`: one block per machine."""
+def details(name: str, entry: dict, now: dict | None = None) -> str:
+    """`flower remote list`: one block per machine (``now``: its live state, from `live`)."""
     from .util import fmt_duration, seconds_since
     m = effective(name, entry)
     head = f"{name}  ({m.get('ssh')})"
@@ -249,19 +309,24 @@ def details(name: str, entry: dict) -> str:
         L.append(f"  slurm, account {acct}")
         parts = m.get("partitions") or []
         if parts:
-            rows = [("partition", "time limit", "nodes", "cores/node", "memory/node", "accelerators/node")]
+            idle = (now or {}).get("partitions") or {}
+            rows = [("partition", "time limit", "nodes", "cores/node", "memory/node", "accelerators/node")
+                    + (("idle cores now",) if idle else ())]
             for p in parts:
+                i = idle.get(p["name"])
                 rows.append((p["name"] + ("*" if p.get("default") else ""), _days(p.get("max_time")),
                              str(p.get("nodes") or ""), str(p.get("cores_per_node") or ""),
                              f"{round(p['mem_mb_per_node'] / 1024)} GB" if p.get("mem_mb_per_node") else "",
-                             _gres(p.get("gres"))))
-            w = [max(len(r[i]) for r in rows) for i in range(6)]
+                             _gres(p.get("gres")))
+                            + ((f"{i['idle']} of {i['total']}" if i else "",) if idle else ()))
+            w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
             L += ["    " + "  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip() for r in rows]
     else:
         gpus = f"{m.get('gpus')} GPUs" if m.get("gpus") else "no GPU"
-        L.append(f"  workstation: {m.get('cores')} cores, {m.get('memory_gb')} GB, {gpus}"
-                 + (f"; load {m.get('load')}" if m.get("load") else ""))
+        L.append(f"  workstation: {m.get('cores')} cores, {m.get('memory_gb')} GB, {gpus}")
     L.append(f"  work in {m.get('work_dir')}, environments in {m.get('env_dir')}")
+    if now is not None:
+        L += _now_lines(m, now)
     lim = m.get("agent_may_use")
     L.append("  agents may use: " + (", ".join(f"{v} {k}" for k, v in lim.items()) if lim else
                                      "not set (agent_may_use in " + str(path()).replace(str(Path.home()), "~") + ")"))
@@ -270,6 +335,35 @@ def details(name: str, entry: dict) -> str:
     if age:
         L.append(f"  probed {age}")
     return "\n".join(L)
+
+
+def _now_lines(m: dict, now: dict) -> list[str]:
+    if now.get("error"):
+        return [f"  now: unreachable ({now['error']})"]
+    L = []
+    if m.get("scheduler") != "slurm" and now.get("load"):
+        L.append(f"  now: load {now['load']}, {now.get('mem_free_gb')} GB memory free")
+    free = "; ".join(f"{d['free_gb']} GB free of {d['size_gb']} GB ({', '.join(d['roles'])})"
+                     for d in now.get("disks") or [])
+    if free:
+        L.append(f"  disk: {free}")
+    if m.get("scheduler") == "slurm":
+        jobs = now.get("jobs") or []
+        if not jobs:
+            L.append("  your jobs: none")
+        else:
+            by = {}
+            for j in jobs:
+                by[j["state"].lower()] = by.get(j["state"].lower(), 0) + 1
+            L.append("  your jobs: " + ", ".join(f"{n} {s}" for s, n in by.items())
+                     + f" ({sum(j['flower'] for j in jobs)} by flower)")
+            for j in jobs[:6]:
+                L.append(f"    {j['id']:<10} {j['partition']:<14} {j['state'].lower():<9} {j['time']:>10} of "
+                         f"{j['limit']:<11} {j['cpus'] or ''} cores  {j['name'][:40]}"
+                         + (f"  ({j['reason']})" if j["state"] == "PENDING" and j["reason"] else ""))
+            if len(jobs) > 6:
+                L.append(f"    … {len(jobs) - 6} more")
+    return L
 
 
 def _days(t) -> str:

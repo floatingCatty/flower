@@ -138,12 +138,14 @@ inputs, the first quick test, a parameter probe.
   (`--set on_reject={rerun: [X]}` sends work back with the person's note as `${feedback}`).
 - **Where to run:** `flower remote list --json` lists the machines the user set up (once, with `flower remote
   add NAME user@host`: flower probed the rest): cores, memory, GPUs or Slurm partitions, limits and accounts, work
-  and environment directories, `agent_may_use` and the user's `note`. Choose from it; do not ask the user for
+  and environment directories, `agent_may_use` and the user's `note`, and under `now` each one as it is: load, free
+  disk, the user's queued and running jobs, each partition's idle cores. Choose from it; do not ask the user for
   hosts, accounts or partitions. A step runs there with `--cluster NAME` (Slurm: `--set resources.partition=…
   --set resources.time=… --set resources.cpus_per_task=…` within the listed limits). Stay within `agent_may_use`
   and the note; ask before going beyond them. No suitable machine: ask the user to `flower remote add` one. A
   machine that refuses the connection (a password or second factor): ask the user to run `flower remote login NAME`.
-- **Explore a machine** with `flower remote exec --cluster NAME [--run RUN] -- <cmd>` (logged in the run), not raw ssh.
+- **Explore a machine** with `flower remote exec --cluster NAME [--run RUN] -- <cmd>` (logged in the run), not raw
+  ssh; `--run RUN --step STEP` runs it in that step's job folder there (look at a running job's files).
 - Reading papers, files and results directly is fine. *Running* computations beside the run is not: they are
   unrecorded and invisible to the user. That includes the quick check whose answer you rely on: make it a
   one-line `flower add` step. If a hook reminds you, move the work into a step.

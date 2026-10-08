@@ -33,7 +33,7 @@ from ..hpc import scheduler_for, slurm
 from ..hpc.transport import CmdResult, make_transport
 from ..rundir import fs_name
 from ..util import (FlowerError, atomic_write_json, atomic_write_text, digest, first_line,
-                    fmt_bytes, parse_duration, read_json, tail_text)
+                    fmt_bytes, hostname, parse_duration, read_json, tail_text)
 from .base import (scratch_env, RETRYABLE_DEFAULT, Executor, NodeCtx, Outcome, check_outputs, collect_files, mem_mb,
                    printed_outputs)
 
@@ -189,6 +189,13 @@ class JobExecutor(Executor):
         (up / ".flower").mkdir(parents=True)
         for name in ("job.sh", "user.sh", "inputs.json"):
             shutil.copy2(stage / name, up / name)
+        # a folder found on the machine (over ssh, by a person) says what it is and where its record lives
+        (up / "FLOWER.txt").write_text(
+            f"This folder is step {ctx.node['id']} (attempt {ctx.attempt}) of the flower run {ctx.run_id}.\n"
+            f"Its record is on {hostname()} in {ctx.run_dir}.\n"
+            f"There: flower show {ctx.run_id} {ctx.node['id']}   (and flower status {ctx.run_id})\n"
+            "Files here other than the step's outputs and `retrieve:` patterns were not fetched; "
+            "`flower remote clean` removes this folder once the run is finished.\n")
         shutil.copy2(stage / "submit.json", up / ".flower" / "submit.json")
         q = shlex.quote
         on_cluster: list[str] = []

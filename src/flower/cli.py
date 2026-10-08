@@ -1026,7 +1026,6 @@ def _local_port_answers(port: int) -> bool:
 def _open_remote(args, out: Out) -> int:
     """`flower ui [user@]host:/path` on your laptop: start (or reuse) that project's UI, tunnel to it, open the
     browser."""
-    import shlex
     host, sep, path = args.target.partition(":")
     if not sep or not host or not path:
         raise FlowerError("usage", f"expected [user@]host:/path/to/project, got {args.target!r}",
@@ -1099,6 +1098,8 @@ def _plan_cluster(args) -> tuple[dict, Path]:
     from . import template as tpl
     from .engine import coerce_inputs
     from . import machines
+    if not args.cluster:
+        raise FlowerError("usage", "say which machine: --cluster NAME", "machines: flower remote list")
     if getattr(args, "run", None) and args.plan:
         raise FlowerError("usage", "give --run RUN (a run's clusters) or --plan PLAN (a plan file's), not both")
     if not getattr(args, "run", None) and not args.plan:   # a machine of the person's machines file
@@ -1165,11 +1166,23 @@ def cmd_remote(args, out: Out) -> int:
     if cmd and cmd[0] == "--":
         cmd = cmd[1:]
     if not cmd:
-        raise FlowerError("usage", "no command given", "flower remote exec --run RUN --cluster C -- <command>")
+        raise FlowerError("usage", "no command given", "flower remote exec --cluster NAME [--run RUN] -- <command>")
+    where = None
+    if args.step:   # in that step's job folder, on its machine
+        if not args.run:
+            raise FlowerError("usage", "--step needs --run RUN", "flower remote exec --run RUN --step STEP -- <command>")
+        st = get_engine(args).state()
+        ns = st.nodes.get(args.step)
+        where = (ns.last.job or {}).get("job_dir") if ns and ns.last else None
+        if not where:
+            raise FlowerError("usage", f"step {args.step!r} of {st.run_id} has no job folder on a machine")
+        args.cluster = args.cluster or st.node_spec(args.step).get("cluster")
+    if not args.cluster:
+        raise FlowerError("usage", "say where: --cluster NAME, or --run RUN --step STEP", "machines: flower remote list")
     c, src = _plan_cluster(args)
     tr = make_transport(c)
     text = " ".join(cmd) if len(cmd) > 1 else cmd[0]
-    pre = _prelude(c)
+    pre = _prelude(c) + (f"cd {shlex.quote(where)}\n" if where else "")
     d = None
     if args.env and getattr(args, "installed", False):
         # use the frozen recipe's own installation there (what steps get), e.g. to try an API before writing a step
@@ -1189,7 +1202,6 @@ def cmd_remote(args, out: Out) -> int:
                 'export FLOWER_ENV_DIR="$FLOWER_ENV_PREFIX.recipe"; mkdir -p "$FLOWER_ENV_DIR"\n')
         # the recipe as written so far, so exploration can run its own check.sh / setup.sh there
         import base64
-        import shlex
         for rel in (envmod.recipe_files(d) if d.is_dir() else {}):
             f = d / rel
             if f.is_file() and f.stat().st_size <= 4 * 1024 * 1024:
@@ -1204,6 +1216,7 @@ def cmd_remote(args, out: Out) -> int:
     entry = {"at": now_iso(), "cluster": c["_name"], "cmd": text, "rc": r.rc, "env": args.env,
              "seconds": round(time.time() - t0, 2), "by": args.actor or default_actor()}
     _note_in_run(args, f"remote exec on {c['_name']}" + (f" (env {args.env})" if args.env else "")
+                 + (f" in the folder of {args.step}" if where else "")
                  + f": {first_line(text, 200)} -> exit {r.rc}")
     if out.json:
         return out.done({**entry, "out": r.out, "err": r.err}, code=0 if r.rc == 0 else 1)
@@ -1277,9 +1290,16 @@ def _machines(args, out: Out) -> int:
         mm.save(data)
         return out.done({"machines": {n: mm.effective(n, data[n]) for n in names}, "unreachable": bad},
                         "\n".join(rows) or "no machines yet: flower remote add NAME user@host", code=1 if bad else 0)
-    text = "\n\n".join(mm.details(n, data[n]) for n in names) or \
+    now = {}
+    if not args.offline and names:   # each machine as it is now, asked in parallel
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=min(8, len(names))) as pool:
+            now = dict(zip(names, pool.map(lambda n: mm.live(n, data[n]), names)))
+    text = "\n\n".join(mm.details(n, data[n], now.get(n)) for n in names) or \
         "no machines yet: flower remote add NAME user@host   (or local: flower remote add here local)"
-    return out.done({"file": str(mm.path()), "machines": {n: mm.effective(n, data[n]) for n in names}}, text)
+    return out.done({"file": str(mm.path()), "machines": {n: {**mm.effective(n, data[n]),
+                                                              **({"now": now[n]} if n in now else {})}
+                                                          for n in names}}, text)
 
 
 def _shell(args, data: dict) -> int:
@@ -1426,7 +1446,6 @@ def cmd_env(args, out: Out) -> int:
         return out.done({"envs": rows}, text)
     # replay / check: on a cluster of a plan
     from .hpc.transport import make_transport
-    import shlex
     c, src = _plan_cluster(args)
     d = _env_dir(args, src)
     state, fz = envmod.status(d)
@@ -1628,7 +1647,7 @@ def build_parser() -> argparse.ArgumentParser:
     def plan_cluster_args(sp):
         sp.add_argument("--plan", help="the plan whose `clusters:` defines the cluster (or --run)")
         sp.add_argument("--run", help="the run whose cluster to use, with the run's inputs (instead of --plan)")
-        sp.add_argument("--cluster", required=True, help="a machine (flower remote list), or a cluster of the run/plan")
+        sp.add_argument("--cluster", help="a machine (flower remote list), or a cluster of the run/plan")
         sp.add_argument("-i", "--input", action="append", help="NAME=VALUE for the plan's inputs (repeatable)")
         sp.add_argument("--inputs", help="JSON file with the plan's inputs")
         sp.add_argument("--timeout", type=float, default=7200.0, help="seconds (default 2h)")
@@ -1645,8 +1664,10 @@ def build_parser() -> argparse.ArgumentParser:
     e.add_argument("--login", action="store_true",
                    help="the machine asks for a password or a code: open a shared connection here first (it stays "
                         "open until it drops or the machine is removed)")
-    e = rs.add_parser("list", parents=[common], help="the machines, what they have, and what agents may use")
+    e = rs.add_parser("list", parents=[common], help="the machines, what they have now (load, free space, your "
+                                                     "jobs, idle cores), and what agents may use")
     e.add_argument("name", nargs="?")
+    e.add_argument("--offline", action="store_true", help="from the machines file only, without asking them")
     e = rs.add_parser("check", parents=[common], help="reach a machine (or all) and refresh what was probed")
     e.add_argument("name", nargs="?")
     e = rs.add_parser("login", parents=[common], help="reopen the shared ssh connection after it dropped (type your "
@@ -1663,8 +1684,10 @@ def build_parser() -> argparse.ArgumentParser:
                                                       "list them with their size; -y removes them")
     e.add_argument("name")
     e.add_argument("-y", "--yes", action="store_true")
-    e = rs.add_parser("exec", parents=[common], help="flower remote exec --cluster MACHINE [--run RUN] [--env E] -- <command>")
+    e = rs.add_parser("exec", parents=[common], help="one command on a machine: flower remote exec --cluster NAME "
+                                                     "[--run RUN [--step STEP]] [--env E] -- <command>")
     plan_cluster_args(e)
+    e.add_argument("--step", help="with --run: run it in that step's job folder, on its machine")
     e.add_argument("--env", help="explore environment NAME: an exploration prefix, its activate.sh sourced")
     e.add_argument("--installed", action="store_true",
                    help="with --env: run in the frozen recipe's installed prefix (as steps do), not the exploration one")
