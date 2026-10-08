@@ -235,6 +235,77 @@ def probe(name: str, entry: dict, timeout: float = 90, first: bool = False) -> d
     return parse_probe(r.out)
 
 
+def details(name: str, entry: dict) -> str:
+    """`flower remote list`: one block per machine."""
+    from .util import fmt_duration, seconds_since
+    m = effective(name, entry)
+    head = f"{name}  ({m.get('ssh')})"
+    if not entry.get("probed"):
+        return head + f"\n  not probed yet: flower remote check {name}"
+    age = fmt_duration(seconds_since(m["probed_at"])) + " ago" if m.get("probed_at") else ""
+    L = [head]
+    if m.get("scheduler") == "slurm":
+        acct = m.get("account") or ", ".join(m.get("accounts") or []) or "none found"
+        L.append(f"  slurm, account {acct}")
+        parts = m.get("partitions") or []
+        if parts:
+            rows = [("partition", "time limit", "nodes", "cores/node", "memory/node", "accelerators/node")]
+            for p in parts:
+                rows.append((p["name"] + ("*" if p.get("default") else ""), _days(p.get("max_time")),
+                             str(p.get("nodes") or ""), str(p.get("cores_per_node") or ""),
+                             f"{round(p['mem_mb_per_node'] / 1024)} GB" if p.get("mem_mb_per_node") else "",
+                             _gres(p.get("gres"))))
+            w = [max(len(r[i]) for r in rows) for i in range(6)]
+            L += ["    " + "  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip() for r in rows]
+    else:
+        gpus = f"{m.get('gpus')} GPUs" if m.get("gpus") else "no GPU"
+        L.append(f"  workstation: {m.get('cores')} cores, {m.get('memory_gb')} GB, {gpus}"
+                 + (f"; load {m.get('load')}" if m.get("load") else ""))
+    L.append(f"  work in {m.get('work_dir')}, environments in {m.get('env_dir')}")
+    lim = m.get("agent_may_use")
+    L.append("  agents may use: " + (", ".join(f"{v} {k}" for k, v in lim.items()) if lim else
+                                     "not set (agent_may_use in " + str(path()).replace(str(Path.home()), "~") + ")"))
+    if m.get("note"):
+        L.append(f"  note: {m['note']}")
+    if age:
+        L.append(f"  probed {age}")
+    return "\n".join(L)
+
+
+def _days(t) -> str:
+    """Slurm's D-HH:MM:SS as a person reads it: 7-00:00:00 -> 7 d, 1-12:00:00 -> 1 d 12 h, UNLIMITED -> none."""
+    import re
+    t = str(t or "")
+    if t.lower() in ("unlimited", "infinite"):
+        return "none"
+    m = re.fullmatch(r"(?:(\d+)-)?(\d+):(\d+)(?::(\d+))?", t)
+    if not m:
+        return t
+    d, h, mi = int(m.group(1) or 0), int(m.group(2)), int(m.group(3))
+    parts = [f"{d} d"] * bool(d) + [f"{h} h"] * bool(h) + [f"{mi} min"] * bool(mi)
+    return " ".join(parts) or "0"
+
+
+def _gres(g) -> str:
+    """gpu:a100:4,  RTX4090:8(S:0-7),RTX4090:8(S:0-3),  dcu:Hygon:4(S:0-3)  ->  4 × a100, 8 × RTX4090, 4 × Hygon dcu"""
+    import re
+    out = []
+    for item in str(g or "").split(","):
+        item = re.sub(r"\(.*?\)", "", item).strip()
+        if not item:
+            continue
+        f = item.split(":")
+        count = f[-1] if f[-1].isdigit() else "1"
+        names = [x for x in f[:-1] if x] if f[-1].isdigit() else [x for x in f if x]
+        kind = names[0] if names else "?"
+        model = names[1] if len(names) > 1 else ""
+        label = (f"{model} {kind}" if kind not in ("gpu",) else model or "GPU") if model else kind
+        s = f"{count} × {label}"
+        if s not in out:
+            out.append(s)
+    return ", ".join(out)
+
+
 def summary(name: str, entry: dict) -> str:
     m = effective(name, entry)
     if not entry.get("probed"):   # written by hand

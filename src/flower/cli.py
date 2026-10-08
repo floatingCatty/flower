@@ -1263,7 +1263,7 @@ def _machines(args, out: Out) -> int:
         mm.save(data)
         return out.done({"machines": {n: mm.effective(n, data[n]) for n in names}, "unreachable": bad},
                         "\n".join(rows) or "no machines yet: flower remote add NAME user@host", code=1 if bad else 0)
-    text = "\n".join(mm.summary(n, data[n]) for n in names) or \
+    text = "\n\n".join(mm.details(n, data[n]) for n in names) or \
         "no machines yet: flower remote add NAME user@host   (or local: flower remote add here local)"
     return out.done({"file": str(mm.path()), "machines": {n: mm.effective(n, data[n]) for n in names}}, text)
 

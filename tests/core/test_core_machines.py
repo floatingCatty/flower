@@ -120,3 +120,12 @@ def test_remove_a_machine(cli, tmp_path):
 def test_known_hosts_names_a_port_like_ssh():
     assert machines.host_key_name("me@hpc.org", ["-p", "65023"]) == "[hpc.org]:65023"
     assert machines.host_key_name("hpc", []) == "hpc"
+
+
+def test_partitions_read_like_a_person_would():
+    assert machines._days("7-00:00:00") == "7 d" and machines._days("1-12:00:00") == "1 d 12 h"
+    assert machines._days("02:30:00") == "2 h 30 min" and machines._days("UNLIMITED") == "none"
+    assert machines._gres("gpu:a100:4") == "4 × a100"
+    assert machines._gres("RTX4090-PCIE-24GB-LS:8(S:0-7),RTX4090-PCIE-24GB-LS:8(S:0-3)") == "8 × RTX4090-PCIE-24GB-LS"
+    assert machines._gres("dcu:Hygon:4(S:0-3)") == "4 × Hygon dcu"
+    assert machines._gres(None) == ""
