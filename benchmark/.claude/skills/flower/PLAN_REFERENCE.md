@@ -16,7 +16,9 @@ defaults:
                                            # output, local steps only)
   retry:   {max_attempts: 2, backoff: 30s} # retries infrastructure failures (lost, node_fail, ...)
   concurrency: 4                           # max local processes at once
-clusters:                    # machines a step can run on (`cluster: name`); host details are run inputs
+clusters:                    # optional: a step's `cluster:` names a machine of `flower remote list` (the person's
+                             # machines file; the run records its settings). Declared here instead, a plan carries
+                             # its own; host details are then run inputs:
   hpc:  {transport: ssh, host: "${inputs.host}", ssh_options: "${inputs.ssh_options}", max_jobs: 20,
          min_poll: 60s, modules: [vasp/6.4], prelude: ["source ~/env.sh"], resources: {partition: cpu, account: abc}}
                              # work goes to remote_root (default ~/flower-runs) on that machine
@@ -47,8 +49,9 @@ nodes:                       # `nodes: []` is a valid draft (`flower start`): th
     foreach: "${scan.outputs.items}"        # fan-out: one item per element; ${item}, ${index}
     env: {OMP_NUM_THREADS: "4"}             # environment variables
     tmpdir: job              # TMPDIR inside the attempt's directory (or a path): scratch files off /tmp
-    # on a cluster:
-    cluster: hpc             # a Slurm job there, or a process on the host with `scheduler: none`
+    # on a machine:
+    cluster: narval          # a machine (`flower remote list`) or a `clusters:` entry: a Slurm job there, or a
+                             # process on the host with `scheduler: none`
     environment: pyscf       # the frozen software recipe envs/pyscf/ (see below)
     resources: {nodes, ntasks, ntasks_per_node, cpus_per_task, mem, time, partition, account, qos, gpus, extra: [...]}
     stage_in: [{from: local/path, to: name}, {from: "remote:${relax.outputs.job_dir}/CHGCAR", to: CHGCAR, mode: link}]

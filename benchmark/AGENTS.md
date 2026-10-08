@@ -11,8 +11,9 @@ the project's UI (`flower ui`). The full guide is in `.claude/skills/flower/SKIL
    (remote: `--cluster C --env E --stage-in FILE`). It writes the step into the plan file and runs it; the
    command prints its outputs as a JSON object on its last line. To fix a step: edit its code or the plan file,
    `flower rerun RUN ID --follow`.
-3. Explore a remote machine with `flower remote exec --run RUN --cluster C [--env E] -- <cmd>`
-   (logged), not raw ssh.
+3. **Machines** the user set up are in `flower remote list --json` (cores or Slurm partitions, accounts,
+   `agent_may_use`, notes): run steps there with `--cluster NAME` instead of asking for hosts. Explore one with
+   `flower remote exec --cluster NAME --run RUN -- <cmd>` (logged), not raw ssh.
 4. Reading files, papers and results directly is fine; *running* things beside the run is not, including a
    quick check whose answer you rely on (make it a one-line step).
 5. When it is done, `flower export RUN STEP` turns the steps behind STEP into a protocol that anyone re-runs
