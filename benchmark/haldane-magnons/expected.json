@@ -17993,5 +17993,15 @@
    "sha256": "e0d6aafe76ebeef92e7ae2f4d1f197a6efd779483da30a597fb1ee403b49b32a",
    "v": 2.49
   }
+ },
+ "compare": {
+  "rtol": 1e-06,
+  "atol": 1e-09,
+  "ignore": [
+   "sz",
+   "max_trunc_err",
+   "levels[*].parity[0]"
+  ],
+  "note": "DMRG returns the S^z = 0 state as a mixture of the degenerate 0+ singlet and 1- triplet, different each run: its parity and spin profile (sz) are not results; truncation errors are diagnostics. Found reproducing on a Slurm cluster."
  }
 }

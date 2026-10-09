@@ -13,6 +13,11 @@ launch, batched polls, typed verdicts):
   connection re-attaches to the recorded PID instead of starting a second copy.
 * **liveness**: ``kill -0 PID`` plus, on Linux, ``/proc/PID/cwd`` == attempt dir (guards PID reuse).
   Dead without ``.flower/ec`` means the process was killed hard or the machine rebooted -> ``lost``.
+* **several login nodes behind one address** (SCNet: each ssh connection may land on another node; their home
+  filesystem is shared, their processes are not): the payload records its node in ``.flower/host``. A poll from
+  another node reads the files (the exit code) but cannot see the process: that is no evidence of its death, so
+  it is no miss, and nothing is killed from there. Cancel leaves ``.flower/cancelled``, which a watcher beside
+  the payload, on its node, acts on.
 * **time limit**: ``resources.time`` (or the node's ``timeout.total``) is enforced with coreutils
   ``timeout``; hitting it leaves ``.flower/timed_out`` and fails with class ``timeout``.
 
@@ -91,9 +96,13 @@ def render_job_script(*, key: str, job_dir: str, resources: dict, env: dict, pre
         "if ! mkdir .flower/owner 2>/dev/null; then",
         '  echo "flower: another process already owns this attempt; exiting" >&2; exit 97; fi',
         'echo "$$" > .flower/owner/id.tmp && mv .flower/owner/id.tmp .flower/owner/id',
+        'hostname > .flower/host.tmp 2>/dev/null && mv .flower/host.tmp .flower/host',
         # cancelled before it got going (e.g. a crash window): do not start the payload
         'if [ -e .flower/cancelled ]; then echo 130 > .flower/ec.tmp && mv .flower/ec.tmp .flower/ec; exit 0; fi',
         'date -u +%Y-%m-%dT%H:%M:%SZ > .flower/started',
+        # a cancel from a connection that landed on another node only leaves the marker: act on it from here
+        "( trap '' TERM; while kill -0 $$ 2>/dev/null; do if [ -e .flower/cancelled ]; then " + _signal("$$", "TERM")
+        + "; sleep 10; " + _signal("$$", "KILL") + "; exit 0; fi; sleep 5; done ) >/dev/null 2>&1 < /dev/null &",
         f"export FLOWER_JOB_DIR FLOWER_OUTPUTS=\"$FLOWER_JOB_DIR/outputs.json\" FLOWER_INPUTS=\"$FLOWER_JOB_DIR/inputs.json\" FLOWER_INSIDE_RUN=1 {exports}",
         *mods,
         *pre,
@@ -132,12 +141,13 @@ echo "SUBMITTED $(cat .flower/jobid)"
 def poll_command(jobs: list[tuple[str, str]], cmds: dict) -> str:
     """Evidence for many processes in one round-trip; @@END marks a complete answer."""
     q = shlex.quote
-    parts = []
+    parts = ['echo "@@HOST $(hostname 2>/dev/null)"']
     for pid, d in jobs:
         p = q(str(pid))
         parts.append(f"echo '@@EV {pid}'; cd {q(d)} 2>/dev/null && {{ "
                      "printf 'ec=%s\\n' \"$(cat .flower/ec 2>/dev/null)\"; "
                      "[ -s .flower/owner/id ] && printf 'owner=%s\\n' \"$(cat .flower/owner/id)\"; "
+                     "[ -s .flower/host ] && printf 'host=%s\\n' \"$(cat .flower/host)\"; "
                      "[ -f .flower/started ] && echo started; [ -f .flower/cancelled ] && echo cancelled; "
                      "[ -f .flower/timed_out ] && echo timed_out; [ -f outputs.json ] && echo outputs; "
                      "L=$(tail -n 5 job.out 2>/dev/null | tr -d '\\r' | grep -v '^[[:space:]]*$' | tail -n 1 | cut -c1-200); "
@@ -160,6 +170,9 @@ def observe(job_id: str, poll: dict) -> dict:
         obs["state"], obs["sched"] = "RUNNING", "RUNNING"
     elif obs["cancel_marker"]:
         obs["state"], obs["sched"] = "EXITED", "CANCELLED"  # killed by our cancel: TERM leaves no exit code
+    elif ev.get("host") and poll.get("host") and ev["host"] != poll["host"]:
+        # asked from another node: its processes are not visible from here, only its files
+        obs["state"], obs["sched"], obs["source"] = "RUNNING", "RUNNING", "files (another node)"
     else:
         obs["state"] = "UNKNOWN"  # dead without an exit code: counted as a miss, then `lost`
     return obs
@@ -180,23 +193,36 @@ def verdict(obs: dict) -> tuple[str, str | None, str, bool]:
     return "failed", "unknown", "process ended without an exit code", True
 
 
+def _signal(pid: str, sig: str) -> str:
+    """Signal the payload's whole *session* (setsid made it the leader): `timeout` and mpirun put their children in
+    process groups of their own, which a signal to the leader's group alone never reaches."""
+    return (f'pkill -{sig} -s {pid} 2>/dev/null; kill -{sig} -- -{pid} 2>/dev/null || kill -{sig} {pid} 2>/dev/null')
+
+
+def _here(job_dir: str | None) -> str:
+    """True (in the shell) on the node the payload runs on; an attempt that recorded no node is taken as here."""
+    if not job_dir:
+        return "true"
+    h = f"{shlex.quote(job_dir)}/.flower/host"
+    return f'{{ [ ! -s {h} ] || [ "$(cat {h})" = "$(hostname 2>/dev/null)" ]; }}'
+
+
 def cancel_command(job_dir: str | None, job_id: str | None, submit_key: str | None, cmds: dict) -> list[str]:
-    """Mark the attempt cancelled, then TERM (and 10 s later KILL) the payload's whole process group."""
+    """Mark the attempt cancelled, then TERM (and 10 s later KILL) the payload's process session. Over a connection
+    that landed on another node only the mark is left; the payload's watcher acts on it."""
     q = shlex.quote
     parts = []
     if job_dir:
         parts.append(f"mkdir -p {q(job_dir)}/.flower && touch {q(job_dir)}/.flower/cancelled")
     pid = f"{q(str(job_id))}" if job_id else (f"\"$(cat {q(job_dir)}/.flower/owner/id 2>/dev/null)\"" if job_dir else "")
     if pid:
-        # the whole *session* (setsid made the payload its leader): `timeout` and mpirun put their children in
-        # process groups of their own, which a signal to the leader's group alone never reaches
-        parts.append(f"P={pid}; if [ -n \"$P\" ]; then pkill -TERM -s \"$P\" 2>/dev/null; "
-                     f"kill -TERM -- -\"$P\" 2>/dev/null || kill -TERM \"$P\" 2>/dev/null; "
+        term = _signal('"$P"', "TERM")
+        parts.append(f"P={pid}; if [ -n \"$P\" ] && {_here(job_dir)}; then {term}; "
                      f"nohup sh -c \"sleep 10; pkill -KILL -s $P 2>/dev/null; kill -KILL -- -$P 2>/dev/null || "
                      f"kill -KILL $P 2>/dev/null\" >/dev/null 2>&1 < /dev/null & fi; true")
     return parts
 
 
-def kill_command(job_id: str, cmds: dict) -> str:
+def kill_command(job_id: str, cmds: dict, job_dir: str | None = None) -> str:
     p = shlex.quote(str(job_id))
-    return f"pkill -KILL -s {p} 2>/dev/null; kill -KILL -- -{p} 2>/dev/null || kill -KILL {p} 2>/dev/null || true"
+    return f"if {_here(job_dir)}; then pkill -KILL -s {p} 2>/dev/null; kill -KILL -- -{p} 2>/dev/null || kill -KILL {p} 2>/dev/null; fi; true"

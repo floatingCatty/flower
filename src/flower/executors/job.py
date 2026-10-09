@@ -425,7 +425,7 @@ class JobExecutor(Executor):
                         why = "job directory is gone and Slurm has no record"
                     elif obs.get("started"):
                         why = "job started but died without writing its exit code (node failure or hard kill)"
-                tr.run(sched.kill_command(jid, _cmds(cluster)), timeout=60)
+                tr.run(sched.kill_command(jid, _cmds(cluster), ctx.job.get("job_dir")), timeout=60)
                 ctx.emit("job.lost", {"why": why, "misses": track["misses"]})
                 return Outcome.fail("lost", f"job {jid} lost: {why}", retryable=True)
             return None

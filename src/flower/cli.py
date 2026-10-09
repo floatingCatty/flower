@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import shlex
 import signal
 import subprocess
@@ -24,7 +25,7 @@ from . import plan as planmod
 from .engine import Engine, create_run, driver_alive
 from .rundir import RunPaths, find_root, list_runs, resolve_run
 from .state import TERMINAL_RUN
-from .util import FlowerError, atomic_write_json, default_actor, first_line, fmt_bytes, hostname, local_clock, now_iso, parse_duration, read_json
+from .util import FlowerError, atomic_write_json, atomic_write_text, default_actor, first_line, fmt_bytes, hostname, local_clock, now_iso, parse_duration, read_json
 
 EXIT = {"succeeded": 0, "failed": 1, "cancelled": 1, "rejected": 1, "parked": 3, "awaiting_approval": 3,
         "running": 3}
@@ -769,15 +770,17 @@ def _engine_at(ref: str) -> Engine:
     return Engine(resolve_run(find_root(), ref))
 
 
-def _diff_values(a, b, rtol: float, atol: float, path: str, out: list) -> None:
+def _diff_values(a, b, rtol: float, atol: float, path: str, out: list, skip=lambda path: False) -> None:
+    if skip(path):
+        return
     if isinstance(a, bool) or isinstance(b, bool) or not (isinstance(a, (int, float)) and isinstance(b, (int, float))):
         if isinstance(a, dict) and isinstance(b, dict):
             for k in sorted(set(a) | set(b)):
                 if k not in COMPARE_SKIP:
-                    _diff_values(a.get(k), b.get(k), rtol, atol, f"{path}.{k}", out)
+                    _diff_values(a.get(k), b.get(k), rtol, atol, f"{path}.{k}", out, skip)
         elif isinstance(a, list) and isinstance(b, list) and len(a) == len(b):
             for i, (x, y) in enumerate(zip(a, b)):
-                _diff_values(x, y, rtol, atol, f"{path}[{i}]", out)
+                _diff_values(x, y, rtol, atol, f"{path}[{i}]", out, skip)
         elif a != b:
             out.append({"key": path, "a": a, "b": b, "rel": None})
         return
@@ -790,37 +793,60 @@ def _diff_values(a, b, rtol: float, atol: float, path: str, out: list) -> None:
 from .protocol import SKIP as COMPARE_SKIP   # paths, ids and timings differ between runs by nature
 
 
+def _ignorer(patterns: list[str]):
+    """`sz`: that key at any depth; `levels[*].parity[0]`: that path (step, then keys and indices; `*` any text)."""
+    names = {p for p in patterns if not any(c in p for c in ".[*")}
+    rx = [re.compile(re.escape(p).replace(r"\*", ".*") + r"$") for p in patterns if p not in names]
+    return lambda path: path.rsplit(".", 1)[-1] in names or any(r.match(path) for r in rx)
+
+
 def cmd_compare(args, out: Out) -> int:
     """Do two runs of a workflow (a rerun, a fork, a fresh clone on another machine) give the same results?
-    Compares the outputs of every step both have, numbers within --rtol, everything else exactly."""
+    Compares the outputs of every step both have, numbers within --rtol / --atol, everything else exactly. Against
+    an expected.json, its `compare:` rules apply (what its author found to be noise); `--save` records the ones used."""
     sides = [_outputs_of(x) for x in (args.a, args.b)]
     (ida, oa_all), (idb, ob_all) = sides
     rows, same, missing = [], 0, []
     expected = [x for x in (args.a, args.b) if str(x).endswith(".json")]
+    from .protocol import load_expected
+    rules = dict(load_expected(Path(expected[0])).get("compare") or {}) if expected else {}
+    rtol = args.rtol if args.rtol is not None else float(rules.get("rtol", 1e-6))
+    atol = args.atol if args.atol is not None else float(rules.get("atol", 0.0))
+    ignore = list(dict.fromkeys([*(rules.get("ignore") or []), *(args.ignore or [])]))
+    skip = _ignorer(ignore)
     # against an expected.json: exactly the steps it lists; two runs: every step either has
     names = sorted(ob_all if args.b in expected else oa_all) if expected else sorted(set(oa_all) | set(ob_all))
     for nid in names:
         if oa_all.get(nid) is None or ob_all.get(nid) is None:
             missing.append(nid)
             continue
-        oa = {k: v for k, v in oa_all[nid].items() if k not in COMPARE_SKIP and k not in set(args.ignore or [])}
-        ob = {k: v for k, v in ob_all[nid].items() if k not in COMPARE_SKIP and k not in set(args.ignore or [])}
         diffs: list = []
-        _diff_values(oa, ob, args.rtol, args.atol, "", diffs)
+        _diff_values(oa_all[nid], ob_all[nid], rtol, atol, nid, diffs, skip)
         if diffs:
             rows.append({"node": nid, "diffs": diffs})
         else:
             same += 1
-    lines = [f"{ida}  vs  {idb}: {same} step(s) agree within rtol {args.rtol:g}, "
-             f"{len(rows)} differ, {len(missing)} not succeeded in both"]
+    tol = f"rtol {rtol:g}" + (f", atol {atol:g}" if atol else "") + (f", ignoring {', '.join(ignore)}" if ignore else "")
+    lines = [f"{ida}  vs  {idb}: {same} step(s) agree ({tol}), {len(rows)} differ, {len(missing)} not succeeded in both"]
+    if rules.get("note"):
+        lines.append(f"  rules of {expected[0]}: {rules['note']}")
     for r in rows:
         for d in r["diffs"][:6]:
             rel = f"  (rel {d['rel']:.2e})" if d["rel"] is not None else ""
-            lines.append(f"  {r['node']}{d['key']}: {json.dumps(d['a'], default=str)[:40]}  vs  "
+            lines.append(f"  {d['key']}: {json.dumps(d['a'], default=str)[:40]}  vs  "
                          f"{json.dumps(d['b'], default=str)[:40]}{rel}")
     if missing:
         lines.append(f"  not compared: {', '.join(missing[:12])}" + (" ..." if len(missing) > 12 else ""))
-    return out.done({"same": same, "differ": rows, "not_compared": missing}, "\n".join(lines),
+    if args.save:
+        if not expected:
+            raise FlowerError("usage", "--save records the rules in an expected.json: compare a run with one")
+        data = json.loads(Path(expected[0]).read_text())
+        data["compare"] = {"rtol": rtol, "atol": atol, "ignore": ignore,
+                           **({"note": args.note or rules.get("note")} if args.note or rules.get("note") else {})}
+        atomic_write_text(Path(expected[0]), json.dumps(data, indent=1, default=str))
+        lines.append(f"  rules saved in {expected[0]}: later comparisons with it use them")
+    return out.done({"same": same, "differ": rows, "not_compared": missing,
+                     "rules": {"rtol": rtol, "atol": atol, "ignore": ignore}}, "\n".join(lines),
                     code=0 if not rows and not (expected and missing) else 1)
 
 
@@ -1532,9 +1558,13 @@ def build_parser() -> argparse.ArgumentParser:
     s = add("compare", cmd_compare, "do two runs give the same results? (a rerun, a fresh clone, or a protocol's expected.json)")
     s.add_argument("a", help="run id, the path of a run directory (another project), or an expected.json")
     s.add_argument("b")
-    s.add_argument("--rtol", type=float, default=1e-6, help="relative tolerance for numbers (default 1e-6)")
-    s.add_argument("--atol", type=float, default=0.0, help="absolute tolerance for numbers")
-    s.add_argument("--ignore", action="append", help="an output key not to compare (repeatable)")
+    s.add_argument("--rtol", type=float, help="relative tolerance for numbers (default: the expected.json's, else 1e-6)")
+    s.add_argument("--atol", type=float, help="absolute tolerance for numbers (default: the expected.json's, else 0)")
+    s.add_argument("--ignore", action="append", metavar="KEY|PATH",
+                   help="not compared (repeatable): a key at any depth (`seconds`), or a path with `*` "
+                        "(`levels[*].parity[0]`)")
+    s.add_argument("--save", action="store_true", help="record these rules in the expected.json (with --note: why)")
+    s.add_argument("--note", metavar="TEXT", help="with --save: why these values differ by nature")
 
     for name, help_ in (("approve", "answer the plan or a gate: its first decision, or the DECISION named"),
                         ("reject", "reject the plan or a gate (a gate with on_reject sends work back with your note)")):

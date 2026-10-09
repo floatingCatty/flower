@@ -23,7 +23,7 @@ other commands exit 0 when done; any command exits 2 on an error (usage, invalid
 | `flower approve RUN [GATE] [DECISION] [--note T]` / `flower reject RUN [GATE] [--note T]` | answer the plan (`run --review`) or a gate; a rejection's note is what a rework step reads as `${feedback}` |
 | `flower cancel RUN [--node STEP]` | cancel the run or one step |
 | `flower export RUN STEP…` | the steps behind STEP as a protocol: `protocol.yaml` (with the environment versions pinned), `expected.json`, `PROTOCOL.md` next to the plan |
-| `flower compare A B` | do two runs (or a run and an `expected.json`) agree within `--rtol`/`--atol`? |
+| `flower compare A B` | do two runs (or a run and an `expected.json`) agree within `--rtol`/`--atol`? `--ignore KEY` (any depth) or `--ignore 'step[*].key[0]'` (one path); against an `expected.json` its `compare:` rules apply, and `--save [--note WHY]` records the ones used |
 | `flower ui [start\|status\|stop\|user@host:/path]` | the project's web UI (background, stable port); `host:/path` opens another machine's project through ssh |
 | `flower remote add\|list\|check\|login\|remove\|exec\|shell\|clean` | the machines work runs on, set up once per person: see [Machines](#machines) |
 | `flower env new\|freeze\|replay\|check\|show NAME` | software recipes, see [Environments](#environments) |
@@ -137,7 +137,7 @@ overrides), outside every repository. You give how to reach a machine; flower pr
 | command | what it does |
 |---|---|
 | `flower remote add NAME TARGET [-i KEY] [--login] [--cores N] [--note TEXT]` | TARGET: an `~/.ssh/config` alias, `user@host[:port]`, or `local`; `--login` when it asks for a password or a code (a shared connection, opened here first). Only a machine flower reached is saved. Probes the scheduler (Slurm or none), cores, memory, GPUs and load, Slurm partitions (time limits, node sizes, GPUs) and your accounts, a scratch directory (work and environments go there when there is one), the tools there (module, conda, apptainer, …) and free space; writes the entry |
-| `flower remote list [NAME] [--offline]` | the machines, what they have, what agents may use, and each one now (asked in parallel): load and free memory, free disk where home, work and environments are, your queued and running jobs (flower's marked), each partition's idle cores. `--json` is what agents read |
+| `flower remote list [NAME] [--offline]` | the machines, what they have (on Slurm: each partition and what one user may have there at once: jobs, nodes, cores), what agents may use, and each one now (asked in parallel): load and free memory, free disk where home, work and environments are, your queued and running jobs (flower's marked), each partition's idle cores. `--json` is what agents read |
 | `flower remote check [NAME]` | reach a machine (or all) and refresh what was probed |
 | `flower remote login NAME` | a password or a second factor: reopen the shared ssh connection after it dropped (a network break, a reboot); it has no time limit |
 | `flower remote remove NAME` | remove a machine, and close its shared connection |

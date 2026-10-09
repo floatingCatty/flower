@@ -142,6 +142,61 @@ def test_direct_hard_killed_process_is_lost(ff):
     assert ff.events(eng, "job.lost")
 
 
+def _two_nodes(ff, monkeypatch) -> Path:
+    """Several login nodes behind one address, as SCNet's: `hostname` answers what the returned file says."""
+    bin_ = ff.tmp / "fakebin"
+    bin_.mkdir(exist_ok=True)
+    node = ff.tmp / "node"
+    node.write_text("login-a\n")
+    (bin_ / "hostname").write_text(f"#!/bin/sh\ncat {node}\n")
+    (bin_ / "hostname").chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_}:{os.environ['PATH']}")
+    return node
+
+
+def test_a_poll_from_another_login_node_is_no_evidence_of_death(ff, monkeypatch):
+    """SCNet Kunshan: each ssh connection may land on another login node (shared files, separate processes). A
+    poll from a node that cannot see the process counted it as a miss: a running environment install was declared
+    lost, and flower's kill went to whatever process had that pid on yet another node."""
+    node = _two_nodes(ff, monkeypatch)
+    eng = ff.run(ff.plan([ff.job("a", "sleep 300", retry={"max_attempts": 1})], clusters=_direct(ff)))
+    st = ff.drive(eng, until=lambda s: _job_id(s, "a"))
+    jd = Path(st.nodes["a"].last.job["job_dir"])
+    assert (jd / ".flower" / "host").read_text().strip() == "login-a"
+    pid = int(_job_id(st, "a"))
+    node.write_text("login-b\n")       # every later connection lands elsewhere
+    os.killpg(pid, signal.SIGKILL)      # (here the process is visible after all: make it really invisible)
+    t0 = time.time()      # lost_after is 1 s and polls come every 0.2 s: long enough to have been declared lost
+    st = ff.drive(eng, until=lambda s: time.time() - t0 > 4 or s.nodes["a"].status != "running")
+    assert st.nodes["a"].status == "running" and not ff.events(eng, "job.lost"), ff.why(eng)
+    node.write_text("login-a\n")       # a poll that reaches its node finds it gone
+    st = ff.drive(eng, timeout=30)
+    assert ff.error_class(st, "a") == "lost", ff.why(eng)
+
+
+def test_a_poll_from_another_login_node_sees_the_exit_code(ff, monkeypatch):
+    node = _two_nodes(ff, monkeypatch)
+    eng = ff.run(ff.plan([ff.job("a", "sleep 1\n" + OUT, outputs={"x": "integer"})], clusters=_direct(ff)))
+    ff.drive(eng, until=lambda s: _job_id(s, "a"))
+    node.write_text("login-b\n")
+    st = ff.drive(eng, timeout=30)
+    assert st.status == "succeeded" and st.nodes["a"].result.outputs["x"] == 1, ff.why(eng)
+
+
+def test_a_cancel_from_another_login_node_is_carried_out_on_the_payloads_node(ff, monkeypatch):
+    node = _two_nodes(ff, monkeypatch)
+    eng = ff.run(ff.plan([ff.job("a", "sleep 300 &\necho $! > child.pid\nwait")], clusters=_direct(ff)))
+    st = ff.drive(eng, until=lambda s: _job_id(s, "a"))
+    jd = Path(st.nodes["a"].last.job["job_dir"])
+    assert _wait(lambda: (jd / "child.pid").exists() and (jd / "child.pid").read_text().strip())
+    child, leader = int((jd / "child.pid").read_text()), int(_job_id(st, "a"))
+    node.write_text("login-b\n")       # the cancel cannot signal from there: it leaves the mark
+    eng.cancel(node="a", by="test:x")
+    st = ff.drive(eng, timeout=30)
+    assert st.nodes["a"].status == "cancelled", ff.why(eng)
+    assert _wait(lambda: not _alive(child) and not _alive(leader), 20), "the watcher did not end the payload"
+
+
 def test_direct_launch_is_idempotent_and_guarded(tmp_path):
     jd = tmp_path / "jd"
     jd.mkdir()
@@ -260,6 +315,8 @@ def test_a_retry_keeps_its_slot_and_goes_first(ff):
              ff.job("b", "sleep 0.2")]
     eng = ff.run(ff.plan(nodes, clusters=_direct(ff, max_jobs=1)))
     st = ff.drive(eng, until=lambda s: _job_id(s, "a"))
+    jd = Path(st.nodes["a"].last.job["job_dir"])
+    assert _wait(lambda: list(jd.parent.glob("state-*/once")))   # (killed before this, the retry would sleep too)
     os.killpg(int(_job_id(st, "a")), signal.SIGKILL)          # a crash: lost, then retried
     st = ff.drive(eng, timeout=60)
     a, b = st.nodes["a"], st.nodes["b"]

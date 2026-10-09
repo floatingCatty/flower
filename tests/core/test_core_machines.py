@@ -38,6 +38,20 @@ def test_a_slurm_login_node_is_probed_as_a_cluster():
     assert "cores" not in p                      # the login node's size says nothing about the jobs
 
 
+def test_what_one_user_may_have_queued_is_probed_per_partition():
+    # scontrol's QOS limits (limit, in use); a later block of the same key does not override the first;
+    # the user's own QOS (*) applies to every partition, the stricter value wins
+    p = machines.parse_probe(SLURM + "limit=gpu|MaxSubmitJobsPU=10(3)\nlimit=gpu|MaxJobsPU=N(2)\n"
+                             "limit=gpu|MaxTRESPU=cpu=192(24),mem=N(5400),node=6(2)\nlimit=gpu|MaxSubmitJobsPU=99(0)\n"
+                             "limit=*|MaxSubmitJobsPU=50(0)\nlimit=*|MaxJobsPU=20(0)\n")
+    cpu, gpu = p["partitions"]
+    assert gpu["per_user"] == {"jobs": 10, "running_jobs": 20, "cores": 192, "nodes": 6}
+    assert cpu["per_user"] == {"jobs": 50, "running_jobs": 20}
+    assert "gpu, at most per user: 10 jobs (20 running), 6 nodes, 192 cores" in machines.details(
+        "hpc", {"ssh": "hpc", "probed": p})
+    assert "per_user" not in machines.parse_probe(SLURM)["partitions"][0]   # no limits found: nothing claimed
+
+
 def test_a_workstation_is_probed_for_its_size():
     p = machines.parse_probe("cores=32\nmem_kb=128000000\ngpus=2\nload=1.0 2.0 3.0\ntool=rsync\n")
     assert p["scheduler"] == "none" and p["cores"] == 32 and p["memory_gb"] == 122 and p["gpus"] == 2

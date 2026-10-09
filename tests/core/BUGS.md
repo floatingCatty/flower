@@ -607,14 +607,27 @@ Both bugs were found in a real study. Both are fixed and covered by ordinary reg
 - **Fix:** a refusal for the queue limit is a pause (`job.waiting`, said once in the log, shown in `status`): the job
   is submitted again after 1, 2, then every 5 minutes, without counting as an error.
 
+### 68. A process on one of several login nodes was declared lost, and the kill went to another node
+- **Tests:** `tests/hpc/test_direct.py::test_a_poll_from_another_login_node_is_no_evidence_of_death`,
+  `…_sees_the_exit_code`, `test_a_cancel_from_another_login_node_is_carried_out_on_the_payloads_node`
+- **Observed:** Kunshan's ssh address leads to several login nodes (four connections, four nodes), which share the
+  home filesystem but not their processes. A `scheduler: none` step (the environment install on the login node)
+  was polled from whichever node answered: `kill -0 PID` failed there, five such misses made it `lost` (4 minutes
+  in), and the kill flower then sent landed on a random node, where the same PID may be another of the user's
+  processes (or, on the right node, the install itself). `flower env replay` worked because it waited in its one
+  connection. Taken at first for a login node that kills detached work; holding an ssh session open would not
+  have helped.
+- **Fix:** the payload records its node (`.flower/host`, on the shared filesystem) and each poll says which node
+  answered. A poll from another node reads the files (the exit code ends the step as before) but is no evidence
+  of death: no miss, the step stays running. Kills and cancel signals are sent only on the payload's node; a cancel
+  that lands elsewhere leaves `.flower/cancelled`, and a watcher beside the payload acts on it within 5 s.
+
 ### Environments on HPC (design, not bugs)
 - **Compute nodes without internet.** The generated environment step ran as a Slurm job and could not download its
   packages. On a Slurm machine it now runs on the login node, into the filesystem the jobs share
   (`tests/hpc/test_envs.py::test_on_a_slurm_machine_the_environment_installs_on_the_login_node`).
-- **A login node that kills detached work.** On the login node the install ran detached (as `scheduler: none`
-  steps do) and was killed when pip started compiling, 4 minutes in; the same install attached to an ssh session
-  (`flower env replay`) succeeded. Open: run login-node steps attached (an ssh session held by flower's local
-  supervisor), so they last as long as an interactive command would.
+- **Not a login node that kills detached work: several login nodes (#68).** The install that "was killed 4 minutes
+  in" was declared lost by flower. A detached `sleep 600` on the login node lived its 10 minutes.
 - **A recipe that did not install on CentOS 7.** TeNPy 1.1.1 publishes Linux wheels for glibc >= 2.28 only; the
   source package then built numpy from source (GCC >= 9.3 required, 7.3 there) and, with Cython present, C++ that
   no longer compiles against numpy 2.4. The recipe now falls back to the pure-Python build of the same version.

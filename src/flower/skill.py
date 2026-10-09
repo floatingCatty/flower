@@ -145,6 +145,13 @@ inputs, the first quick test, a parameter probe.
   --set resources.time=… --set resources.cpus_per_task=…` within the listed limits). Stay within `agent_may_use`
   and the note; ask before going beyond them. No suitable machine: ask the user to `flower remote add` one. A
   machine that refuses the connection (a password or second factor): ask the user to run `flower remote login NAME`.
+- **On a batch machine, size the jobs.** Each job waits in the queue, and the listing's `at most per user`
+  caps how many you may have. Many short items (a parameter scan, a convergence series) go several to a job:
+  `foreach` over groups (`inputs: {group: "${item}"}`), each group filling a node (`resources.cpus_per_task` = its
+  cores) and running its items in parallel inside the job (`xargs -P`, or `&` and `wait`), one result file per
+  item, skipping items whose result exists (a retried job then does only what is left). Choose the group size so
+  the jobs fit the per-user limit and each runs well within the time limit. Keep one item per job when an item
+  needs a node or more, or hours, by itself.
 - **Explore a machine** with `flower remote exec --cluster NAME [--run RUN] -- <cmd>` (logged in the run), not raw
   ssh; `--run RUN --step STEP` runs it in that step's job folder there (look at a running job's files).
 - Reading papers, files and results directly is fine. *Running* computations beside the run is not: they are
@@ -177,8 +184,11 @@ agree. `flower run plan.yaml --review` instead leaves the start to them: it wait
 ## When it is done
 `flower show RUN STEP KEY` prints one result. `flower export RUN STEP` turns the steps behind STEP into
 `protocol.yaml` + `expected.json` + `PROTOCOL.md` next to the plan: anyone reproduces it with
-`flower run protocol.yaml --follow` and checks with `flower compare RUN expected.json`. "The run was started" is
-not "the run succeeded": check the final status before you report.
+`flower run protocol.yaml --follow` and checks with `flower compare RUN expected.json`. Values that differ by
+nature between runs (a diagnostic, a degenerate state's arbitrary mixture) are not a failed reproduction: once you
+know which, record them with the reason (`flower compare RUN expected.json --ignore 'levels[*].parity[0]' --atol
+1e-9 --save --note "..."`), so the next comparison is right without that knowledge. "The run was started" is not
+"the run succeeded": check the final status before you report.
 
 ## Coming back later (new session)
 `flower status` (the project's runs) → `flower status RUN` → `flower log RUN` (what happened, in order).

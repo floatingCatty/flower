@@ -76,8 +76,10 @@ def export(eng, steps: list[str]) -> dict:
         if str(spec.get("generated", "")).startswith("env:") or spec.get("foreach") is not None or not ns or not ns.result:
             continue
         expected[n] = {k: v for k, v in (ns.result.outputs or {}).items() if k not in SKIP}
-    (d / "expected.json").write_text(json.dumps({"from_run": st.run_id, "environments": pins, "steps": expected},
-                                                indent=1, default=str))
+    old = d / "expected.json"   # comparison rules recorded with `flower compare --save` stay with the protocol
+    rules = (json.loads(old.read_text()).get("compare") if old.is_file() else None) or None
+    old.write_text(json.dumps({"from_run": st.run_id, "environments": pins, "steps": expected,
+                               **({"compare": rules} if rules else {})}, indent=1, default=str))
     (d / "PROTOCOL.md").write_text(readme(st, proto, steps, nodes))
     return {"dir": str(d), "steps": sorted(ids), "expected": len(expected),
             "files": [str(d / f) for f in ("protocol.yaml", "expected.json", "PROTOCOL.md")]}

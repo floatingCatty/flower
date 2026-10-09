@@ -675,6 +675,14 @@ def test_export_a_protocol_and_reproduce_it(cli, home, tmp_path):
     (tmp_path / "expected.json").write_text(json.dumps({"steps": {"a": {"x": 2}, "b": {"y": 5}}}))
     code, res = cli("compare", rid2, str(tmp_path / "expected.json"))
     assert code == 1 and res["data"]["differ"][0]["node"] == "b"
+    # what differs by nature is recorded once, with why, and later comparisons (and a re-export) keep it
+    code, res = cli("compare", rid2, str(tmp_path / "expected.json"), "--ignore", "b.y", "--save", "--note", "y varies")
+    assert code == 0, res
+    code, res = cli("compare", rid2, str(tmp_path / "expected.json"))
+    assert code == 0 and res["data"]["rules"]["ignore"] == ["b.y"], res
+    assert cli("export", rid, "b")[0] == 0
+    assert json.loads((tmp_path / "expected.json").read_text())["compare"] == {"rtol": 1e-6, "atol": 0.0,
+                                                                              "ignore": ["b.y"], "note": "y varies"}
     _plan(tmp_path, body.replace("* 2", "* 3"))
     code, res = cli("export", rid, "b")
     assert code != 0 and res["error"]["code"] == "plan_drift", res
@@ -801,7 +809,18 @@ nodes:
     code, res = cli("compare", r1, r2)
     assert code == 0 and res["data"]["same"] == 1, res
     code, res = cli("compare", r1, str(_eng(home, r3).paths.dir))
-    assert code == 1 and res["data"]["differ"][0]["diffs"][0]["key"] == ".x", res
+    assert code == 1 and res["data"]["differ"][0]["diffs"][0]["key"] == "a.x", res
+
+
+def test_compare_ignores_a_key_anywhere_or_one_path():
+    """The haldane-magnons reproduction on a Slurm cluster: only the S^z = 0 state's parity (a mixture of two
+    degenerate states, different each time) differed; ignoring every parity would have hidden the others."""
+    from flower.cli import _diff_values, _ignorer
+    a = {"E": [1.0, 2.0], "parity": [0.3, -1.0], "sz": [0.1], "rows": [{"t": 1.0, "sz": 5}]}
+    b = {"E": [1.0, 2.0], "parity": [-0.2, 1.0], "sz": [0.2], "rows": [{"t": 1.0, "sz": 6}]}
+    out: list = []
+    _diff_values(a, b, 1e-6, 0, "levels[3]", out, _ignorer(["sz", "levels[*].parity[0]"]))
+    assert [d["key"] for d in out] == ["levels[3].parity[1]"]   # sz at any depth; parity[0] of every length
 
 
 def test_add_stage_in_path_typed_from_the_current_directory(cli, home, tmp_path, monkeypatch):

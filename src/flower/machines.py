@@ -149,12 +149,22 @@ echo "free_home_gb=$(df -Pk "$HOME" 2>/dev/null | awk 'NR==2 {printf "%d", $4/10
 if command -v sinfo >/dev/null 2>&1; then
   sinfo -h -o 'partition=%P|%l|%c|%m|%G|%D' 2>/dev/null | sort -u
   sacctmgr -nP show assoc user="$(id -un)" format=account 2>/dev/null | sort -u | sed 's/^/account=/'
+  # what one user may have at once: each partition's QOS, then the user's own (it applies everywhere)
+  for p in $(sinfo -h -o %P 2>/dev/null | tr -d '*' | sort -u); do
+    q=$(scontrol show partition "$p" -o 2>/dev/null | grep -o 'QoS=[^ ]*' | cut -d= -f2)
+    [ -n "$q" ] && [ "$q" != "N/A" ] && scontrol show assoc_mgr flags=qos qos="$q" 2>/dev/null \
+      | grep -o -E '(MaxSubmitJobsPU|MaxJobsPU|MaxTRESPU)=[^ ]*' | sed "s/^/limit=$p|/"
+  done
+  for q in $(sacctmgr -nP show assoc user="$(id -un)" format=qos 2>/dev/null | tr ',' ' ' | sort -u); do
+    scontrol show assoc_mgr flags=qos qos="$q" 2>/dev/null \
+      | grep -o -E '(MaxSubmitJobsPU|MaxJobsPU|MaxTRESPU)=[^ ]*' | sed "s/^/limit=*|/"
+  done
 fi
 '''
 
 
 def parse_probe(out: str) -> dict:
-    kv: dict = {"tools": [], "partitions": [], "accounts": []}
+    kv: dict = {"tools": [], "partitions": [], "accounts": [], "limits": {}}
     for line in out.splitlines():
         if "=" not in line:
             continue
@@ -164,6 +174,10 @@ def parse_probe(out: str) -> dict:
             kv["tools"].append(v)
         elif k == "account" and v:
             kv["accounts"].append(v)
+        elif k == "limit":   # MaxSubmitJobsPU=10(3): a limit of 10, 3 in use; N = none. The first block counts
+            part, _, rest = v.partition("|")
+            key, _, val = rest.partition("=")
+            kv["limits"].setdefault(part, {}).setdefault(key, val)
         elif k == "partition":
             p = v.split("|")
             if len(p) >= 6:
@@ -182,6 +196,13 @@ def parse_probe(out: str) -> dict:
         if p["gres"] and p["gres"] != q["gres"]:
             q["gres"] = ",".join(x for x in (q["gres"], p["gres"]) if x)
     kv["partitions"] = list(merged.values())
+    mine = _per_user(kv["limits"].get("*") or {})
+    for p in kv["partitions"]:
+        lim = _per_user(kv["limits"].get(p["name"]) or {})
+        for k, v in mine.items():   # the stricter of the partition's and the user's own
+            lim[k] = min(v, lim.get(k, v))
+        if lim:
+            p["per_user"] = lim
     slurm = "sbatch" in kv["tools"] and bool(kv["partitions"])
     scratch = kv.get("scratch")
     base = scratch or "~"
@@ -198,6 +219,22 @@ def parse_probe(out: str) -> dict:
         probed.update(cores=_int(kv.get("cores")), memory_gb=round((_int(kv.get("mem_kb")) or 0) / 1048576),
                       gpus=_int(kv.get("gpus")) or 0, load=kv.get("load"))
     return probed
+
+
+def _per_user(raw: dict) -> dict:
+    """scontrol's QOS limits -> {jobs (queued or running), running_jobs, nodes, cores}, only the ones that are set."""
+    import re
+
+    def num(v):
+        v = re.sub(r"\(.*?\)", "", str(v or ""))
+        return int(v) if v.isdigit() else None
+
+    out = {"jobs": num(raw.get("MaxSubmitJobsPU")), "running_jobs": num(raw.get("MaxJobsPU"))}
+    for item in str(raw.get("MaxTRESPU") or "").split(","):
+        k, _, v = item.partition("=")
+        if k in ("node", "cpu"):
+            out["nodes" if k == "node" else "cores"] = num(v)
+    return {k: v for k, v in out.items() if v is not None}
 
 
 LIVE = r'''
@@ -343,6 +380,9 @@ def details(name: str, entry: dict, now: dict | None = None) -> str:
                             + ((f"{i['idle']} of {i['total']}" if i else "",) if idle else ()))
             w = [max(len(r[i]) for r in rows) for i in range(len(rows[0]))]
             L += ["    " + "  ".join(c.ljust(w[i]) for i, c in enumerate(r)).rstrip() for r in rows]
+            for p in parts:
+                if p.get("per_user"):
+                    L.append(f"  {p['name']}, at most per user: {_limits(p['per_user'])}")
     else:
         gpus = f"{m.get('gpus')} GPUs" if m.get("gpus") else "no GPU"
         L.append(f"  workstation: {m.get('cores')} cores, {m.get('memory_gb')} GB, {gpus}")
@@ -386,6 +426,14 @@ def _now_lines(m: dict, now: dict) -> list[str]:
             if len(jobs) > 6:
                 L.append(f"    … {len(jobs) - 6} more")
     return L
+
+
+def _limits(lim: dict) -> str:
+    """{jobs: 10, running_jobs: 10, nodes: 6, cores: 192} -> 10 jobs (10 running), 6 nodes, 192 cores"""
+    jobs = f"{lim['jobs']} jobs" if "jobs" in lim else ""
+    if "running_jobs" in lim:
+        jobs = (jobs + f" ({lim['running_jobs']} running)") if jobs else f"{lim['running_jobs']} running jobs"
+    return ", ".join(x for x in (jobs, *(f"{lim[k]} {k}" for k in ("nodes", "cores") if k in lim)) if x)
 
 
 def _days(t) -> str:

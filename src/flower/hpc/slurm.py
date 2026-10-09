@@ -199,6 +199,9 @@ def parse_poll(out: str) -> dict:
         if s == "@@SACCT_ERR":
             res["sacct_ok"] = False
             continue
+        if s.startswith("@@HOST"):   # the node that answered (several login nodes may share one address)
+            res["host"] = s[6:].strip()
+            continue
         if s == "@@END":
             res["complete"] = True
             section = None
@@ -225,6 +228,8 @@ def parse_poll(out: str) -> dict:
                 ev["ec"] = int(v) if re.fullmatch(r"-?\d+", v) else None
             elif s.startswith("owner="):
                 ev["owner"] = s[6:].strip()
+            elif s.startswith("host="):
+                ev["host"] = s[5:].strip()
             elif s.startswith("tail="):   # the last line the job printed (shown while it runs)
                 ev["tail"] = s[5:].strip()
             else:
@@ -323,5 +328,5 @@ def cancel_command(job_dir: str | None, job_id: str | None, submit_key: str | No
     return parts
 
 
-def kill_command(job_id: str, cmds: dict) -> str:
+def kill_command(job_id: str, cmds: dict, job_dir: str | None = None) -> str:
     return f"{cmds.get('scancel', 'scancel')} {shlex.quote(job_id)} >/dev/null 2>&1 || true"
