@@ -66,6 +66,22 @@ at once. What it found:
 [`PROTOCOL.md`](PROTOCOL.md): `flower run haldane-magnons/protocol.yaml --follow --inputs my-machines.json`, then
 `flower compare RUN haldane-magnons/expected.json`.
 
+## Reproduced on a Slurm cluster (run `haldane-magnons-20261008-220637-153b`)
+
+The protocol, run on an SCNet cluster (Slurm, a CPU partition, CentOS 7) with
+`flower run haldane-magnons/protocol.yaml --machine remote=<that machine>`, gives the same physics: 12 of 18
+claims; Δ = 0.41033145380 (2·10⁻¹² from this run's), v and Σn² to 10⁻⁹, the 120 energies (24 lengths × 5 states)
+within 2.8·10⁻⁸, the parities identical. `flower compare RUN expected.json --atol 1e-9 --ignore sz --ignore
+max_trunc_err --ignore seconds` leaves only the parity of the S^z = 0 state, which is a mixture of the degenerate
+singlet and triplet that DMRG settles on differently each time (as is its ⟨S^z⟩ profile). 33 jobs over 6.5 hours,
+most of it waiting for the user's queue limit (about 10 jobs) and with TeNPy's pure-Python build.
+
+What it took (all in `tests/core/BUGS.md`): the compute nodes have no internet, so environments now install on the
+login node; that node killed the install when it ran detached, so it was installed with `flower env replay` (an
+attached ssh session); TeNPy 1.1.1 has no wheel for CentOS 7's glibc, so the recipe falls back to its pure-Python
+build (re-frozen; the protocol pins the new version); a run started with `--machine` could not be rerun (#65); jobs
+past the queue limit failed instead of waiting (#67).
+
 ## Files
 - [`paper.py`](paper.py): the paper and its numbers, checked against the PDF text.
 - [`haldane.py`](haldane.py): DMRG of one length (all sectors), and the exact-diagonalization check.
