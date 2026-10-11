@@ -1,0 +1,12 @@
+cff-version: 1.2.0
+message: "If you use flower in a publication, please cite the software repository."
+type: software
+title: "flower"
+abstract: "Record scientific-agent computations and export reproducible workflows across local, SSH, and Slurm environments."
+authors:
+  - family-names: "Zhouyin"
+    given-names: "Zhanghao"
+    affiliation: "McGill University"
+repository-code: "https://github.com/floatingCatty/flower"
+url: "https://floatingcatty.github.io/research/flower/"
+license: "Apache-2.0"
