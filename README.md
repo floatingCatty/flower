@@ -2,6 +2,8 @@
 
 **Long computational work, recorded as you go, and re-runnable as a protocol.**
 
+[A short research note (English / 中文)](https://floatingcatty.github.io/research/flower/) explains why I started working on flower.
+
 A coding agent (or a person) doing research over many sessions leaves a repository that is hard to follow: scripts,
 half-finished runs, quick checks whose results someone relied on. flower keeps that work in a form a person can
 read and check, and turns it, once it works, into a protocol anyone re-runs with one command.
