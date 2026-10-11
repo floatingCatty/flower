@@ -2,6 +2,8 @@
 
 This page is for a team, its people and its coding agents, adopting flower in an existing research project.
 Every command and plan field is in the [reference](REFERENCE.md).
+For a concrete protocol, environment setup and numerical acceptance check,
+see [Reproducing a scientific-agent calculation from a fresh clone](REPRODUCING_AGENT_CALCULATIONS.md).
 
 ## 1. Install
 
