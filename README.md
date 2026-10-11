@@ -42,6 +42,12 @@ Not on PyPI yet: `pip install flower` installs Celery Flower, an unrelated tool.
 
 ## Two ways in
 
+**Want to inspect an actual result before adopting the tool?** Start with the
+[worked reproducibility example](docs/REPRODUCING_AGENT_CALCULATIONS.md):
+a documented scientific-agent calculation, exported protocol, frozen
+environments and numerical comparison against expected outputs.
+
+
 **Grow a study** (how an agent works):
 ```bash
 flower init                                         # .flower/ (gitignored) + the agent instructions
